@@ -1,5 +1,10 @@
+#define constant BITS_PER_BYTE = 0x8
+#define constant BITS_PER_WORD = 0x100
+
 #define constant LOCK_CALLDATA_OFFSET = 0x4
+
 #define constant LOCKED_CALLDATA_OFFSET = 0x24
+#define constant CALCULATED_AMOUNT_THRESHOLD_OFFSET = 0x3c
 
 #define macro MAIN() = takes(0) returns(0) {
     0x calldataload                                         // [firstWord]
@@ -45,7 +50,10 @@
 /// The specified token for the first swaps of each multihop swap
 ///
 /// `specifiedAmountBytes` (1 byte unsigned integer)
-/// The length of the specified amounts of each multihop swap in bytes
+/// The length of the `specifiedAmount`s of each multihop swap in bytes
+///
+/// `calculatedAmountThresholdBytes` (1 byte unsigned integer)
+/// The length of `calculatedAmountThreshold` in bytes
 ///
 /// `additionalMultiHopSwaps` (1 byte unsigned integer)
 /// How many more multihop swaps are encoded besides the mandotary one
@@ -53,10 +61,7 @@
 /// `withSqrtRatioLimit` (1 byte boolean)
 /// Whether swaps are encoded with a custom sqrt ratio limit
 ///
-/// `calculatedAmountThresholdBytes` (1 byte unsigned integer)
-/// The length of the `calculatedAmountThreshold` variable in bytes
-///
-/// `calculatedAmountThreshold` (variable length signed integer, up to 16 bytes)
+/// `calculatedAmountThreshold` (variable length signed integer, up to 16 bytes, non-zero)
 /// How much the last swaps needs to return at minimum for the call to succeed
 ///
 /// Per multihop swap:
@@ -64,42 +69,59 @@
 /// `specifiedAmount` (variable length signed integer, up to 16 bytes)
 /// The specified amount of the first swap
 ///
-/// `additionalSwaps` (`uint8`)
+/// `additionalSwaps` (1 byte unsigned integer)
 /// How many more swaps are encoded in this multihop swap besides the mandatory one
 ///
 /// Per swap:
 ///
-/// `token` (`address`)
+/// `token` (20 bytes address)
 /// The output token of this swap
 ///
-/// `poolConfig` (`bytes32`)
+/// `poolConfig` (32 bytes)
 /// The full pool config (fee, tick spacing, extension)
 ///
 /// After the swap data:
 ///
-/// `recipient` (optional `address`)
+/// `recipient` (`address`, optional)
 #define macro LOCKED() = takes(0) returns(0) {
+    // Push the values required for parsing the header
     [LOCKED_CALLDATA_OFFSET] calldataload                   // [firstWord]
-    dup1 dup1 dup1 dup1                                     // [firstWord, firstWord, firstWord, firstWord, firstWord]
+    dup1 dup1 dup1                                          // [firstWord, firstWord, firstWord, firstWord]
+    [CALCULATED_AMOUNT_THRESHOLD_OFFSET] calldataload       // [calculatedAmountThresholdWord, firstWord, firstWord, firstWord, firstWord]
+    dup2                                                    // [firstWord, calculatedAmountThresholdWord, firstWord, firstWord, firstWord, firstWord]
 
     // Parse `specifiedToken`
-    0x60 shr swap3                                          // [firstWord, firstWord, firstWord, specifiedToken, firstWord]
+    0x60 shr swap4                                          // [firstWord, calculatedAmountThresholdWord, firstWord, firstWord, specifiedToken, firstWord]
 
     // Parse `specifiedAmountBytes`
-    0x20 byte swap4                                         // [firstWord, firstWord, firstWord, specifiedToken, specifiedAmountBytes]
+    0x14 byte swap5                                         // [firstWord, calculatedAmountThresholdWord, firstWord, firstWord, specifiedToken, specifiedAmountBytes]
+
+    // Parse `calculatedAmountThresholdBytes`
+    0x15 byte swap2                                         // [firstWord, calculatedAmountThresholdWord, calculatedAmountThresholdBytes, firstWord, specifiedToken, specifiedAmountBytes]
 
     // Parse `additionalMultiHopSwaps`
-    0x21 byte swap2                                         // [firstWord, firstWord, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
+    0x16 byte swap3                                         // [firstWord, calculatedAmountThresholdWord, calculatedAmountThresholdBytes, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
 
     // Parse `withSqrtRatioLimit` and branch out
-    0x22 byte                                               // [withSqrtRatioLimit, firstWord, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
-    withSqrtRatioLimitJump jumpi
+    0x17 byte                                               // [withSqrtRatioLimit, calculatedAmountThresholdWord, calculatedAmountThresholdBytes, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
+    withSqrtRatioLimitJump jumpi                            // [calculatedAmountThresholdWord, calculatedAmountThresholdBytes, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
         FINISH_PARSING()
-    withSqrtRatioLimitJump:
+    withSqrtRatioLimitJump:                                 // [calculatedAmountThresholdWord, calculatedAmountThresholdBytes, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
         FINISH_PARSING()
 }
 
-#define macro FINISH_PARSING() = takes(4) returns (0) {
+#define macro FINISH_PARSING() = takes(5) returns (0) {
+    // takes: [calculatedAmountThresholdWord, calculatedAmountThresholdBytes, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
+
+    // Recover `calculatedAmountThreshold`
+    dup2 [BITS_PER_BYTE] mul                                // [calculatedAmountThresholdBits, calculatedAmountThresholdWord, calculatedAmountThresholdBytes, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
+    [BITS_PER_WORD] sub shr                                 // [calculatedAmountThresholdRaw, calculatedAmountThresholdBytes, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
+    0x1 dup3 sub signextend                                 // [calculatedAmountThreshold, calculatedAmountThresholdBytes, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
+
+    // Determine whether swap is exact-out from `calculatedAmountThreshold` sign
+    dup1 0x sgt exactOutJump jumpi
+
+    exactOutJump:
 
 }
 
