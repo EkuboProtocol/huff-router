@@ -1,0 +1,108 @@
+#define constant LOCK_CALLDATA_OFFSET = 0x4
+#define constant LOCKED_CALLDATA_OFFSET = 0x24
+
+#define macro MAIN() = takes(0) returns(0) {
+    0x calldataload                                         // [firstWord]
+
+    // Not only the function selector, but also the first 224 bits of the arguments (which is the locker id and always zero in any practical case)
+    __RIGHTPAD(__FUNC_SIG("locked(uint256)"))               // [lockedFirstWord, firstWord]
+
+    eq lockedJump jumpi                                     // []
+
+    // Same approach for payCallback which also includes the locker id
+    __RIGHTPAD(__FUNC_SIG("payCallback(uint256, address)"))
+
+    eq payCallbackJump jumpi                                // []
+        LOCK()
+    lockedJump:                                             // []
+        LOCKED()
+    payCallbackJump:                                        // []
+        PAY_CALLBACK()
+}
+
+#define macro LOCK() = takes(0) returns(0) {
+    __RIGHTPAD(__FUNC_SIG("lock()")) 0x mstore              // []
+
+    // Pass on the calldata unchanged
+    calldatasize 0x [LOCK_CALLDATA_OFFSET] calldatacopy     // []
+
+    // Call Core#lock()
+    0x 0x                                                   // [retOffset, retSize]
+    calldatasize [LOCK_CALLDATA_OFFSET] add                 // [argsSize, retOffset, retSize]
+    0x 0x [CORE_ADDRESS] gas call                           // [success]
+
+    returndatasize 0x 0x returndatacopy                     // [success]
+
+    successJump jumpi                                       // []
+        revert
+    successJump:                                            // []
+        returndatasize 0x return
+}
+
+/// @notice Ekubo Core callback, executing multi-multi-swaps
+///
+/// `specifiedToken` (20 bytes address)
+/// The specified token for the first swaps of each multihop swap
+///
+/// `specifiedAmountBytes` (1 byte unsigned integer)
+/// The length of the specified amounts of each multihop swap in bytes
+///
+/// `additionalMultiHopSwaps` (1 byte unsigned integer)
+/// How many more multihop swaps are encoded besides the mandotary one
+///
+/// `withSqrtRatioLimit` (1 byte boolean)
+/// Whether swaps are encoded with a custom sqrt ratio limit
+///
+/// `calculatedAmountThresholdBytes` (1 byte unsigned integer)
+/// The length of the `calculatedAmountThreshold` variable in bytes
+///
+/// `calculatedAmountThreshold` (variable length signed integer, up to 16 bytes)
+/// How much the last swaps needs to return at minimum for the call to succeed
+///
+/// Per multihop swap:
+///
+/// `specifiedAmount` (variable length signed integer, up to 16 bytes)
+/// The specified amount of the first swap
+///
+/// `additionalSwaps` (`uint8`)
+/// How many more swaps are encoded in this multihop swap besides the mandatory one
+///
+/// Per swap:
+///
+/// `token` (`address`)
+/// The output token of this swap
+///
+/// `poolConfig` (`bytes32`)
+/// The full pool config (fee, tick spacing, extension)
+///
+/// After the swap data:
+///
+/// `recipient` (optional `address`)
+#define macro LOCKED() = takes(0) returns(0) {
+    [LOCKED_CALLDATA_OFFSET] calldataload                   // [firstWord]
+    dup1 dup1 dup1 dup1                                     // [firstWord, firstWord, firstWord, firstWord, firstWord]
+
+    // Parse `specifiedToken`
+    0x60 shr swap3                                          // [firstWord, firstWord, firstWord, specifiedToken, firstWord]
+
+    // Parse `specifiedAmountBytes`
+    0x20 byte swap4                                         // [firstWord, firstWord, firstWord, specifiedToken, specifiedAmountBytes]
+
+    // Parse `additionalMultiHopSwaps`
+    0x21 byte swap2                                         // [firstWord, firstWord, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
+
+    // Parse `withSqrtRatioLimit` and branch out
+    0x22 byte                                               // [withSqrtRatioLimit, firstWord, additionalMultiHopSwaps, specifiedToken, specifiedAmountBytes]
+    withSqrtRatioLimitJump jumpi
+        FINISH_PARSING()
+    withSqrtRatioLimitJump:
+        FINISH_PARSING()
+}
+
+#define macro FINISH_PARSING() = takes(4) returns (0) {
+
+}
+
+#define macro PAY_CALLBACK() = takes(0) returns(0) {
+
+}

@@ -1,0 +1,2 @@
+[profile.default]
+ffi = true # Necessary for the HuffNeoDeployer
