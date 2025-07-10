@@ -216,12 +216,6 @@
 /// swap inputs are transferred from the delegating contract.
 /// Otherwise, approvals to this contract from the caller are consumed to settle the debt.
 #define macro LOCKED() = takes(0) returns(0) {
-    // FIXME Doesn't work because we need 4 replicas of this
-    // Copy the packed jump table to a destination that we know we won't override.
-    __tablesize(EXTENSION_TABLE)
-    __tablestart(EXTENSION_TABLE)
-    [MAX_ARGS_OFFSET] codecopy
-
     [LOCKED_CALLDATA_OFFSET] calldataload                                       // [firstWord]
 
     // Parse `specifiedAmountBytes`
@@ -288,37 +282,65 @@
     // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     noSqrtRatioExactInJump:
-        START_SWAPPING(
-            NO_OP(),
-            MIN_SQRT_RATIO,
-            MAX_SQRT_RATIO,
-        )
+        __tablesize(EXTENSION0_TABLE) __tablestart(EXTENSION0_TABLE)
+
+        START_SWAPPING(NO_OP())
+
+        baseExtension0Lbl:                                          // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            BASE_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
+        oracleExtension0Lbl:                                        // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            ORACLE_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
+        twammExtension0Lbl:                                         // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            TWAMM_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
+        mevResistExtension0Lbl:                                     // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            MEV_RESIST_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
+        unknownExtension0Lbl:                                       // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            UNKNOWN_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
     noSqrtRatioExactOutJump:
-        START_SWAPPING(
-            NEG(),
-            MAX_SQRT_RATIO,
-            MIN_SQRT_RATIO,
-        )
+        __tablesize(EXTENSION1_TABLE) __tablestart(EXTENSION1_TABLE)
+
+        START_SWAPPING(NEG())
+
+        baseExtension1Lbl:                                          // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            BASE_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
+        oracleExtension1Lbl:                                        // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            ORACLE_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
+        twammExtension1Lbl:                                         // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            TWAMM_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
+        mevResistExtension1Lbl:                                     // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            MEV_RESIST_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
+        unknownExtension1Lbl:                                       // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            UNKNOWN_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
     withSqrtRatioExactInJump:
-        START_SWAPPING(
-            NO_OP(),
-            STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
-            STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
-        )
+        __tablesize(EXTENSION2_TABLE) __tablestart(EXTENSION2_TABLE)
+
+        START_SWAPPING(NO_OP())
+
+        baseExtension2Lbl:                                          // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            BASE_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+        oracleExtension2Lbl:                                        // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            ORACLE_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+        twammExtension2Lbl:                                         // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            TWAMM_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+        mevResistExtension2Lbl:                                     // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            MEV_RESIST_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+        unknownExtension2Lbl:                                       // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            UNKNOWN_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
     withSqrtRatioExactOutJump:
-        START_SWAPPING(
-            NEG(),
-            STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
-            STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
-        )
-}
+        __tablesize(EXTENSION3_TABLE) __tablestart(EXTENSION3_TABLE)
 
-#define macro MAX_SQRT_RATIO() = {
-    [MAX_SQRT_RATIO]
-}
+        START_SWAPPING(NEG())
 
-#define macro MIN_SQRT_RATIO() = {
-    [MIN_SQRT_RATIO]
+        baseExtension3Lbl:                                          // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            BASE_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+        oracleExtension3Lbl:                                        // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            ORACLE_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+        twammExtension3Lbl:                                         // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            TWAMM_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+        mevResistExtension3Lbl:                                     // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            MEV_RESIST_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+        unknownExtension3Lbl:                                       // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            UNKNOWN_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
 }
 
 #define macro NEG() = takes(1) returns(1) {
@@ -326,8 +348,11 @@
     0x sub                                                      // [negated]
 }
 
-#define macro START_SWAPPING(specifiedSign, sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = {
-    // takes: [remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
+#define macro START_SWAPPING(specifiedSign) = {
+    // takes: [tableOffset, tableSize, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
+
+    // Copy the packed jump table to a destination that we know we won't override.
+    [MAX_ARGS_OFFSET] codecopy
 
     dup8 [BITS_PER_BYTE] mul                                            // [specifiedAmountBits, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
     dup6                                                                // [nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
@@ -365,81 +390,94 @@
             // Lookup in packed jump table
             0x2 mul [MAX_ARGS_OFFSET] add                               // [jumpOffset, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
             mload 0xf0 shr jump                                         // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+}
 
-            baseExtensionJump:                                          // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                dup1 0x12 shl 0xa0 shr [CONFIG_OFFSET] mstore           // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+#define macro BASE_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = {
+    dup1 0x12 shl 0xa0 shr [CONFIG_OFFSET] mstore           // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                STORE_SWAP_SELECTOR()                                   // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                STORE_SKIP_AHEAD()                                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    STORE_SWAP_SELECTOR()                                   // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    STORE_SKIP_AHEAD()                                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-                    0xe,
-                    <sqrtRatioLimitIsToken0>,
-                    <sqrtRatioLimitIsToken1>,
-                    PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
-                )
+    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
+        0xe,
+        <sqrtRatioLimitIsToken0>,
+        <sqrtRatioLimitIsToken1>,
+        PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+    )
+}
 
-            oracleExtensionJump:                                        // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                pop                                                     // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+#define macro ORACLE_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = {
+    pop                                                     // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                // Fee and tick spacing are zero
-                __RIGHTPAD([ORACLE]) [CONFIG_OFFSET] mstore             // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    // Fee and tick spacing are zero
+    __RIGHTPAD([ORACLE]) [CONFIG_OFFSET] mstore             // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                STORE_SWAP_SELECTOR()                                   // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    STORE_SWAP_SELECTOR()                                   // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-                    0x1,
-                    <sqrtRatioLimitIsToken0>,
-                    <sqrtRatioLimitIsToken1>,
-                    PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
-                )
+    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
+        0x1,
+        <sqrtRatioLimitIsToken0>,
+        <sqrtRatioLimitIsToken1>,
+        PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+    )
+}
 
-            twammExtensionJump:                                         // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                0x98 shr 0xffffffffffffffff00000000 and                 // [shiftedFee, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                __RIGHTPAD([TWAMM]) or [CONFIG_OFFSET] mstore           // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+#define macro TWAMM_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = {
+    0x98 shr 0xffffffffffffffff00000000 and                 // [shiftedFee, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    __RIGHTPAD([TWAMM]) or [CONFIG_OFFSET] mstore           // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                STORE_SWAP_SELECTOR()                                   // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    STORE_SWAP_SELECTOR()                                   // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-                    0x9,
-                    <sqrtRatioLimitIsToken0>,
-                    <sqrtRatioLimitIsToken1>,
-                    PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
-                )
+    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
+        0x9,
+        <sqrtRatioLimitIsToken0>,
+        <sqrtRatioLimitIsToken1>,
+        PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+    )
+}
 
-            mevResistExtensionJump:                                     // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                dup1 0x12 shl 0xa0 shr                                  // [configWithoutExtension, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                __RIGHTPAD([MEV_RESIST]) or                             // [config, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                [CONFIG_OFFSET] mstore                                  // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+#define macro MEV_RESIST_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = {
+    dup1 0x12 shl 0xa0 shr                                  // [configWithoutExtension, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    __RIGHTPAD([MEV_RESIST]) or                             // [config, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    [CONFIG_OFFSET] mstore                                  // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                [MEV_RESIST] STORE_FORWARD_SELECTOR_AND_TO()            // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                STORE_SKIP_AHEAD()                                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    [MEV_RESIST] STORE_FORWARD_SELECTOR_AND_TO()            // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    STORE_SKIP_AHEAD()                                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-                    0xe,
-                    <sqrtRatioLimitIsToken0>,
-                    <sqrtRatioLimitIsToken1>,
-                    PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
-                )
+    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
+        0xe,
+        <sqrtRatioLimitIsToken0>,
+        <sqrtRatioLimitIsToken1>,
+        PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+    )
+}
 
-            unknownExtensionJump:                                       // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                0x20 dup4 0x2 add [CONFIG_OFFSET] calldatacopy          // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+#define macro UNKNOWN_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = {
+    0x20 dup4 0x2 add [CONFIG_OFFSET] calldatacopy          // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                STORE_SWAP_SELECTOR()                                   // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-                STORE_SKIP_AHEAD()                                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    STORE_SWAP_SELECTOR()                                   // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    STORE_SKIP_AHEAD()                                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-                PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-                    0x22,
-                    <sqrtRatioLimitIsToken0>,
-                    <sqrtRatioLimitIsToken1>,
-                    PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
-                )
+    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
+        0x22,
+        <sqrtRatioLimitIsToken0>,
+        <sqrtRatioLimitIsToken1>,
+        PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+    )
 }
 
 #define macro STORE_SKIP_AHEAD() = takes(1) returns(1) {
     // takes: [swapWord]
     dup1 0x1 byte                                                   // [skipAhead, swapWord]
     [SKIP_AHEAD_OFFSET] mstore                                      // [swapWord]
+}
+
+#define macro STORE_MIN_SQRT_RATIO() = takes(0) returns(0) {
+    [MIN_SQRT_RATIO] [SQRT_RATIO_LIMIT_OFFSET] mstore               // []
+}
+
+#define macro STORE_MAX_SQRT_RATIO() = takes(0) returns(0) {
+    [MAX_SQRT_RATIO] [SQRT_RATIO_LIMIT_OFFSET] mstore               // []
 }
 
 #define macro STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA() = takes(1) returns(1) {
@@ -700,19 +738,6 @@
     pop                                                             // []
 }
 
-#define macro PARSE_TOKEN(offset, token0NotInMemory, token0AlreadyInMemory) = takes(1) returns(1) {
-    // takes: [tokenInfo]
-
-    dup1 0xff gt knownTokenJump jumpi                               // [tokenInfo]
-        pop                                                         // []
-        <offset> calldataload 0x60 shr                              // [token]
-        <token0NotInMemory>
-    knownTokenJump:                                                 // [tokenInfo]
-        STORE_KNOWN_TOKEN_AT_TOKEN0_OFFSET()                    // []
-        LOAD_KNOWN_TOKEN_FROM_TOKEN0_OFFSET()                                          // [token]
-        <token0AlreadyInMemory>
-}
-
 #define macro LOAD_KNOWN_TOKEN_FROM_TOKEN0_OFFSET() = takes(0) returns(1) {
     [TOKEN0_OFFSET] mload                                           // [token]
 }
@@ -742,12 +767,36 @@
     withSqrtRatioExactOutJump
 }
 
-#define jumptable__packed EXTENSION_TABLE {
-    baseExtensionJump
-    oracleExtensionJump
-    twammExtensionJump
-    mevResistExtensionJump
-    unknownExtensionJump
+#define jumptable__packed EXTENSION0_TABLE {
+    baseExtension0Lbl
+    oracleExtension0Lbl
+    twammExtension0Lbl
+    mevResistExtension0Lbl
+    unknownExtension0Lbl
+}
+
+#define jumptable__packed EXTENSION1_TABLE {
+    baseExtension1Lbl
+    oracleExtension1Lbl
+    twammExtension1Lbl
+    mevResistExtension1Lbl
+    unknownExtension1Lbl
+}
+
+#define jumptable__packed EXTENSION2_TABLE {
+    baseExtension2Lbl
+    oracleExtension2Lbl
+    twammExtension2Lbl
+    mevResistExtension2Lbl
+    unknownExtension2Lbl
+}
+
+#define jumptable__packed EXTENSION3_TABLE {
+    baseExtension3Lbl
+    oracleExtension3Lbl
+    twammExtension3Lbl
+    mevResistExtension3Lbl
+    unknownExtension3Lbl
 }
 
 // The following two tables are read together, so they must be consecutive in the code
