@@ -9,6 +9,7 @@ import {LibBit} from "solady/utils/LibBit.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {ICore} from "ekubo/interfaces/ICore.sol";
 import {CoreLib} from "ekubo/libraries/CoreLib.sol";
+import {readTokensFromFile} from "../src/TokenReader.sol";
 
 address constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
 address constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
@@ -28,8 +29,7 @@ contract HyperRouterTest is Test {
     receive() external payable {}
 
     constructor() {
-        string memory jsonContents = vm.readFile("src/tokens.json");
-        tokens = abi.decode(vm.parseJson(jsonContents, "$..address"), (address[]));
+        tokens = readTokensFromFile(vm);
     }
 
     modifier setUpFork(uint256 blockNumber) {

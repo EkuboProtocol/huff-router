@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {HuffNeoConfig} from "foundry-huff-neo/HuffNeoConfig.sol";
 import {VmSafe} from "forge-std/Vm.sol";
+import {readTokensFromFile, TOKEN_COUNT} from "./TokenReader.sol";
 
 address constant CORE_ADDRESS = 0xe0e0e08A6A4b9Dc7bD67BCB7aadE5cF48157d444;
 address constant ORACLE_ADDRESS = 0x51d02A5948496a67827242EaBc5725531342527C;
@@ -12,13 +13,9 @@ address constant MEV_RESIST_ADDRESS = 0x553a2EFc570c9e104942cEC6aC1c18118e54C091
 library HyperRouter {
     uint8 constant ALPHABET_LENGTH = 26;
     uint8 constant UPPERCASE_LETTER_START = 65;
-    uint8 constant TOKEN_COUNT = 90;
 
     function deploy(VmSafe vm) internal returns (address) {
-        string memory jsonContents = vm.readFile("src/tokens.json");
-        address[] memory addresses = abi.decode(vm.parseJson(jsonContents, "$..address"), (address[]));
-
-        require(addresses.length == TOKEN_COUNT, string.concat("need exactly ", vm.toString(TOKEN_COUNT), " tokens"));
+        address[] memory tokens = readTokensFromFile(vm);
 
         // We don't use HuffNeoDeployer because of https://github.com/foundry-rs/foundry/issues/6215
         HuffNeoConfig config = new HuffNeoConfig().set_broadcast(true).with_addr_constant("CORE", CORE_ADDRESS)
@@ -31,7 +28,7 @@ library HyperRouter {
                 "TOKEN_", letterFromAsciiOffset(i / ALPHABET_LENGTH), letterFromAsciiOffset(i % ALPHABET_LENGTH)
             );
 
-            config = config.with_addr_constant(name, addresses[i]);
+            config = config.with_addr_constant(name, tokens[i]);
         }
 
         return config.deploy("src/HyperRouter.huff");
