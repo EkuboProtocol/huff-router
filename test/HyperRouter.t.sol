@@ -3,13 +3,29 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {HyperRouter} from "../src/HyperRouter.sol";
-import {CORE_ADDRESS, ORACLE_ADDRESS} from "../src/chains/mainnet.sol";
+import {HyperRouter, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
+import {TestCase, MultiHopSwap, Swap, IntegrationFee, TokenIdOrAddress, PoolConfig} from "./TestCase.sol";
+import {LibBit} from "solady/utils/LibBit.sol";
+import {LibBytes} from "solady/utils/LibBytes.sol";
 
 address constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
 address constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 address constant USDT_ADDRESS = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
 address constant EKUBO_ADDRESS = 0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f;
+
+function minRequiredBytes(uint128 val) pure returns (uint8 byteCount) {
+    uint256 fls = LibBit.fls(val);
+
+    if (fls == 256) {
+        byteCount = 0;
+    } else {
+        byteCount = uint8((fls / 8) + 1);
+    }
+}
+
+function varLengthEncoded(uint128 val, uint8 b) pure returns (bytes memory) {
+    return LibBytes.slice(bytes.concat(bytes16(val)), 16 - b);
+}
 
 contract HyperRouterTest is Test {
     address hyperRouter;
@@ -40,24 +56,146 @@ contract HyperRouterTest is Test {
         }
     }
 
-    function test_shortestCalldata() external setUpFork(22887652) {
-        uint256 value = 1_000;
+    function fixtureTestCase() external pure returns (TestCase[] memory cases) {
+        cases = new TestCase[](1);
 
-        (bool success,) = hyperRouter.call{value: value}(
-            bytes.concat(
-                hex"00", // withRecipient
-                hex"00", // specifiedAmountBytes
-                hex"00", // calculatedAmountThresholdBytes
-                hex"00", // specifiedTokenInfo
-                hex"01", // calculatedTokenInfo
-                hex"00", // additionalMultiHopSwaps
-                hex"00", // withIntegrationFee
-                hex"00", // withSqrtRatioLimit | isExactOut
-                hex"00", // additionalSwaps
-                hex"01" // extensionInfo
-            )
-        );
+        {
+            MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](1);
+            Swap[] memory swaps = new Swap[](1);
 
-        console.log(success);
+            swaps[0] = Swap(PoolConfig(ORACLE_ADDRESS, 0, 0), false, 0, TokenIdOrAddress(address(1), true), 0);
+
+            multiHopSwaps[0] = MultiHopSwap(0, swaps);
+
+            cases[0] = TestCase(
+                address(0),
+                0,
+                TokenIdOrAddress(address(0), true),
+                TokenIdOrAddress(address(1), true),
+                IntegrationFee(0, address(0)),
+                false,
+                false,
+                multiHopSwaps
+            );
+        }
+    }
+
+    function tableTestCaseTest(TestCase memory testCase) public setUpFork(22887652) {
+        bytes memory data = new bytes(8);
+
+        if (testCase.recipient == address(0)) {
+            data[0] = hex"00";
+        } else {
+            data[0] = hex"01";
+        }
+
+        uint8 specifiedAmountBytes;
+
+        for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
+            MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
+
+            uint128 specifiedAmount = multiHopSwap.specifiedAmount;
+            uint8 byteCount = minRequiredBytes(specifiedAmount);
+
+            if (byteCount > specifiedAmountBytes) {
+                specifiedAmountBytes = byteCount;
+            }
+        }
+
+        data[1] = bytes1(specifiedAmountBytes);
+
+        uint8 calculatedAmountThresholdBytes = minRequiredBytes(testCase.calculatedAmountThreshold);
+        data[2] = bytes1(calculatedAmountThresholdBytes);
+
+        data[3] = testCase.specifiedTokenIdOrAddress.tokenId();
+        data[4] = testCase.calculatedTokenIdOrAddress.tokenId();
+
+        uint256 additionalMultiHopSwaps = testCase.multiHopSwaps.length - 1;
+
+        assertLt(additionalMultiHopSwaps, type(uint8).max);
+
+        data[5] = bytes1(uint8(additionalMultiHopSwaps));
+        data[6] = bytes1(testCase.integrationFee.nonZeroShare() ? 1 : 0);
+        data[7] = bytes1((testCase.isExactOut ? 1 : 0) + (testCase.withSqrtRatioLimit ? 2 : 0));
+
+        data = bytes.concat(data, varLengthEncoded(testCase.calculatedAmountThreshold, calculatedAmountThresholdBytes));
+
+        if (!testCase.specifiedTokenIdOrAddress.isId) {
+            data = bytes.concat(data, bytes20(testCase.specifiedTokenIdOrAddress.value));
+        }
+
+        if (!testCase.calculatedTokenIdOrAddress.isId) {
+            data = bytes.concat(data, bytes20(testCase.calculatedTokenIdOrAddress.value));
+        }
+
+        for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
+            MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
+            uint256 swapCount = multiHopSwap.swaps.length;
+            uint256 additionalSwaps = swapCount - 1;
+
+            assertLt(additionalSwaps, type(uint8).max);
+
+            data = bytes.concat(
+                data,
+                varLengthEncoded(multiHopSwap.specifiedAmount, specifiedAmountBytes),
+                bytes1(uint8(additionalSwaps))
+            );
+
+            for (uint256 j = 0; j < swapCount; j++) {
+                Swap memory swap = multiHopSwap.swaps[j];
+
+                if (swap.isUnknown) {
+                    data = bytes.concat(
+                        data,
+                        hex"04",
+                        bytes1(swap.skipAhead),
+                        bytes20(swap.config.extension),
+                        bytes8(swap.config.fee),
+                        bytes4(swap.config.tickSpacing)
+                    );
+                } else if (swap.config.extension == address(0)) {
+                    data = bytes.concat(
+                        data, hex"00", bytes1(swap.skipAhead), bytes8(swap.config.fee), bytes4(swap.config.tickSpacing)
+                    );
+                } else if (swap.config.extension == ORACLE_ADDRESS) {
+                    data = bytes.concat(data, hex"01");
+                } else if (swap.config.extension == TWAMM_ADDRESS) {
+                    data = bytes.concat(data, hex"02", bytes8(swap.config.fee));
+                } else if (swap.config.extension == MEV_RESIST_ADDRESS) {
+                    data = bytes.concat(
+                        data, hex"03", bytes1(swap.skipAhead), bytes8(swap.config.fee), bytes4(swap.config.tickSpacing)
+                    );
+                } else {
+                    revert();
+                }
+
+                if (j != swapCount - 1) {
+                    data = bytes.concat(data, swap.calculatedTokenIdOrAddress.tokenId());
+
+                    if (!swap.calculatedTokenIdOrAddress.isId) {
+                        data = bytes.concat(data, bytes20(swap.calculatedTokenIdOrAddress.value));
+                    }
+                }
+
+                uint96 sqrtRatioLimit = swap.sqrtRatioLimit;
+
+                if (testCase.withSqrtRatioLimit) {
+                    assertNotEq(sqrtRatioLimit, 0);
+
+                    data = bytes.concat(data, bytes12(sqrtRatioLimit));
+                } else {
+                    assertEq(sqrtRatioLimit, 0);
+                }
+            }
+        }
+
+        IntegrationFee memory integrationFee = testCase.integrationFee;
+        if (integrationFee.nonZeroShare()) {
+            data = bytes.concat(data, bytes2(integrationFee.share), bytes20(integrationFee.integrator));
+        }
+
+        (bool success,) = hyperRouter.call(data);
+
+        assertTrue(success);
     }
 }

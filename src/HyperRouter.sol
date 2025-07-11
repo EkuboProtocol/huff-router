@@ -3,13 +3,17 @@ pragma solidity ^0.8.30;
 
 import {HuffNeoConfig} from "foundry-huff-neo/HuffNeoConfig.sol";
 import {VmSafe} from "forge-std/Vm.sol";
-import {CORE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "./chains/mainnet.sol";
 
-uint8 constant ALPHABET_LENGTH = 26;
-uint8 constant UPPERCASE_LETTER_START = 65;
-uint8 constant TOKEN_COUNT = 90;
+address constant CORE_ADDRESS = 0xe0e0e08A6A4b9Dc7bD67BCB7aadE5cF48157d444;
+address constant ORACLE_ADDRESS = 0x51d02A5948496a67827242EaBc5725531342527C;
+address constant TWAMM_ADDRESS = 0xD4279c050DA1F5c5B2830558C7A08E57e12b54eC;
+address constant MEV_RESIST_ADDRESS = 0x553a2EFc570c9e104942cEC6aC1c18118e54C091;
 
 library HyperRouter {
+    uint8 constant ALPHABET_LENGTH = 26;
+    uint8 constant UPPERCASE_LETTER_START = 65;
+    uint8 constant TOKEN_COUNT = 90;
+
     function deploy(VmSafe vm) internal returns (address) {
         string memory jsonContents = vm.readFile("src/tokens.json");
         address[] memory addresses = abi.decode(vm.parseJson(jsonContents, "$..address"), (address[]));
