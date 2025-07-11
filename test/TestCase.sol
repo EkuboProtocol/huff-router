@@ -35,7 +35,7 @@ struct PoolConfig {
 
 struct Swap {
     PoolConfig config;
-    bool isUnknown;
+    bool isKnownExtension;
     uint8 skipAhead;
     TokenIdOrAddress calculatedTokenIdOrAddress;
     uint96 sqrtRatioLimit;
@@ -47,12 +47,16 @@ struct MultiHopSwap {
 }
 
 struct TestCase {
-    address recipient;
-    uint128 calculatedAmountThreshold;
     TokenIdOrAddress specifiedTokenIdOrAddress;
     TokenIdOrAddress calculatedTokenIdOrAddress;
-    IntegrationFee integrationFee;
     bool isExactOut;
     bool withSqrtRatioLimit;
     MultiHopSwap[] multiHopSwaps;
+    bool delegateCall;
+    address recipient;
+    uint128 calculatedAmountThreshold;
+    IntegrationFee integrationFee;
+    int128 expectedTokenInDiff;
+    int128 expectedTokenOutDiff;
+    uint128 expectedIntegratorDiff;
 }

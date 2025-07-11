@@ -3,34 +3,34 @@ pragma solidity ^0.8.30;
 
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {HyperRouter, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
+import {HyperRouter, CORE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
 import {TestCase, MultiHopSwap, Swap, IntegrationFee, TokenIdOrAddress, PoolConfig} from "./TestCase.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
+import {ICore} from "ekubo/interfaces/ICore.sol";
+import {CoreLib} from "ekubo/libraries/CoreLib.sol";
 
 address constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
 address constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 address constant USDT_ADDRESS = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
 address constant EKUBO_ADDRESS = 0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f;
 
-function minRequiredBytes(uint128 val) pure returns (uint8 byteCount) {
-    uint256 fls = LibBit.fls(val);
+bytes32 constant SAVED_BALANCE_SALT = keccak256("HYPER_ROUTER");
 
-    if (fls == 256) {
-        byteCount = 0;
-    } else {
-        byteCount = uint8((fls / 8) + 1);
-    }
-}
+ICore constant CORE = ICore(CORE_ADDRESS);
 
-function varLengthEncoded(uint128 val, uint8 b) pure returns (bytes memory) {
-    return LibBytes.slice(bytes.concat(bytes16(val)), 16 - b);
-}
+using CoreLib for ICore;
 
 contract HyperRouterTest is Test {
     address hyperRouter;
+    address[] tokens;
 
     receive() external payable {}
+
+    constructor() {
+        string memory jsonContents = vm.readFile("src/tokens.json");
+        tokens = abi.decode(vm.parseJson(jsonContents, "$..address"), (address[]));
+    }
 
     modifier setUpFork(uint256 blockNumber) {
         vm.createSelectFork(vm.rpcUrl("mainnet"), blockNumber);
@@ -48,12 +48,38 @@ contract HyperRouterTest is Test {
         _;
     }
 
-    function balanceOf(address token) private view returns (uint256 balance) {
-        if (token == NATIVE_TOKEN_ADDRESS) {
-            balance = address(this).balance;
+    function minRequiredBytes(uint128 val) private pure returns (uint8 byteCount) {
+        uint256 fls = LibBit.fls(val);
+
+        if (fls == 256) {
+            byteCount = 0;
         } else {
-            balance = IERC20(token).balanceOf(address(this));
+            byteCount = uint8((fls / 8) + 1);
         }
+    }
+
+    function varLengthEncoded(uint128 val, uint8 b) private pure returns (bytes memory) {
+        return LibBytes.slice(bytes.concat(bytes16(val)), 16 - b);
+    }
+
+    function balanceOf(address owner, address token) private view returns (uint256 balance) {
+        if (token == NATIVE_TOKEN_ADDRESS) {
+            return owner.balance;
+        } else {
+            return IERC20(token).balanceOf(owner);
+        }
+    }
+
+    function resolveToken(TokenIdOrAddress memory tokenIdOrAddress) private view returns (address token) {
+        if (!tokenIdOrAddress.isId) {
+            return tokenIdOrAddress.value;
+        }
+
+        return tokens[uint256(uint160(tokenIdOrAddress.value))];
+    }
+
+    function savedBalance(address owner, address token) private view returns (uint128 balance) {
+        return CORE.savedBalances(token, owner, SAVED_BALANCE_SALT);
     }
 
     function fixtureTestCase() external pure returns (TestCase[] memory cases) {
@@ -63,30 +89,43 @@ contract HyperRouterTest is Test {
             MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](1);
             Swap[] memory swaps = new Swap[](1);
 
-            swaps[0] = Swap(PoolConfig(ORACLE_ADDRESS, 0, 0), false, 0, TokenIdOrAddress(address(1), true), 0);
+            swaps[0] = Swap({
+                config: PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0}),
+                isKnownExtension: true,
+                skipAhead: 0,
+                calculatedTokenIdOrAddress: TokenIdOrAddress({value: address(1), isId: true}),
+                sqrtRatioLimit: 0
+            });
 
-            multiHopSwaps[0] = MultiHopSwap(0, swaps);
+            multiHopSwaps[0] = MultiHopSwap({specifiedAmount: 0, swaps: swaps});
 
-            cases[0] = TestCase(
-                address(0),
-                0,
-                TokenIdOrAddress(address(0), true),
-                TokenIdOrAddress(address(1), true),
-                IntegrationFee(0, address(0)),
-                false,
-                false,
-                multiHopSwaps
-            );
+            cases[0] = TestCase({
+                specifiedTokenIdOrAddress: TokenIdOrAddress({value: address(0), isId: true}),
+                calculatedTokenIdOrAddress: TokenIdOrAddress({value: address(1), isId: true}),
+                isExactOut: false,
+                withSqrtRatioLimit: false,
+                multiHopSwaps: multiHopSwaps,
+                delegateCall: false,
+                recipient: address(0),
+                calculatedAmountThreshold: 0,
+                integrationFee: IntegrationFee({share: 0, integrator: address(0)}),
+                expectedTokenInDiff: 0,
+                expectedTokenOutDiff: 0,
+                expectedIntegratorDiff: 0
+            });
         }
     }
 
     function tableTestCaseTest(TestCase memory testCase) public setUpFork(22887652) {
         bytes memory data = new bytes(8);
+        address recipient;
 
         if (testCase.recipient == address(0)) {
             data[0] = hex"00";
+            recipient = address(this);
         } else {
             data[0] = hex"01";
+            recipient = testCase.recipient;
         }
 
         uint8 specifiedAmountBytes;
@@ -128,6 +167,9 @@ contract HyperRouterTest is Test {
             data = bytes.concat(data, bytes20(testCase.calculatedTokenIdOrAddress.value));
         }
 
+        (address specifiedToken, address calculatedToken) =
+            (resolveToken(testCase.specifiedTokenIdOrAddress), resolveToken(testCase.calculatedTokenIdOrAddress));
+
         for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
             MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
             uint256 swapCount = multiHopSwap.swaps.length;
@@ -144,7 +186,7 @@ contract HyperRouterTest is Test {
             for (uint256 j = 0; j < swapCount; j++) {
                 Swap memory swap = multiHopSwap.swaps[j];
 
-                if (swap.isUnknown) {
+                if (!swap.isKnownExtension) {
                     data = bytes.concat(
                         data,
                         hex"04",
@@ -169,7 +211,9 @@ contract HyperRouterTest is Test {
                     revert();
                 }
 
-                if (j != swapCount - 1) {
+                if (j == swapCount - 1) {
+                    assertEq(calculatedToken, resolveToken(swap.calculatedTokenIdOrAddress));
+                } else {
                     data = bytes.concat(data, swap.calculatedTokenIdOrAddress.tokenId());
 
                     if (!swap.calculatedTokenIdOrAddress.isId) {
@@ -190,12 +234,39 @@ contract HyperRouterTest is Test {
         }
 
         IntegrationFee memory integrationFee = testCase.integrationFee;
+        address integrator = integrationFee.integrator;
         if (integrationFee.nonZeroShare()) {
-            data = bytes.concat(data, bytes2(integrationFee.share), bytes20(integrationFee.integrator));
+            data = bytes.concat(data, bytes2(integrationFee.share), bytes20(integrator));
         }
 
-        (bool success,) = hyperRouter.call(data);
+        if (testCase.recipient != address(0)) {
+            data = bytes.concat(data, bytes20(testCase.recipient));
+        }
 
+        (address tokenIn, address tokenOut, address integratorToken) = testCase.isExactOut
+            ? (calculatedToken, specifiedToken, specifiedToken)
+            : (specifiedToken, calculatedToken, calculatedToken);
+
+        (uint256 thisBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) = (
+            balanceOf(address(this), tokenIn), balanceOf(recipient, tokenOut), savedBalance(integrator, integratorToken)
+        );
+
+        (bool success,) = testCase.delegateCall ? hyperRouter.delegatecall(data) : hyperRouter.call(data);
         assertTrue(success);
+
+        (uint256 thisBalanceAfter, uint256 recipientBalanceAfter, uint128 integratorBalanceAfter) = (
+            balanceOf(address(this), tokenIn), balanceOf(recipient, tokenOut), savedBalance(integrator, integratorToken)
+        );
+
+        assertEq(testCase.expectedTokenInDiff, int128(int256(thisBalanceAfter)) - int128(int256(thisBalanceBefore)));
+        assertEq(
+            testCase.expectedTokenOutDiff,
+            int128(int256(recipientBalanceAfter)) - int128(int256(recipientBalanceBefore))
+        );
+        assertEq(testCase.expectedIntegratorDiff, integratorBalanceAfter - integratorBalanceBefore);
+    }
+
+    fallback() external {
+        // TODO Forward
     }
 }
