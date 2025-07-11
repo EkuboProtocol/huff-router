@@ -600,13 +600,15 @@
         CALL_SWAP(<callArgs>)                                       // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
         LAST_SWAP_IN_MULTI_HOP()
-    isToken1Jump:                                                   // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken]
-        [TOKEN1_OFFSET] mstore                                      // [offset, additionalSwaps, nextCalculatedToken]
-        TOKEN0_NOT_IN_MEMORY()                                        // [offset, additionalSwaps, nextCalculatedToken]
-        <sqrtRatioLimitIsToken1>                                    // [offset, additionalSwaps, nextCalculatedToken]
-        0x1 [IS_TOKEN1_OFFSET] mstore                               // [offset, additionalSwaps, nextCalculatedToken]
+    isToken1Jump:                                                   // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        [TOKEN1_OFFSET] mstore                                      // [nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        [TOKEN0_OFFSET] mstore                                      // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        <sqrtRatioLimitIsToken1>                                    // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        0x1 [IS_TOKEN1_OFFSET] mstore                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        CALL_SWAP(<callArgs>)
+        CALL_SWAP(<callArgs>)                                       // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        LAST_SWAP_IN_MULTI_HOP()
 
     // need: [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 }
