@@ -3,3 +3,4 @@ solc = "0.8.30"
 ffi = true # Necessary for the HuffNeoDeployer
 fs_permissions = [{ access = "read", path = "src/tokens.json"}]
 via-ir = true
+gas_snapshot_check = true

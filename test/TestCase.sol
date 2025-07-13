@@ -1,20 +1,10 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-struct TokenIdOrAddress {
-    address value;
-    bool isId;
-}
+import {NATIVE_TOKEN_ADDRESS} from "ekubo/src/math/constants.sol";
+import {TokenInfo, resolve} from "./TokenInfo.sol";
 
-function tokenId(TokenIdOrAddress memory idOrAddress) pure returns (bytes1 id) {
-    if (idOrAddress.isId) {
-        id = bytes1(uint8(uint160(idOrAddress.value)));
-    } else {
-        id = 0xff;
-    }
-}
-
-using {tokenId} for TokenIdOrAddress global;
+using {resolve} for address[];
 
 struct IntegrationFee {
     uint16 share;
@@ -37,7 +27,7 @@ struct Swap {
     PoolConfig config;
     bool isKnownExtension;
     uint8 skipAhead;
-    TokenIdOrAddress calculatedTokenIdOrAddress;
+    TokenInfo calculatedTokenInfo;
     uint96 sqrtRatioLimit;
 }
 
@@ -47,8 +37,8 @@ struct MultiHopSwap {
 }
 
 struct TestCase {
-    TokenIdOrAddress specifiedTokenIdOrAddress;
-    TokenIdOrAddress calculatedTokenIdOrAddress;
+    TokenInfo specifiedTokenInfo;
+    TokenInfo calculatedTokenInfo;
     bool isExactOut;
     bool withSqrtRatioLimit;
     MultiHopSwap[] multiHopSwaps;
@@ -60,3 +50,16 @@ struct TestCase {
     int128 expectedTokenOutDiff;
     uint128 expectedIntegratorDiff;
 }
+
+function name(TestCase memory testCase, address[] memory tokens) pure returns (string memory) {
+    return string.concat(
+        "specified",
+        testCase.specifiedTokenInfo.isKnown ? "Known" : "Unknown",
+        tokens.resolve(testCase.specifiedTokenInfo) == NATIVE_TOKEN_ADDRESS ? "Native" : "ERC20",
+        "_calculated",
+        testCase.calculatedTokenInfo.isKnown ? "Known" : "Unknown",
+        tokens.resolve(testCase.calculatedTokenInfo) == NATIVE_TOKEN_ADDRESS ? "Native" : "ERC20"
+    );
+}
+
+using {name} for TestCase global;

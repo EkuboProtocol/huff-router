@@ -4,14 +4,18 @@ pragma solidity ^0.8.30;
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HyperRouter, CORE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
-import {TestCase, MultiHopSwap, Swap, IntegrationFee, TokenIdOrAddress, PoolConfig} from "./TestCase.sol";
+import {TestCase, MultiHopSwap, Swap, IntegrationFee, PoolConfig} from "./TestCase.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {ICore} from "ekubo/interfaces/ICore.sol";
 import {CoreLib} from "ekubo/libraries/CoreLib.sol";
 import {readTokensFromFile} from "../src/TokenReader.sol";
+import {TokenInfo, resolve} from "./TokenInfo.sol";
+import {NATIVE_TOKEN_ADDRESS} from "ekubo/src/math/constants.sol";
 
-address constant NATIVE_TOKEN_ADDRESS = 0x0000000000000000000000000000000000000000;
+using {resolve} for address[];
+using CoreLib for ICore;
+
 address constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
 address constant USDT_ADDRESS = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
 address constant EKUBO_ADDRESS = 0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f;
@@ -20,11 +24,11 @@ bytes32 constant SAVED_BALANCE_SALT = keccak256("HYPER_ROUTER");
 
 ICore constant CORE = ICore(CORE_ADDRESS);
 
-using CoreLib for ICore;
-
 contract HyperRouterTest is Test {
     address hyperRouter;
     address[] tokens;
+
+    bool[2] BOOLS = [true, false];
 
     receive() external payable {}
 
@@ -70,38 +74,32 @@ contract HyperRouterTest is Test {
         }
     }
 
-    function resolveToken(TokenIdOrAddress memory tokenIdOrAddress) private view returns (address token) {
-        if (!tokenIdOrAddress.isId) {
-            return tokenIdOrAddress.value;
-        }
-
-        return tokens[uint256(uint160(tokenIdOrAddress.value))];
-    }
-
     function savedBalance(address owner, address token) private view returns (uint128 balance) {
         return CORE.savedBalances(token, owner, SAVED_BALANCE_SALT);
     }
 
-    function fixtureTestCase() external pure returns (TestCase[] memory cases) {
-        cases = new TestCase[](1);
+    function fixtureTestCase() external view returns (TestCase[] memory cases) {
+        cases = new TestCase[](BOOLS.length);
 
-        {
+        for (uint256 a = 0; a < BOOLS.length; a++) {
+            bool isKnownExtension = BOOLS[a];
+
             MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](1);
             Swap[] memory swaps = new Swap[](1);
 
             swaps[0] = Swap({
                 config: PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0}),
-                isKnownExtension: true,
+                isKnownExtension: isKnownExtension,
                 skipAhead: 0,
-                calculatedTokenIdOrAddress: TokenIdOrAddress({value: address(1), isId: true}),
+                calculatedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
                 sqrtRatioLimit: 0
             });
 
             multiHopSwaps[0] = MultiHopSwap({specifiedAmount: 0, swaps: swaps});
 
-            cases[0] = TestCase({
-                specifiedTokenIdOrAddress: TokenIdOrAddress({value: address(0), isId: true}),
-                calculatedTokenIdOrAddress: TokenIdOrAddress({value: address(1), isId: true}),
+            cases[a] = TestCase({
+                specifiedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
+                calculatedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
                 isExactOut: false,
                 withSqrtRatioLimit: false,
                 multiHopSwaps: multiHopSwaps,
@@ -146,8 +144,8 @@ contract HyperRouterTest is Test {
         uint8 calculatedAmountThresholdBytes = minRequiredBytes(testCase.calculatedAmountThreshold);
         data[2] = bytes1(calculatedAmountThresholdBytes);
 
-        data[3] = testCase.specifiedTokenIdOrAddress.tokenId();
-        data[4] = testCase.calculatedTokenIdOrAddress.tokenId();
+        data[3] = testCase.specifiedTokenInfo.id();
+        data[4] = testCase.calculatedTokenInfo.id();
 
         uint256 additionalMultiHopSwaps = testCase.multiHopSwaps.length - 1;
 
@@ -159,16 +157,16 @@ contract HyperRouterTest is Test {
 
         data = bytes.concat(data, varLengthEncoded(testCase.calculatedAmountThreshold, calculatedAmountThresholdBytes));
 
-        if (!testCase.specifiedTokenIdOrAddress.isId) {
-            data = bytes.concat(data, bytes20(testCase.specifiedTokenIdOrAddress.value));
+        if (!testCase.specifiedTokenInfo.isKnown) {
+            data = bytes.concat(data, bytes20(testCase.specifiedTokenInfo.value));
         }
 
-        if (!testCase.calculatedTokenIdOrAddress.isId) {
-            data = bytes.concat(data, bytes20(testCase.calculatedTokenIdOrAddress.value));
+        if (!testCase.calculatedTokenInfo.isKnown) {
+            data = bytes.concat(data, bytes20(testCase.calculatedTokenInfo.value));
         }
 
         (address specifiedToken, address calculatedToken) =
-            (resolveToken(testCase.specifiedTokenIdOrAddress), resolveToken(testCase.calculatedTokenIdOrAddress));
+            (tokens.resolve(testCase.specifiedTokenInfo), tokens.resolve(testCase.calculatedTokenInfo));
 
         for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
             MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
@@ -212,12 +210,12 @@ contract HyperRouterTest is Test {
                 }
 
                 if (j == swapCount - 1) {
-                    assertEq(calculatedToken, resolveToken(swap.calculatedTokenIdOrAddress));
+                    assertEq(calculatedToken, tokens.resolve(swap.calculatedTokenInfo));
                 } else {
-                    data = bytes.concat(data, swap.calculatedTokenIdOrAddress.tokenId());
+                    data = bytes.concat(data, swap.calculatedTokenInfo.id());
 
-                    if (!swap.calculatedTokenIdOrAddress.isId) {
-                        data = bytes.concat(data, bytes20(swap.calculatedTokenIdOrAddress.value));
+                    if (!swap.calculatedTokenInfo.isKnown) {
+                        data = bytes.concat(data, bytes20(swap.calculatedTokenInfo.value));
                     }
                 }
 
@@ -252,6 +250,7 @@ contract HyperRouterTest is Test {
         );
 
         (bool success,) = testCase.delegateCall ? hyperRouter.delegatecall(data) : hyperRouter.call(data);
+        vm.snapshotGasLastCall(testCase.name(tokens));
         assertTrue(success);
 
         (uint256 thisBalanceAfter, uint256 recipientBalanceAfter, uint128 integratorBalanceAfter) = (
