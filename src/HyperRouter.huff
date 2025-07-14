@@ -33,6 +33,29 @@
 
 #define constant MAX_ARGS_OFFSET = 0x104
 
+/*
+ * ATTENTION: This is a volatile value and may change even on minor modifications.
+ * The reason for that seems to be that hnc doesn't insert jump and code tables in
+ * the order that they appear in the source file but their first usage.
+ * As of now, this offset includes the TOKENS and SAVE_DATA tables and all jump tables.
+ */
+#define constant ROUTER_ADDRESS_END_OFFSET = 0x854
+
+#define macro CONSTRUCTOR() = {
+    // Copy runtime code into memory
+    __codesize(CONSTRUCTOR)                                                 // [constructorSize]
+    codesize sub                                                            // [runtimeSize]
+    address                                                                 // [address, runtimeSize]
+    [ROUTER_ADDRESS_END_OFFSET] dup3 sub                                    // [routerAddressOffset, address, runtimeSize]
+    dup3 __codesize(CONSTRUCTOR) 0x                                         // [memOffset, constructorSize, runtimeSize, routerAddressOffset, address, runtimeSize]
+    codecopy                                                                // [routerAddressOffset, address, runtimeSize]
+
+    // Write router address to runtime code
+    mstore                                                                  // [runtimeSize]
+
+    0x return
+}
+
 #define macro MAIN() = takes(0) returns(0) {
     0x calldataload dup1                                                    // [firstWord, firstWord]
 
@@ -62,7 +85,9 @@
 /// See LOCKED() for description of the remaining calldata.
 #define macro LOCK() = takes(0) returns(0) {
     // Load lock() selector and router address in one `codecopy`
-    0x24 __tablestart(LOCK_SIG_TABLE) 0x codecopy                           // []
+    __tablesize(LOCK_SIG_AND_ROUTER_ADDRESS_TABLE)                          // [tableSize]
+    __tablestart(LOCK_SIG_AND_ROUTER_ADDRESS_TABLE)                         // [tableStart, tableSize]
+    0x codecopy                                                             // []
     0x4 mload                                                               // [routerAddress]
 
     // Load `withRecipient`
@@ -797,15 +822,6 @@
     unknownExtension3Lbl
 }
 
-// The following two tables are read together, so they must be consecutive in the code
-#define table LOCK_SIG_TABLE {
-    __FUNC_SIG("lock()")
-}
-// TODO Constructor
-#define table ROUTER_ADDRESS_TABLE {
-    __LEFTPAD(0x) // Will be replaced with the ABI-encoded address of this contract in the constructor
-}
-
 #define table TOKENS {
     [TOKEN_AA]
     [TOKEN_AB]
@@ -899,6 +915,12 @@
     [TOKEN_DL]
 }
 
+#define table LOCK_SIG_AND_ROUTER_ADDRESS_TABLE {
+    __FUNC_SIG("lock()")
+    __LEFTPAD(0x) // Will be replaced with the ABI-encoded address of this contract in the constructor
+}
+
+// FIXME Probably doesn't work
 // NOTE: This must be the last code because we're using that `codecopy` substitutes out-of-bounds code areas with zeroes
 #define table SAVE_DATA {
     __FUNC_SIG("save(address,address,address,bytes32,uint128,uint128)")     // selector
