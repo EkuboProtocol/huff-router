@@ -39,7 +39,7 @@
  * the order that they appear in the source file but their first usage.
  * As of now, this offset includes the TOKENS and SAVE_DATA tables and all jump tables.
  */
-#define constant ROUTER_ADDRESS_END_OFFSET = 0x854
+#define constant ROUTER_ADDRESS_END_OFFSET = 0x878
 
 #define macro CONSTRUCTOR() = {
     // Copy runtime code into memory
@@ -65,7 +65,7 @@
     eq lockedJump jumpi                                                     // [firstWord]
 
     // Same approach for payCallback which also includes the locker id
-    __RIGHTPAD(__FUNC_SIG("payCallback(uint256, address)"))                 // [payCallbackFirstWord, first]
+    __RIGHTPAD(__FUNC_SIG("payCallback(uint256,address)"))                  // [payCallbackFirstWord, first]
 
     eq payCallbackJump jumpi                                                // []
         LOCK()
@@ -379,8 +379,8 @@
     // Copy the packed jump table to a destination that we know we won't override.
     [MAX_ARGS_OFFSET] codecopy                                              // [remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
 
-    dup8 [BITS_PER_BYTE] mul                                                // [specifiedAmountBits, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
     dup6                                                                    // [nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
+    dup9 [BITS_PER_BYTE] mul                                                // [specifiedAmountBits, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
     swap10                                                                  // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     multiHopJump:                                                           // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -621,7 +621,7 @@
 
         CALL_SWAP(<callArgs>)                                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        LAST_SWAP_IN_MULTI_HOP()
+        LAST_SWAP_IN_MULTI_HOP(DELTA1_OFFSET)
     isToken1Jump:                                                           // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         [TOKEN1_OFFSET] mstore                                              // [nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         [TOKEN0_OFFSET] mstore                                              // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -630,12 +630,16 @@
 
         CALL_SWAP(<callArgs>)                                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        LAST_SWAP_IN_MULTI_HOP()
+        LAST_SWAP_IN_MULTI_HOP(DELTA0_OFFSET)
 }
 
-#define macro LAST_SWAP_IN_MULTI_HOP() = {
+#define macro LAST_SWAP_IN_MULTI_HOP(deltaOffset) = {
+    // // takes: [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    // TODO: FOR EXACT-IN ONLY
+
     // Add to `totalCalculated`
-    swap4 [DELTA1_OFFSET] mload add swap4                                   // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    swap4 <deltaOffset> mload swap1                                         // [totalCalculated, swapCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    sub swap4                                                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     // Decrement `remainingMultiHopSwaps`
     swap2 0x1 sub swap2                                                     // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -649,8 +653,6 @@
     swap8                                                                   // [calculatedAmountThreshold, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
     dup5 lt slippageCheckFailedJump jumpi                                   // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
     pop pop                                                                 // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-
-    // TODO: FOR EXACT-IN ONLY
 
     iszero withoutIntegrationFeeJump jumpi                                  // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         dup5 calldataload 0xf0 shr                                          // [feeShare, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -687,17 +689,17 @@
     erc20Jump:                                                              // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     __RIGHTPAD(__FUNC_SIG("pay(address)")) 0x mstore                        // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
     0x24 mstore                                                             // [specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
     0x4 mstore                                                              // [offset, specifiedAmountBytes, specifiedAmountBits]
 
+    // Move offset to `transferFrom` & load and store it
     0x14 add                                                                // [offset, specifiedAmountBytes, specifiedAmountBits]
-
-    0x20 swap1                                                              // [offset, size, specifiedAmountBytes, specifiedAmountBits]
-    0x44 calldatacopy                                                       // [specifiedAmountBytes, specifiedAmountBits]
+    calldataload                                                            // [transferFrom, specifiedAmountBytes, specifiedAmountBits]
+    0x44 mstore                                                             // [specifiedAmountBytes, specifiedAmountBits]
 
     // Core#pay(address token)
     0x 0x 0x64 0x 0x [CORE] gas call                                        // [success, specifiedAmountBytes, specifiedAmountBits]
-
     stop
 
     slippageCheckFailedJump:                                                // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -778,9 +780,38 @@
 /// `token` (32 bytes ABI-encoded `address`)
 /// The ERC-20 token for which to settle debt.
 ///
-/// `
+/// `amount` (32 bytes ABI-encoded `uint128`)
+///
+/// `from` (32 bytes ABI-encoded `address`)
 #define macro PAY_CALLBACK() = takes(0) returns(0) {
+    0x64 calldataload                                                       // [from]
+    dup1 transferFromJump jumpi                                             // [from]
+        pop                                                                 // []
 
+        __tablesize(TRANSFER_TABLE) __tablestart(TRANSFER_TABLE) 0x         // [memOffset, tablestart, tablesize]
+        codecopy                                                            // []
+
+        0x44 calldataload                                                   // [amount]
+        0x24 mstore                                                         // []
+
+        0x 0x 0x44 0x 0x 0x24 calldataload gas call                         // [success]
+        stop
+    transferFromJump:                                                       // [from]
+        __RIGHTPAD(__FUNC_SIG("transferFrom(address,address,uint256)"))     // [selector, from]
+        0x mstore                                                           // [from]
+        0x4 mstore                                                          // []
+        [CORE] 0x24 mstore                                                  // []
+
+        0x44 calldataload                                                   // [amount]
+        0x44 mstore                                                         // []
+
+        0x 0x 0x64 0x 0x 0x24 calldataload gas call                         // [success]
+        stop
+}
+
+#define table TRANSFER_TABLE {
+    __FUNC_SIG("transfer(address,uint256)")
+    __LEFTPAD([CORE])
 }
 
 #define jumptable CONFIG_TABLE {
