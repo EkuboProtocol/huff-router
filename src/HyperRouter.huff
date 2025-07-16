@@ -1,10 +1,13 @@
+/// @title HyperRouter
+/// @author Die Herdplatte <https://github.com/die-herdplatte>
+/// @notice A hyper gas-efficient, yet highly configurable, router for executing multiMultiHopSwaps on Ekubo pools
+
 // Compiled with hnc 1.1.14 (rev: 4054da5c)
 
 #define error SlippageCheckFailed(int128)
 
 // TODO Core checks
 // TODO Return delta(s) (?)
-// TODO Errors?
 
 #define constant BITS_PER_BYTE = 0x8
 #define constant BITS_PER_WORD = 0x100
@@ -31,8 +34,8 @@
 #define constant SWAP_SKIP_AHEAD_OFFSET = 0xe4
 
 // ICore#swap_611415377(address token0, address token1, bytes32 config, int128 amount, bool isToken1, uint96 sqrtRatioLimit, uint256 skipAhead) and IFlashAccountant#forward (for MEV-resist) output offsets
-#define constant DELTA0_OFFSET = 0x30
-#define constant DELTA1_OFFSET = 0x50
+#define constant SWAP_DELTA0_OFFSET = 0x30
+#define constant SWAP_DELTA1_OFFSET = 0x50
 
 // The lowest offset we don't touch while swapping (i.e. not counting the settlement phase)
 #define constant MAX_ARGS_OFFSET = 0x104
@@ -642,7 +645,7 @@
 
         CALL_SWAP(<callArgs>)                                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        LAST_SWAP_IN_MULTI_HOP(DELTA1_OFFSET)
+        LAST_SWAP_IN_MULTI_HOP(SWAP_DELTA1_OFFSET)
     isToken1Lbl:                                                            // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         [SWAP_TOKEN1_OFFSET] mstore                                         // [nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         [SWAP_TOKEN0_OFFSET] mstore                                         // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -651,7 +654,7 @@
 
         CALL_SWAP(<callArgs>)                                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        LAST_SWAP_IN_MULTI_HOP(DELTA0_OFFSET)
+        LAST_SWAP_IN_MULTI_HOP(SWAP_DELTA0_OFFSET)
 }
 
 #define macro CALL_SWAP(callArgs) = takes(0) returns(0) {
@@ -752,43 +755,40 @@
     0x24 0x revert
 }
 
-#define macro STORE_ARGS_CALL_SWAP_NOT_LAST(storeToken0, sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1, callArgs) = takes(2) returns(0) {
+#define macro STORE_ARGS_CALL_SWAP_NOT_LAST(storeToken0, sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1, callArgs) = takes(13) returns(0) {
     // takes: [nextCalculatedToken, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    // takes: []
-    // takes: [nextCalculatedToken, offset, additionalSwaps, nextSpecifiedToken]
 
-    swap3                                                                   // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken]
-    dup1 dup5                                                               // [nextCalculatedToken, nextSpecifiedToken, nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken]
+    swap3                                                                   // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    dup1 dup5                                                               // [nextCalculatedToken, nextSpecifiedToken, nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-    lt isToken1Lbl jumpi                                                    // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken]
-        [SWAP_TOKEN0_OFFSET] mstore                                         // [offset, additionalSwaps, nextCalculatedToken]
-        dup3 [SWAP_TOKEN1_OFFSET] mstore                                    // [offset, additionalSwaps, nextCalculatedToken]
-        <sqrtRatioLimitIsToken0>                                            // [offset, additionalSwaps, nextCalculatedToken]
-        0x [SWAP_IS_TOKEN1_OFFSET] mstore                                   // [offset, additionalSwaps, nextCalculatedToken]
+    lt isToken1Lbl jumpi                                                    // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        [SWAP_TOKEN0_OFFSET] mstore                                         // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        dup3 [SWAP_TOKEN1_OFFSET] mstore                                    // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        <sqrtRatioLimitIsToken0>                                            // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        0x [SWAP_IS_TOKEN1_OFFSET] mstore                                   // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        CALL_SWAP(<callArgs>)
+        CALL_SWAP(<callArgs>)                                               // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        swap1                                                               // [additionalSwaps, offset, nextCalculatedToken]
+        JUMP_TO_NEXT_HOP(SWAP_DELTA1_OFFSET)
+    isToken1Lbl:                                                            // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        [SWAP_TOKEN1_OFFSET] mstore                                         // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        <storeToken0>                                                       // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        <sqrtRatioLimitIsToken1>                                            // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        0x1 [SWAP_IS_TOKEN1_OFFSET] mstore                                  // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        // FIXME
-        // Negate the delta (overflow will be caught by Core's flash accounting)
-        [DELTA1_OFFSET] mload 0x sub                                        // [nextSpecifiedAmount, additionalSwaps, offset, nextCalculatedToken]
+        CALL_SWAP(<callArgs>)                                               // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        singleHopLbl jump
-    isToken1Lbl:                                                            // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken]
-        [SWAP_TOKEN1_OFFSET] mstore                                         // [offset, additionalSwaps, nextCalculatedToken]
-        <storeToken0>                                                       // [offset, additionalSwaps, nextCalculatedToken]
-        <sqrtRatioLimitIsToken1>                                            // [offset, additionalSwaps, nextCalculatedToken]
-        0x1 [SWAP_IS_TOKEN1_OFFSET] mstore                                  // [offset, additionalSwaps, nextCalculatedToken]
+        JUMP_TO_NEXT_HOP(SWAP_DELTA0_OFFSET)
+}
 
-        CALL_SWAP(<callArgs>)
+#define macro JUMP_TO_NEXT_HOP(deltaOffset) = takes(12) returns(0) {
+    // takes: [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    swap1                                                               // [additionalSwaps, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        swap1                                                               // [additionalSwaps, offset, nextCalculatedToken]
+    // Negate the delta
+    <deltaOffset> mload 0x sub                                          // [nextSpecifiedAmount, additionalSwaps, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        // Negate the delta (overflow will be caught by Core's flash accounting)
-        [DELTA0_OFFSET] mload 0x sub                                        // [nextSpecifiedAmount, additionalSwaps, offset, nextCalculatedToken]
-
-        singleHopLbl jump
+    singleHopLbl jump
 }
 
 /// @notice Ekubo Core pay callback, settling debt of an ERC-20 token with Core.
