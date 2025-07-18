@@ -2,7 +2,7 @@
 /// @author Die Herdplatte <https://github.com/die-herdplatte>
 /// @notice A hyper gas-efficient, yet highly configurable, router for executing multiMultiHopSwaps on Ekubo pools
 
-// Compiled with hnc 1.1.14 (rev: 4054da5c)
+// Compiled with hnc 1.2.0 (rev: 97a6d380)
 
 #define error SlippageCheckFailed(int128)
 
@@ -21,6 +21,13 @@
 // ILocker#locked(uint256 id) input offsets
 #define constant LOCKED_FIRST_WORD_OFFSET = 0x27 // Includes the selector, locker ID, 2 bytes padding, and `withRecipient` (which isn't used in LOCKED())
 #define constant LOCKED_CALCULATED_AMOUNT_THRESHOLD_OFFSET = 0x2e // Offset of the first dynamic piece of data
+
+// Calldata lengths of supported extensions
+#define constant BASE_EXTENSION_CALLDATA_LENGTH = 0xe
+#define constant ORACLE_EXTENSION_CALLDATA_LENGTH = 0x1
+#define constant TWAMM_EXTENSION_CALLDATA_LENGTH = 0x9
+#define constant MEV_RESIST_EXTENSION_CALLDATA_LENGTH = 0xe
+#define constant UNKNOWN_EXTENSION_CALLDATA_LENGTH = 0x22
 
 // ICore#swap_611415377(address token0, address token1, bytes32 config, int128 amount, bool isToken1, uint96 sqrtRatioLimit, uint256 skipAhead) and IFlashAccountant#forward (for MEV-resist) input offsets
 #define constant SWAP_TOKEN0_OFFSET = 0x24
@@ -334,66 +341,1264 @@
     0x codecopy                                                             // [withSqrtRatioLimit | isExactOut, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
     0x20 mul mload jump                                                     // [remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
 
+    /*
+     * The following section is so large because of how hnc presumably tracks labels in some cases:
+     * Instead of tracking labels per context, it seems to track them globally,
+     * therefore making calls to the same macro but with different arguments impossible
+     * if the macro also includes jump labels (this would lead to using the same `jumpdest`
+     * in every invocation).
+     *
+     * Therefore, we have to split the control flow at every point where a label (i.e. `jumpdest`)
+     * should be inserted and insert it at the top level to ensure its global uniqueness.
+     *
+     * I couldn't reproduce this behavior in an isolated example, so it might be unintended behavior.
+     */
+
     noSqrtRatioExactInLbl:                                                  // [remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
         __tablesize(EXTENSION0_TABLE) __tablestart(EXTENSION0_TABLE)        // [tablestart, tablesize, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
+        SWAP_PRELUDE()                                                      // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        START_SWAPPING(NO_OP())
+        multiHop0Lbl:                                                       // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        MULTI_HOP(NO_OP())                                                  // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        singleHop0Lbl:                                                      // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        SINGLE_HOP()
 
         baseExtension0Lbl:                                                  // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            BASE_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
+            BASE_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap00Lbl,
+                BASE_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last00Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin00Lbl,
+            )
+
+            isToken1Last00Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin00Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop0Lbl,
+                withoutIntegrationFee00Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee00Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2000Lbl)
+
+            payErc2000Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap00Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                BASE_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken00Lbl,
+                notLastSwapUnknownTokenIsToken100Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken100Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownToken00Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken100Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken100Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
         oracleExtension0Lbl:                                                // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            ORACLE_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
+            ORACLE_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap01Lbl,
+                ORACLE_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last01Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin01Lbl,
+            )
+
+            isToken1Last01Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin01Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop0Lbl,
+                withoutIntegrationFee01Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee01Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2001Lbl)
+
+            payErc2001Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap01Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                ORACLE_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken01Lbl,
+                notLastSwapUnknownTokenIsToken101Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken101Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownToken01Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken101Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken101Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
         twammExtension0Lbl:                                                 // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            TWAMM_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
+            TWAMM_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap02Lbl,
+                TWAMM_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last02Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin02Lbl,
+            )
+
+            isToken1Last02Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin02Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop0Lbl,
+                withoutIntegrationFee02Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee02Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2002Lbl)
+
+            payErc2002Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap02Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                TWAMM_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken02Lbl,
+                notLastSwapUnknownTokenIsToken102Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken102Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownToken02Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken102Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken102Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
         mevResistExtension0Lbl:                                             // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            MEV_RESIST_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
+            MEV_RESIST_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap03Lbl,
+                MEV_RESIST_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last03Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin03Lbl,
+            )
+
+            isToken1Last03Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin03Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop0Lbl,
+                withoutIntegrationFee03Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee03Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2003Lbl)
+
+            payErc2003Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap03Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                MEV_RESIST_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken03Lbl,
+                notLastSwapUnknownTokenIsToken103Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken103Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownToken03Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken103Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken103Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
         unknownExtension0Lbl:                                               // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            UNKNOWN_EXTENSION(STORE_MIN_SQRT_RATIO(), STORE_MAX_SQRT_RATIO())
+            UNKNOWN_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap04Lbl,
+                UNKNOWN_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last04Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin04Lbl,
+            )
+
+            isToken1Last04Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin04Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop0Lbl,
+                withoutIntegrationFee04Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee04Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2004Lbl)
+
+            payErc2004Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap04Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                UNKNOWN_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken04Lbl,
+                notLastSwapUnknownTokenIsToken104Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken104Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownToken04Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken104Lbl,
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken104Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop0Lbl,
+            )
     noSqrtRatioExactOutLbl:
         __tablesize(EXTENSION1_TABLE) __tablestart(EXTENSION1_TABLE)        // [tablestart, tablesize, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
+        SWAP_PRELUDE()                                                      // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        START_SWAPPING(NEG())
+        multiHop1Lbl:                                                       // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        MULTI_HOP(NEG())                                                    // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        singleHop1Lbl:                                                      // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        SINGLE_HOP()
 
         baseExtension1Lbl:                                                  // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            BASE_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
+            BASE_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap10Lbl,
+                BASE_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last10Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin10Lbl,
+            )
+
+            isToken1Last10Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin10Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop1Lbl,
+                withoutIntegrationFee10Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee10Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2010Lbl)
+
+            payErc2010Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap10Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                BASE_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken10Lbl,
+                notLastSwapUnknownTokenIsToken110Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken110Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownToken10Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken110Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken110Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
         oracleExtension1Lbl:                                                // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            ORACLE_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
+            ORACLE_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap11Lbl,
+                ORACLE_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last11Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin11Lbl,
+            )
+
+            isToken1Last11Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin11Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop1Lbl,
+                withoutIntegrationFee11Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee11Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2011Lbl)
+
+            payErc2011Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap11Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                ORACLE_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken11Lbl,
+                notLastSwapUnknownTokenIsToken111Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken111Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownToken11Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken111Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken111Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
         twammExtension1Lbl:                                                 // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            TWAMM_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
+            TWAMM_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap12Lbl,
+                TWAMM_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last12Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin12Lbl,
+            )
+
+            isToken1Last12Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin12Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop1Lbl,
+                withoutIntegrationFee12Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee12Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2012Lbl)
+
+            payErc2012Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap12Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                TWAMM_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken12Lbl,
+                notLastSwapUnknownTokenIsToken112Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken112Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownToken12Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken112Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken112Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
         mevResistExtension1Lbl:                                             // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            MEV_RESIST_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
+            MEV_RESIST_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap13Lbl,
+                MEV_RESIST_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last13Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin13Lbl,
+            )
+
+            isToken1Last13Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin13Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop1Lbl,
+                withoutIntegrationFee13Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee13Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2013Lbl)
+
+            payErc2013Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap13Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                MEV_RESIST_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken13Lbl,
+                notLastSwapUnknownTokenIsToken113Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken113Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownToken13Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken113Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken113Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
         unknownExtension1Lbl:                                               // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            UNKNOWN_EXTENSION(STORE_MAX_SQRT_RATIO(), STORE_MIN_SQRT_RATIO())
+            UNKNOWN_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap14Lbl,
+                UNKNOWN_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last14Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin14Lbl,
+            )
+
+            isToken1Last14Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin14Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop1Lbl,
+                withoutIntegrationFee14Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee14Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2014Lbl)
+
+            payErc2014Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap14Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                UNKNOWN_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken14Lbl,
+                notLastSwapUnknownTokenIsToken114Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken114Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownToken14Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken114Lbl,
+                STORE_MAX_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken114Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_MIN_SQRT_RATIO(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop1Lbl,
+            )
     withSqrtRatioExactInLbl:
         __tablesize(EXTENSION2_TABLE) __tablestart(EXTENSION2_TABLE)        // [tablestart, tablesize, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
+        SWAP_PRELUDE()                                                      // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        START_SWAPPING(NO_OP())
+        multiHop2Lbl:                                                       // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        MULTI_HOP(NO_OP())                                                  // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        singleHop2Lbl:                                                      // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        SINGLE_HOP()
 
         baseExtension2Lbl:                                                  // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            BASE_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            BASE_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap20Lbl,
+                BASE_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last20Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin20Lbl,
+            )
+
+            isToken1Last20Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin20Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop2Lbl,
+                withoutIntegrationFee20Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee20Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2020Lbl)
+
+            payErc2020Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap20Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                BASE_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken20Lbl,
+                notLastSwapUnknownTokenIsToken120Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken120Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownToken20Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken120Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken120Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
         oracleExtension2Lbl:                                                // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            ORACLE_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            ORACLE_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap21Lbl,
+                ORACLE_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last21Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin21Lbl,
+            )
+
+            isToken1Last21Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin21Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop2Lbl,
+                withoutIntegrationFee21Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee21Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2021Lbl)
+
+            payErc2021Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap21Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                ORACLE_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken21Lbl,
+                notLastSwapUnknownTokenIsToken121Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken121Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownToken21Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken121Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken121Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
         twammExtension2Lbl:                                                 // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            TWAMM_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            TWAMM_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap22Lbl,
+                TWAMM_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last22Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin22Lbl,
+            )
+
+            isToken1Last22Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin22Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop2Lbl,
+                withoutIntegrationFee22Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee22Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2022Lbl)
+
+            payErc2022Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap22Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                TWAMM_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken22Lbl,
+                notLastSwapUnknownTokenIsToken122Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken122Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownToken22Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken122Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken122Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
         mevResistExtension2Lbl:                                             // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            MEV_RESIST_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            MEV_RESIST_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap23Lbl,
+                MEV_RESIST_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last23Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin23Lbl,
+            )
+
+            isToken1Last23Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin23Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop2Lbl,
+                withoutIntegrationFee23Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee23Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2023Lbl)
+
+            payErc2023Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap23Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                MEV_RESIST_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken23Lbl,
+                notLastSwapUnknownTokenIsToken123Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken123Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownToken23Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken123Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken123Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
         unknownExtension2Lbl:                                               // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            UNKNOWN_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            UNKNOWN_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap24Lbl,
+                UNKNOWN_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last24Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin24Lbl,
+            )
+
+            isToken1Last24Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin24Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop2Lbl,
+                withoutIntegrationFee24Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee24Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2024Lbl)
+
+            payErc2024Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap24Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                UNKNOWN_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken24Lbl,
+                notLastSwapUnknownTokenIsToken124Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken124Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownToken24Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken124Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken124Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop2Lbl,
+            )
     withSqrtRatioExactOutLbl:
         __tablesize(EXTENSION3_TABLE) __tablestart(EXTENSION3_TABLE)        // [tablestart, tablesize, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
+        SWAP_PRELUDE()                                                      // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        START_SWAPPING(NEG())
+        multiHop3Lbl:                                                       // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        MULTI_HOP(NEG())                                                    // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        singleHop3Lbl:                                                      // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        SINGLE_HOP()
 
         baseExtension3Lbl:                                                  // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            BASE_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            BASE_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap30Lbl,
+                BASE_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last30Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin30Lbl,
+            )
+
+            isToken1Last30Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin30Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop3Lbl,
+                withoutIntegrationFee30Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee30Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2030Lbl)
+
+            payErc2030Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap30Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                BASE_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken30Lbl,
+                notLastSwapUnknownTokenIsToken130Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken130Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownToken30Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken130Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken130Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
         oracleExtension3Lbl:                                                // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            ORACLE_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            ORACLE_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap31Lbl,
+                ORACLE_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last31Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin31Lbl,
+            )
+
+            isToken1Last31Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin31Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop3Lbl,
+                withoutIntegrationFee31Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee31Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2031Lbl)
+
+            payErc2031Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap31Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                ORACLE_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken31Lbl,
+                notLastSwapUnknownTokenIsToken131Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken131Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownToken31Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken131Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken131Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
         twammExtension3Lbl:                                                 // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            TWAMM_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            TWAMM_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap32Lbl,
+                TWAMM_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last32Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin32Lbl,
+            )
+
+            isToken1Last32Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin32Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop3Lbl,
+                withoutIntegrationFee32Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee32Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2032Lbl)
+
+            payErc2032Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap32Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                TWAMM_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken32Lbl,
+                notLastSwapUnknownTokenIsToken132Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken132Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownToken32Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken132Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken132Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
         mevResistExtension3Lbl:                                             // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            MEV_RESIST_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            MEV_RESIST_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap33Lbl,
+                MEV_RESIST_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last33Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin33Lbl,
+            )
+
+            isToken1Last33Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin33Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop3Lbl,
+                withoutIntegrationFee33Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee33Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2033Lbl)
+
+            payErc2033Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap33Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                MEV_RESIST_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken33Lbl,
+                notLastSwapUnknownTokenIsToken133Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken133Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownToken33Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken133Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken133Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
         unknownExtension3Lbl:                                               // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            UNKNOWN_EXTENSION(STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(), STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA())
+            UNKNOWN_EXTENSION()
+            STORE_SWAP_ARGS(
+                notLastSwap34Lbl,
+                UNKNOWN_EXTENSION_CALLDATA_LENGTH,
+                isToken1Last34Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                isToken1LastJoin34Lbl,
+            )
+
+            isToken1Last34Lbl:                                              // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            STORE_SWAP_ARGS_LAST_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+            )                                                               // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            isToken1LastJoin34Lbl:                                          // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            SETTLE_BALANCES_IF_FINISHED(
+                multiHop3Lbl,
+                withoutIntegrationFee34Lbl,
+            )                                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
+            withoutIntegrationFee34Lbl:                                     // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            WITHDRAW(payErc2034Lbl)
+
+            payErc2034Lbl:                                                  // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            PAY_ERC20()
+
+            notLastSwap34Lbl:                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP(
+                UNKNOWN_EXTENSION_CALLDATA_LENGTH,
+                notLastSwapKnownToken34Lbl,
+                notLastSwapUnknownTokenIsToken134Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapUnknownTokenIsToken134Lbl:                           // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownToken34Lbl:                                     // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN(
+                notLastSwapKnownTokenIsToken134Lbl,
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+            notLastSwapKnownTokenIsToken134Lbl:                             // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(
+                STORE_SQRT_RATIO_LIMIT_FROM_CALLDATA(),
+                PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
+                singleHop3Lbl,
+            )
+
+    slippageCheckFailedExactInLbl:                                          // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        __ERROR(SlippageCheckFailed) 0x mstore                              // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        swap3 0x4 mstore                                                    // [remainingMultiHopSwaps, withIntegrationFee, specifiedToken, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        0x24 0x revert
 }
 
 #define macro STORE_KNOWN_TOKEN_AT_TOKEN0_OFFSET() = takes(1) returns(0) {
@@ -418,7 +1623,7 @@
     0x sub                                                                  // [negated]
 }
 
-#define macro START_SWAPPING(specifiedSign) = takes(11) returns(13) {
+#define macro SWAP_PRELUDE() = takes(11) returns(11) {
     // takes: [tablestart, tablesize, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
 
     // Copy the packed jump table to a destination that we know we won't override.
@@ -427,55 +1632,54 @@
     dup6                                                                    // [nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
     dup9 [BITS_PER_BYTE] mul                                                // [specifiedAmountBits, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
     swap10                                                                  // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    multiHopLbl:                                                            // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        // Read and store `specifiedAmount` and add to `totalSpecified`
-        dup1 calldataload                                                   // [specifiedAmountWord, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        dup12 [BITS_PER_WORD] sub shr                                       // [specifiedAmountUnsigned, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        dup1 <specifiedSign>                                                // [nextSpecifiedAmount, specifiedAmountUnsigned, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        swap8                                                               // [totalSpecified, specifiedAmountUnsigned, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        add                                                                 // [totalSpecified, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        swap1                                                               // [offset, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        dup11 add                                                           // [offset, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        // Read `additionalSwaps`
-        dup1 calldataload 0x byte                                           // [additionalSwaps, offset, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        swap1                                                               // [offset, additionalSwaps, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        0x1 add                                                             // [offset, additionalSwaps, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        swap2                                                               // [totalSpecified, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        swap8                                                               // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        singleHopLbl:                                                       // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            // Store `amount`
-            [SWAP_AMOUNT_OFFSET] mstore                                     // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-            dup2 calldataload                                               // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            dup1 0x byte                                                    // [extensionInfo, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-            // Lookup in packed jump table
-            0x2 mul [MAX_ARGS_OFFSET] add                                   // [jumpOffset, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            mload 0xf0 shr jump                                             // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 }
 
-#define macro BASE_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = takes(13) returns(0) {
+#define macro MULTI_HOP(specifiedSign) = takes(11) returns(13) {
+    // takes: [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    // Read and store `specifiedAmount` and add to `totalSpecified`
+    dup1 calldataload                                                       // [specifiedAmountWord, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    dup12 [BITS_PER_WORD] sub shr                                           // [specifiedAmountUnsigned, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    dup1 <specifiedSign>                                                    // [nextSpecifiedAmount, specifiedAmountUnsigned, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    swap8                                                                   // [totalSpecified, specifiedAmountUnsigned, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    add                                                                     // [totalSpecified, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    swap1                                                                   // [offset, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    dup11 add                                                               // [offset, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    // Read `additionalSwaps`
+    dup1 calldataload 0x byte                                               // [additionalSwaps, offset, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    swap1                                                                   // [offset, additionalSwaps, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    0x1 add                                                                 // [offset, additionalSwaps, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    swap2                                                                   // [totalSpecified, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    swap8                                                                   // [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+}
+
+#define macro SINGLE_HOP() = takes(13) returns(0) {
+    // takes: [nextSpecifiedAmount, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    // Store `amount`
+    [SWAP_AMOUNT_OFFSET] mstore                                             // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    dup2 calldataload                                                       // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    dup1 0x byte                                                            // [extensionInfo, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    // Lookup in packed jump table
+    0x2 mul [MAX_ARGS_OFFSET] add                                           // [jumpOffset, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    mload 0xf0 shr jump                                                     // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+}
+
+#define macro BASE_EXTENSION() = takes(13) returns(0) {
     // takes: [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-    dup1 0x12 shl 0xa0 shr [SWAP_CONFIG_OFFSET] mstore                      // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    dup1 0x10 shl 0xa0 shr [SWAP_CONFIG_OFFSET] mstore                      // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     STORE_SWAP_SELECTOR()                                                   // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     STORE_SKIP_AHEAD()                                                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-        0xe,
-        <sqrtRatioLimitIsToken0>,
-        <sqrtRatioLimitIsToken1>,
-        PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
-    )
 }
 
-#define macro ORACLE_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = takes(13) returns(0) {
+#define macro ORACLE_EXTENSION() = takes(13) returns(0) {
     // takes: [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     pop                                                                     // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -484,63 +1688,35 @@
     __RIGHTPAD([ORACLE]) [SWAP_CONFIG_OFFSET] mstore                        // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     STORE_SWAP_SELECTOR()                                                   // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-        0x1,
-        <sqrtRatioLimitIsToken0>,
-        <sqrtRatioLimitIsToken1>,
-        PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
-    )
 }
 
-#define macro TWAMM_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = takes(13) returns(0) {
+#define macro TWAMM_EXTENSION() = takes(13) returns(0) {
     // takes: [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     0x98 shr 0xffffffffffffffff00000000 and                                 // [shiftedFee, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     __RIGHTPAD([TWAMM]) or [SWAP_CONFIG_OFFSET] mstore                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     STORE_SWAP_SELECTOR()                                                   // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-        0x9,
-        <sqrtRatioLimitIsToken0>,
-        <sqrtRatioLimitIsToken1>,
-        PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
-    )
 }
 
-#define macro MEV_RESIST_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = takes(13) returns(0) {
+#define macro MEV_RESIST_EXTENSION() = takes(13) returns(0) {
     // takes: [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-    dup1 0x12 shl 0xa0 shr                                                  // [configWithoutExtension, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    dup1 0x10 shl 0xa0 shr                                                  // [configWithoutExtension, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     __RIGHTPAD([MEV_RESIST]) or                                             // [config, swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     [SWAP_CONFIG_OFFSET] mstore                                             // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     [MEV_RESIST] STORE_FORWARD_SELECTOR_AND_TO()                            // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     STORE_SKIP_AHEAD()                                                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-        0xe,
-        <sqrtRatioLimitIsToken0>,
-        <sqrtRatioLimitIsToken1>,
-        PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
-    )
 }
 
-#define macro UNKNOWN_EXTENSION(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1) = takes(13) returns(0) {
+#define macro UNKNOWN_EXTENSION() = takes(13) returns(0) {
     // takes: [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     0x20 dup4 0x2 add [SWAP_CONFIG_OFFSET] calldatacopy                     // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     STORE_SWAP_SELECTOR()                                                   // [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     STORE_SKIP_AHEAD()                                                      // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    PARSE_TOKEN_STORE_ARGS_CALL_SWAP(
-        0x22,
-        <sqrtRatioLimitIsToken0>,
-        <sqrtRatioLimitIsToken1>,
-        PUSH_SWAP_CALL_OFFSET_AND_LENGTH(),
-    )
 }
 
 #define macro STORE_MIN_SQRT_RATIO() = takes(0) returns(0) {
@@ -581,115 +1757,62 @@
     0x104 0x                                                                // [argsOffset, argsSize]
 }
 
-#define macro PARSE_TOKEN_STORE_ARGS_CALL_SWAP(tokenInfoOffset, sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1, callArgs) = takes(12) returns(0) {
-    // takes: [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+#define macro STORE_SWAP_ARGS(notLastSwapLbl, tokenInfoOffset, isToken1LastLbl, sqrtRatioLimitIsToken0, callArgs, isToken1LastJoinLbl) = takes(13) returns(0) {
+    // takes: [swapWord, additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-    dup1 notLastSwapLbl jumpi                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    dup1 <notLastSwapLbl> jumpi                                             // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         pop                                                                 // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         <tokenInfoOffset> add                                               // [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         dup6                                                                // [nextCalculatedToken, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        STORE_ARGS_CALL_SWAP_LAST(
-            <sqrtRatioLimitIsToken0>,
-            <sqrtRatioLimitIsToken1>,
-            <callArgs>,
-        )
-    notLastSwapLbl:                                                         // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        [MINUS_ONE] add                                                     // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        swap1                                                               // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        <tokenInfoOffset> add                                               // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        dup9                                                                // [specifiedToken, nextCalculatedToken, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        swap3                                                               // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        dup1 dup3                                                           // [nextCalculatedToken, nextSpecifiedToken, nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        dup1 calldataload 0x byte                                           // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        lt <isToken1LastLbl> jumpi                                          // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            [SWAP_TOKEN0_OFFSET] mstore                                     // [nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            [SWAP_TOKEN1_OFFSET] mstore                                     // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            <sqrtRatioLimitIsToken0>                                        // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            0x [SWAP_IS_TOKEN1_OFFSET] mstore                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        dup1 0xff gt knownTokenLbl jumpi                                    // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            pop                                                             // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            0x15 add                                                        // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            [ADDRESS_LENGTH] dup2 sub calldataload 0x60 shr                 // [nextCalculatedToken, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            CALL_SWAP(<callArgs>)                                           // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-            STORE_ARGS_CALL_SWAP_NOT_LAST(
-                TOKEN0_NOT_IN_MEMORY(),
-                <sqrtRatioLimitIsToken0>,
-                <sqrtRatioLimitIsToken1>,
-                <callArgs>,
-            )
-        knownTokenLbl:                                                      // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            STORE_KNOWN_TOKEN_AT_TOKEN0_OFFSET()                            // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            0x1 add                                                         // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            LOAD_KNOWN_TOKEN_FROM_TOKEN0_OFFSET()                           // [nextCalculatedToken, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            swap4 [SWAP_DELTA1_OFFSET] mload                                // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-            STORE_ARGS_CALL_SWAP_NOT_LAST(
-                NO_OP(),
-                <sqrtRatioLimitIsToken0>,
-                <sqrtRatioLimitIsToken1>,
-                <callArgs>,
-            )
+            <isToken1LastJoinLbl> jump
 }
 
-#define macro TOKEN0_NOT_IN_MEMORY() = takes(3) returns(3) {
-    // takes: [offset, additionalSwaps, nextCalculatedToken]
-    dup3 [SWAP_TOKEN0_OFFSET] mstore                                        // [offset, additionalSwaps, nextCalculatedToken]
+#define macro STORE_SWAP_ARGS_LAST_IS_TOKEN1(sqrtRatioLimitIsToken1, callArgs) = takes(13) returns(12) {
+    // takes: [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    [SWAP_TOKEN1_OFFSET] mstore                                             // [nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    [SWAP_TOKEN0_OFFSET] mstore                                             // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    <sqrtRatioLimitIsToken1>                                                // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    0x1 [SWAP_IS_TOKEN1_OFFSET] mstore                                      // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    CALL_SWAP(<callArgs>)                                                   // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    swap4 [SWAP_DELTA0_OFFSET] mload                                        // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 }
 
-#define macro STORE_ARGS_CALL_SWAP_LAST(sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1, callArgs) = takes(12) returns(0) {
-    // takes: [nextCalculatedToken, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    dup9                                                                    // [specifiedToken, nextCalculatedToken, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    swap3                                                                   // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    dup1 dup3                                                               // [nextCalculatedToken, nextSpecifiedToken, nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    lt isToken1Lbl jumpi                                                    // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        [SWAP_TOKEN0_OFFSET] mstore                                         // [nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        [SWAP_TOKEN1_OFFSET] mstore                                         // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        <sqrtRatioLimitIsToken0>                                            // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        0x [SWAP_IS_TOKEN1_OFFSET] mstore                                   // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        CALL_SWAP(<callArgs>)                                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        LAST_SWAP_IN_MULTI_HOP(SWAP_DELTA1_OFFSET)
-    isToken1Lbl:                                                            // [nextSpecifiedToken, nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        [SWAP_TOKEN1_OFFSET] mstore                                         // [nextCalculatedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        [SWAP_TOKEN0_OFFSET] mstore                                         // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        <sqrtRatioLimitIsToken1>                                            // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        0x1 [SWAP_IS_TOKEN1_OFFSET] mstore                                  // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        CALL_SWAP(<callArgs>)                                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        LAST_SWAP_IN_MULTI_HOP(SWAP_DELTA0_OFFSET)
-}
-
-#define macro CALL_SWAP(callArgs) = takes(0) returns(0) {
-    // delta0 and delta1
-    0x40                                                                    // [retSize]
-
-    // Override only the non-zero address part of token0 because we don't clear it in the case that the next token is `codecopy`d.
-    // We're also overriding the complete token1 and parts of the config offsets, but we always write to the full slot in the next iteration.
-    [SWAP_TOKEN0_OFFSET_PACKED]                                             // [retOffset, retSize]
-
-    <callArgs>                                                              // [argsOffset, argsSize, retOffset, retSize]
-
-    // ICore#swap_611415377(address token0, address token1, bytes32 config, int128 amount, bool isToken1, uint96 sqrtRatioLimit, uint256 skipAhead) or IFlashAccountant#forward
-    0x [CORE] gas call                                                      // [success]
-    pop                                                                     // []
-}
-
-// TODO: FOR EXACT-IN ONLY
-#define macro LAST_SWAP_IN_MULTI_HOP(deltaOffset) = takes(11) returns(0) {
-    // takes: [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+// TODO Exact-in only
+#define macro SETTLE_BALANCES_IF_FINISHED(multiHopLbl, withoutIntegrationFeeLbl) = takes(12) returns(7) {
+    // takes: [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     // Add to `totalCalculated`
-    swap4 <deltaOffset> mload swap1                                         // [totalCalculated, swapCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    sub swap4                                                               // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    swap1 sub                                                               // [totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    swap4                                                                   // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     // Decrement `remainingMultiHopSwaps`
-    swap2 0x1 sub swap2                                                     // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    swap2 [MINUS_ONE] add swap2                                             // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-    dup3 multiHopLbl jumpi                                                  // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    dup3 <multiHopLbl> jumpi                                                // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     swap8                                                                   // [calculatedAmountThreshold, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-    dup5 lt slippageCheckFailedLbl jumpi                                    // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+    dup5 lt slippageCheckFailedExactInLbl jumpi                             // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
     pop pop                                                                 // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-    iszero withoutIntegrationFeeLbl jumpi                                   // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+    iszero <withoutIntegrationFeeLbl> jumpi                                 // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         dup5 calldataload 0xf0 shr                                          // [feeShare, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
         dup2 mul 0x10 shr                                                   // [integratorShare, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -715,7 +1838,10 @@
         swap5 0x16 add swap5                                                // [integratorShare, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
         swap1 sub                                                           // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-    withoutIntegrationFeeLbl:                                               // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+}
+
+#define macro WITHDRAW(erc20Lbl) = takes(7) returns(0) {
+    // takes: [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     __RIGHTPAD(__FUNC_SIG("withdraw(address,address,uint128)")) 0x mstore   // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
     [WITHDRAW_AMOUNT_OFFSET] mstore                                         // [calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -726,12 +1852,13 @@
     0x 0x [WITHDRAW_ARGS_SIZE] 0x 0x [CORE] gas call                        // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
     pop                                                                     // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-    dup2 erc20Lbl jumpi                                                     // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+    dup2 <erc20Lbl> jumpi                                                   // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         // Transfer native token to Core
         0x 0x 0x 0x swap4 [CORE] gas call                                   // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         stop
-    erc20Lbl:                                                               // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+}
 
+#define macro PAY_ERC20() = {
     __RIGHTPAD(__FUNC_SIG("pay(address)")) 0x mstore                        // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     [PAY_AMOUNT_OFFSET] mstore                                              // [specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -745,23 +1872,77 @@
     // IFlashAccountant#pay(address token)
     0x 0x [PAY_ARGS_SIZE] 0x 0x [CORE] gas call                             // [success, specifiedAmountBytes, specifiedAmountBits]
     stop
-
-    slippageCheckFailedLbl:                                                 // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-
-    pop                                                                     // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-
-    __ERROR(SlippageCheckFailed) 0x mstore                                  // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-    0x4 mstore                                                              // [calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-    0x24 0x revert
 }
 
-#define macro STORE_ARGS_CALL_SWAP_NOT_LAST(storeToken0, sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1, callArgs) = takes(13) returns(0) {
-    // takes: [nextCalculatedToken, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+#define macro NOT_LAST_SWAP(tokenInfoOffset, knownTokenLbl, unknownTokenIsToken1Lbl, sqrtRatioLimitIsToken0, callArgs, singleHopLbl) = takes(12) returns(0) {
+    // takes: [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    [MINUS_ONE] add                                                         // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    swap1                                                                   // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    <tokenInfoOffset> add                                                   // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    dup1 calldataload 0x byte                                               // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    dup1 0xff gt <knownTokenLbl> jumpi                                      // [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        pop                                                                 // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        0x15 add                                                            // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        [ADDRESS_LENGTH] dup2 sub calldataload 0x60 shr                     // [nextCalculatedToken, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        swap3                                                               // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        dup1 dup5                                                           // [nextCalculatedToken, nextSpecifiedToken, nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        lt <unknownTokenIsToken1Lbl> jumpi                                  // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            [SWAP_TOKEN0_OFFSET] mstore                                     // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            dup3 [SWAP_TOKEN1_OFFSET] mstore                                // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            <sqrtRatioLimitIsToken0>                                        // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            0x [SWAP_IS_TOKEN1_OFFSET] mstore                               // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            CALL_SWAP(<callArgs>)                                           // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+            JUMP_TO_NEXT_HOP(SWAP_DELTA1_OFFSET, <singleHopLbl>)
+}
+
+#define macro NOT_LAST_SWAP_UNKNOWN_TOKEN_IS_TOKEN1(sqrtRatioLimitIsToken1, callArgs, singleHopLbl) = takes(13) returns(0) {
+    // takes: [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    NOT_LAST_SWAP_IS_TOKEN1(TOKEN0_NOT_IN_MEMORY(), <sqrtRatioLimitIsToken1>, <callArgs>, <singleHopLbl>)
+}
+
+#define macro NOT_LAST_SWAP_KNOWN_TOKEN_IS_TOKEN1(sqrtRatioLimitIsToken1, callArgs, singleHopLbl) = takes(13) returns(0) {
+    // takes: [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    NOT_LAST_SWAP_IS_TOKEN1(NO_OP(), <sqrtRatioLimitIsToken1>, <callArgs>, <singleHopLbl>)
+}
+
+#define macro NOT_LAST_SWAP_IS_TOKEN1(storeToken0, sqrtRatioLimitIsToken1, callArgs, singleHopLbl) = takes(13) returns(0) {
+    // takes: [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    [SWAP_TOKEN1_OFFSET] mstore                                             // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    <storeToken0>                                                           // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    <sqrtRatioLimitIsToken1>                                                // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    0x1 [SWAP_IS_TOKEN1_OFFSET] mstore                                      // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    CALL_SWAP(<callArgs>)                                                   // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    JUMP_TO_NEXT_HOP(SWAP_DELTA0_OFFSET, <singleHopLbl>)
+}
+
+#define macro TOKEN0_NOT_IN_MEMORY() = takes(3) returns(3) {
+    // takes: [offset, additionalSwaps, nextCalculatedToken]
+    dup3 [SWAP_TOKEN0_OFFSET] mstore                                        // [offset, additionalSwaps, nextCalculatedToken]
+}
+
+#define macro NOT_LAST_SWAP_KNOWN_TOKEN(isToken1Lbl, sqrtRatioLimitIsToken0, callArgs, singleHopLbl) = takes(13) returns(0) {
+    // takes: [tokenInfo, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    STORE_KNOWN_TOKEN_AT_TOKEN0_OFFSET()                                    // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    0x1 add                                                                 // [offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    LOAD_KNOWN_TOKEN_FROM_TOKEN0_OFFSET()                                   // [nextCalculatedToken, offset, additionalSwaps, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     swap3                                                                   // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     dup1 dup5                                                               // [nextCalculatedToken, nextSpecifiedToken, nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-    lt isToken1Lbl jumpi                                                    // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    lt <isToken1Lbl> jumpi                                                  // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         [SWAP_TOKEN0_OFFSET] mstore                                         // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         dup3 [SWAP_TOKEN1_OFFSET] mstore                                    // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         <sqrtRatioLimitIsToken0>                                            // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -769,26 +1950,33 @@
 
         CALL_SWAP(<callArgs>)                                               // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        JUMP_TO_NEXT_HOP(SWAP_DELTA1_OFFSET)
-    isToken1Lbl:                                                            // [nextSpecifiedToken, offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        [SWAP_TOKEN1_OFFSET] mstore                                         // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        <storeToken0>                                                       // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        <sqrtRatioLimitIsToken1>                                            // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-        0x1 [SWAP_IS_TOKEN1_OFFSET] mstore                                  // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        CALL_SWAP(<callArgs>)                                               // [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-        JUMP_TO_NEXT_HOP(SWAP_DELTA0_OFFSET)
+        JUMP_TO_NEXT_HOP(SWAP_DELTA1_OFFSET, <singleHopLbl>)
 }
 
-#define macro JUMP_TO_NEXT_HOP(deltaOffset) = takes(12) returns(0) {
+#define macro CALL_SWAP(callArgs) = takes(0) returns(0) {
+    // delta0 and delta1
+    0x40                                                                    // [retSize]
+
+    // Override only the non-zero address part of token0 because we don't clear it in the case that the next token is `codecopy`d.
+    // We're also overriding the complete token1 and parts of the config offsets, but we always write to the full slot in the next iteration.
+    [SWAP_TOKEN0_OFFSET_PACKED]                                             // [retOffset, retSize]
+
+    <callArgs>                                                              // [argsOffset, argsSize, retOffset, retSize]
+
+    // ICore#swap_611415377(address token0, address token1, bytes32 config, int128 amount, bool isToken1, uint96 sqrtRatioLimit, uint256 skipAhead) or IFlashAccountant#forward
+    0x [CORE] gas call                                                      // [success]
+    pop                                                                     // []
+}
+
+#define macro JUMP_TO_NEXT_HOP(deltaOffset, singleHopLbl) = takes(12) returns(0) {
     // takes: [offset, additionalSwaps, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    swap1                                                               // [additionalSwaps, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+    swap1                                                                   // [additionalSwaps, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     // Negate the delta
-    <deltaOffset> mload 0x sub                                          // [nextSpecifiedAmount, additionalSwaps, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    <deltaOffset> mload 0x sub                                              // [nextSpecifiedAmount, additionalSwaps, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-    singleHopLbl jump
+    <singleHopLbl> jump
 }
 
 /// @notice Ekubo Core pay callback, settling debt of an ERC-20 token with Core.
