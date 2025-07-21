@@ -409,7 +409,7 @@ contract HyperRouterTest is Test {
 
         (bool success, bytes memory result) =
             testCase.delegateCall ? hyperRouter.delegatecall(data) : hyperRouter.call{value: value}(data);
-        vm.snapshotGasLastCall(testCase.name(tokens));
+        vm.snapshotGasLastCall(testCase.tableTestName(tokens));
         assertTrue(success);
 
         (uint256 calculatedAmount, uint128 integrationFee) = abi.decode(result, (uint256, uint128));

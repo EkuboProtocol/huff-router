@@ -3,6 +3,7 @@ pragma solidity ^0.8.30;
 
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/src/math/constants.sol";
 import {TokenInfo, resolve} from "./TokenInfo.sol";
+import {ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
 
 using {resolve} for address[];
 
@@ -59,41 +60,49 @@ struct TestCase {
     IntegrationFee integrationFee;
 }
 
-using {name} for TestCase global;
+using {tableTestName} for TestCase global;
 
-//
-
-// To test: knownExtension, knownSpecified, knownCalculated, one vs two vs three swaps, resp. multiHopSwaps, different extensions, exactOut, native vs ERC20,
-// integrationFee, delegatecall, sqrtRatioLimit, withRecipient
-function name(TestCase memory testCase, address[] memory tokens) pure returns (string memory) {
+function tableTestName(TestCase memory testCase, address[] memory tokens) pure returns (string memory) {
     address specifiedToken = tokens.resolve(testCase.specifiedTokenInfo);
     address calculatedToken = tokens.resolve(testCase.calculatedTokenInfo);
 
-    string memory multiHopSwapsCountStr;
-    string memory swapsCountStr;
+    Swap memory firstSwap = testCase.multiHopSwaps[0].swaps[0];
 
-    uint256 multiHopSwapsCount = testCase.multiHopSwaps.length;
-    uint256 swapsCount;
+    address extension = firstSwap.config.extension;
+    string memory extensionStr;
 
-    for (uint256 i = 0; i < multiHopSwapsCount; i++) {
-        MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
-
-        if (swapsCount == 0) {
-            swapsCount = multiHopSwap.swaps.length;
-        } else {
-            // require(swapsCount == multiHopSwap.swaps.length);
-        }
+    if (!firstSwap.isKnownExtension) {
+        extensionStr = "unknown";
+    } else if (extension == address(0)) {
+        extensionStr = "base";
+    } else if (extension == ORACLE_ADDRESS) {
+        extensionStr = "oracle";
+    } else if (extension == TWAMM_ADDRESS) {
+        extensionStr = "twamm";
+    } else if (extension == MEV_RESIST_ADDRESS) {
+        extensionStr = "mevResist";
+    } else {
+        revert("unknown extension");
     }
 
     return string.concat(
         "specified",
         testCase.specifiedTokenInfo.isKnown ? "Known" : "Unknown",
         specifiedToken == NATIVE_TOKEN_ADDRESS ? "Native" : "ERC20",
-        "_",
-        "calculated",
+        "_calculated",
         testCase.calculatedTokenInfo.isKnown ? "Known" : "Unknown",
         calculatedToken == NATIVE_TOKEN_ADDRESS ? "Native" : "ERC20",
         "_",
+        testCase.recipient == address(0) ? "without" : "with",
+        "Recipient_",
+        testCase.delegateCall ? "delegatecall" : "call",
+        "_",
+        testCase.withSqrtRatioLimit ? "with" : "without",
+        "SqrtRatioLimit_",
+        testCase.isExactOut ? "exactOut" : "exactIn",
+        "_",
+        extensionStr,
+        "Extension_",
         specifiedToken == calculatedToken ? "arbitrage" : "simple"
     );
 }
