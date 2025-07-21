@@ -53,7 +53,7 @@
 #define constant SAVE_OWNER_PACKED_OFFSET = 0x10
 #define constant SAVE_TOKEN0_OFFSET = 0x24
 #define constant SAVE_AMOUNT0_OFFSET = 0x84
-#define constant SAVE_AMOUNT1_OFFSET = 0x104
+#define constant SAVE_AMOUNT1_OFFSET = 0xa4
 #define constant SAVE_ARGS_SIZE = 0xc4
 
 // IFlashAccountant#withdraw(address token, address recipient, uint128 amount) input offsets
@@ -1472,7 +1472,7 @@
     exactOutWithoutIntegrationFeeRefundSuccessLbl:                          // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         WITHDRAW_EXACT_OUT()
 
-    exactOutWithIntegrationFeeLbl:
+    exactOutWithIntegrationFeeLbl:                                          // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         TRANSFER_IF_NATIVE_EXACT_OUT(
             exactOutWithIntegrationFeePayErc20Lbl,
             ADDRESS_PLUS_INTEGRATION_FEE_LENGTH,
