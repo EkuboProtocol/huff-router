@@ -38,6 +38,8 @@ contract HyperRouterTest is Test {
     address constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     address constant USDT_ADDRESS = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
 
+    address[2] RECIPIENTS = [address(0), 0x00000C771F6176268D5A9846E0956C3eF58597A1];
+
     uint256 constant DEAL_AMOUNT = type(uint128).max / 2;
 
     PoolConfig ORACLE_CONFIG = PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0});
@@ -106,7 +108,7 @@ contract HyperRouterTest is Test {
     }
 
     function fixtureTestCase() external view returns (TestCase[] memory cases) {
-        cases = new TestCase[](1);
+        cases = new TestCase[](RECIPIENTS.length);
 
         MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](2);
 
@@ -146,19 +148,19 @@ contract HyperRouterTest is Test {
             multiHopSwaps[1] = MultiHopSwap({specifiedAmount: 1 ether / 2, swaps: secondSwaps});
         }
 
-        TestCase memory baseCase = TestCase({
-            specifiedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
-            calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
-            isExactOut: true,
-            withSqrtRatioLimit: false,
-            multiHopSwaps: multiHopSwaps,
-            delegateCall: false,
-            recipient: address(0),
-            calculatedAmountThreshold: 5_000_000_000,
-            integrationFee: IntegrationFee({share: 0, integrator: address(0)})
-        });
-
-        cases[0] = baseCase;
+        for (uint256 a = 0; a < RECIPIENTS.length; a++) {
+            cases[a] = TestCase({
+                specifiedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
+                calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
+                isExactOut: false,
+                withSqrtRatioLimit: false,
+                multiHopSwaps: multiHopSwaps,
+                delegateCall: false,
+                recipient: RECIPIENTS[a],
+                calculatedAmountThreshold: 0,
+                integrationFee: IntegrationFee({share: 0, integrator: address(0)})
+            });
+        }
 
         return cases;
 
