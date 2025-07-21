@@ -85,6 +85,9 @@
 #define constant TRANSFER_FROM_AMOUNT_OFFSET = 0x44
 #define constant TRANSFER_FROM_ARGS_SIZE = 0x64
 
+#define constant RETURN_DATA_CALCULATED_AMOUNT_OFFSET = 0xc4
+#define constant RETURN_DATA_INTEGRATION_FEE_OFFSET = 0xe4
+
 /*
  * ATTENTION: This is a volatile value and may change even on minor modifications.
  * The reason for that seems to be that hnc doesn't insert jump and code tables in
@@ -1673,10 +1676,19 @@
     )                                                                       // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     exactInWithIntegrationFeeLbl jumpi                                      // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        STORE_RETURN_DATA_NO_INTEGRATION_FEE()                              // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
         WITHDRAW_EXACT_IN(
             NO_OP(),
             exactInWithoutIntegrationFeePayErc20,
         )
+}
+
+#define macro STORE_RETURN_DATA_NO_INTEGRATION_FEE() = takes(1) returns(1) {
+    // takes: [totalCalculated]
+
+    dup1 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] mstore                  // [totalCalculated]
+    0x [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                      // [totalCalculated]
 }
 
 #define macro SETTLE_BALANCES_IF_FINISHED_EXACT_OUT(multiHopLbl) = takes(12) returns(0) {
@@ -1689,6 +1701,8 @@
     )                                                                       // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     exactOutWithIntegrationFeeLbl jumpi                                     // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        STORE_RETURN_DATA_NO_INTEGRATION_FEE()                              // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
         TRANSFER_IF_NATIVE_EXACT_OUT(
             exactOutWithoutIntegrationFeePayErc20Lbl,
             ADDRESS_LENGTH,
@@ -1745,6 +1759,8 @@
     calldataload 0xf0 shr                                               // [feeShare, total, token]
     dup2 mul 0x10 shr                                                   // [integratorShare, total, token]
 
+    dup1 [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                    // [integratorShare, total, token]
+
     dup1 [SAVE_AMOUNT0_OFFSET] mstore                                   // [integratorShare, total, token]
     0x [SAVE_AMOUNT1_OFFSET] mstore                                     // [integratorShare, total, token]
     swap1 sub                                                           // [remaining, token]
@@ -1752,6 +1768,8 @@
     // ICore#save(address owner, address token0, address token1, bytes32 salt, uint128 amount0, uint128 amount1)
     0x 0x [SAVE_ARGS_SIZE] 0x 0x [CORE] gas call                        // [success, remaining, token]
     pop                                                                 // [remaining, token]
+
+    dup1 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] mstore                  // [remaining, token]
 }
 
 #define macro TRANSFER_IF_NATIVE_EXACT_OUT(erc20Lbl, transferFromOffset, noRefundLbl, refundSuccessLbl) = takes(7) returns(0) {
@@ -1786,14 +1804,18 @@
     dup2 <erc20Lbl> jumpi                                                   // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         // Transfer native token to Core
         0x 0x 0x 0x swap4 [CORE] gas call                                   // [success, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-        stop
+        LOCKED_RETURN()
+}
+
+#define macro LOCKED_RETURN() = takes(0) returns(0) {
+    0x40 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] return
 }
 
 #define macro WITHDRAW_EXACT_OUT() = takes(5) returns(0) {
     // takes: [amount, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     WITHDRAW(swap1)                                                         // [success, specifiedAmountBytes, specifiedAmountBits]
-    stop
+    LOCKED_RETURN()
 }
 
 #define macro WITHDRAW(pushOffset) = takes(2) returns(1) {
@@ -1813,7 +1835,7 @@
     // takes: [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     PAY_ERC20(ADD(<summand>))                                               // [success, specifiedAmountBytes, specifiedAmountBits]
-    stop
+    LOCKED_RETURN()
 }
 
 #define macro PAY_ERC20_EXACT_OUT(summand) = takes(7) returns(6) {
