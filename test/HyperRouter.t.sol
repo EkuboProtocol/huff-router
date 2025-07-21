@@ -4,37 +4,64 @@ pragma solidity ^0.8.30;
 import {Test, console} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HyperRouter, CORE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
-import {TestCase, MultiHopSwap, Swap, IntegrationFee, PoolConfig} from "./TestCase.sol";
+import {TestCase, MultiHopSwap, Swap, IntegrationFee, PoolConfig, BasePoolConfig} from "./TestCase.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {ICore} from "ekubo/interfaces/ICore.sol";
 import {CoreLib} from "ekubo/libraries/CoreLib.sol";
 import {readTokensFromFile} from "../src/TokenReader.sol";
+import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {TokenInfo, resolve} from "./TokenInfo.sol";
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/src/math/constants.sol";
 
 using {resolve} for address[];
 using CoreLib for ICore;
 
-address constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
-address constant USDT_ADDRESS = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
-address constant EKUBO_ADDRESS = 0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f;
-
 bytes32 constant SAVED_BALANCE_SALT = keccak256("HYPER_ROUTER");
 
 ICore constant CORE = ICore(CORE_ADDRESS);
 
+struct TokenAmount {
+    address token;
+    uint128 amount;
+}
+
+struct Route {
+    address specifiedToken;
+    uint128 amount;
+    MultiHopSwap[] multiHopSwaps;
+    uint128 expectedCalculatedExactIn;
+    uint128 expectedCalculatedExactOut;
+}
+
 contract HyperRouterTest is Test {
-    address hyperRouter;
-    address[] tokens;
+    address constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
+    address constant USDT_ADDRESS = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
+
+    uint256 constant DEAL_AMOUNT = type(uint128).max / 2;
+
+    PoolConfig ORACLE_CONFIG = PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0});
+
+    BasePoolConfig ETH_USDC_2_BIPS = BasePoolConfig({fee: 3689348814741910, tickSpacing: 4990});
+    BasePoolConfig ETH_USDC_5_BIPS = BasePoolConfig({fee: 9223372036854775, tickSpacing: 1000});
+
+    BasePoolConfig USDC_USDT = BasePoolConfig({fee: 92233720368547, tickSpacing: 50});
+
+    BasePoolConfig USDT_ETH_2_BIPS = BasePoolConfig({fee: 3689348814741910, tickSpacing: 4990});
+    BasePoolConfig USDT_ETH_09_BIPS = BasePoolConfig({fee: 1660206966633859, tickSpacing: 4990});
+    BasePoolConfig USDT_ETH_3_BIPS = BasePoolConfig({fee: 5534023222112865, tickSpacing: 4990});
 
     bool[2] BOOLS = [true, false];
 
-    receive() external payable {}
+    // Three different base pool swap sequences of length three between tokens with ID 0 to 2 (ETH, USDC, USDT, as per tokens.json)
+    BasePoolConfig[3][3] swapSequences = [
+        [ETH_USDC_2_BIPS, USDC_USDT, USDT_ETH_2_BIPS],
+        [ETH_USDC_5_BIPS, USDC_USDT, USDT_ETH_09_BIPS],
+        [ETH_USDC_2_BIPS, USDC_USDT, USDT_ETH_3_BIPS]
+    ];
 
-    constructor() {
-        tokens = readTokensFromFile(vm);
-    }
+    address hyperRouter;
+    address[] tokens = readTokensFromFile(vm);
 
     modifier setUpFork(uint256 blockNumber) {
         vm.createSelectFork(vm.rpcUrl("mainnet"), blockNumber);
@@ -75,46 +102,104 @@ contract HyperRouterTest is Test {
     }
 
     function savedBalance(address owner, address token) private view returns (uint128 balance) {
-        return CORE.savedBalances(token, owner, SAVED_BALANCE_SALT);
+        return CORE.savedBalances(owner, token, SAVED_BALANCE_SALT);
     }
 
     function fixtureTestCase() external view returns (TestCase[] memory cases) {
-        cases = new TestCase[](BOOLS.length);
+        cases = new TestCase[](1);
 
-        for (uint256 a = 0; a < BOOLS.length; a++) {
-            bool isKnownExtension = BOOLS[a];
+        MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](2);
 
-            MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](1);
-            Swap[] memory swaps = new Swap[](1);
+        {
+            Swap[] memory firstSwaps = new Swap[](1);
 
-            swaps[0] = Swap({
-                config: PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0}),
-                isKnownExtension: isKnownExtension,
-                skipAhead: 0,
+            firstSwaps[0] = Swap({
+                config: ETH_USDC_2_BIPS.toPoolConfig(),
+                isKnownExtension: true,
+                skipAhead: 2,
                 calculatedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
                 sqrtRatioLimit: 0
             });
 
-            multiHopSwaps[0] = MultiHopSwap({specifiedAmount: 0, swaps: swaps});
-
-            cases[a] = TestCase({
-                specifiedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
-                calculatedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
-                isExactOut: false,
-                withSqrtRatioLimit: false,
-                multiHopSwaps: multiHopSwaps,
-                delegateCall: false,
-                recipient: address(0),
-                calculatedAmountThreshold: 0,
-                integrationFee: IntegrationFee({share: 0, integrator: address(0)}),
-                expectedTokenInDiff: 0,
-                expectedTokenOutDiff: 0,
-                expectedIntegratorDiff: 0
-            });
+            multiHopSwaps[0] = MultiHopSwap({specifiedAmount: 1 ether, swaps: firstSwaps});
         }
+
+        {
+            Swap[] memory secondSwaps = new Swap[](2);
+
+            secondSwaps[0] = Swap({
+                config: USDT_ETH_2_BIPS.toPoolConfig(),
+                isKnownExtension: false,
+                skipAhead: 1,
+                calculatedTokenInfo: TokenInfo({value: address(2), isKnown: true}),
+                sqrtRatioLimit: 0
+            });
+
+            secondSwaps[1] = Swap({
+                config: USDC_USDT.toPoolConfig(),
+                isKnownExtension: true,
+                skipAhead: 0,
+                calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
+                sqrtRatioLimit: 0
+            });
+
+            multiHopSwaps[1] = MultiHopSwap({specifiedAmount: 1 ether / 2, swaps: secondSwaps});
+        }
+
+        TestCase memory baseCase = TestCase({
+            specifiedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
+            calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
+            isExactOut: true,
+            withSqrtRatioLimit: false,
+            multiHopSwaps: multiHopSwaps,
+            delegateCall: false,
+            recipient: address(0),
+            calculatedAmountThreshold: 5_000_000_000,
+            integrationFee: IntegrationFee({share: 0, integrator: address(0)})
+        });
+
+        cases[0] = baseCase;
+
+        return cases;
+
+        /*for (uint256 a = 0; a < BOOLS.length; a++) {
+            bool isKnownExtension = BOOLS[a];
+
+            for (uint256 b = 0; b < TOKEN_AMOUNTS.length; b++) {
+                TokenAmount memory tokenAmount = TOKEN_AMOUNTS[b];
+
+                MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](1);
+                Swap[] memory swaps = new Swap[](1);
+
+                swaps[0] = Swap({
+                    config: PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0}),
+                    isKnownExtension: isKnownExtension,
+                    skipAhead: 0,
+                    calculatedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
+                    sqrtRatioLimit: 0
+                });
+
+                multiHopSwaps[0] = MultiHopSwap({specifiedAmount: tokenAmount.amount, swaps: swaps});
+
+                cases[a * BOOLS.length + b] = TestCase({
+                    specifiedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
+                    calculatedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
+                    isExactOut: false,
+                    withSqrtRatioLimit: false,
+                    multiHopSwaps: multiHopSwaps,
+                    delegateCall: false,
+                    recipient: address(0),
+                    calculatedAmountThreshold: 0,
+                    integrationFee: IntegrationFee({share: 0, integrator: address(0)}),
+                    expectedTokenInDiff: -SafeCastLib.toInt128(tokenAmount.amount),
+                    expectedTokenOutDiff: 676799405360384860,
+                    expectedIntegratorDiff: 0
+                });
+            }
+        }*/
     }
 
-    function tableTestCaseTest(TestCase memory testCase) public setUpFork(22887652) {
+    function tableTestCaseTest(TestCase memory testCase) public setUpFork(22917920) {
         bytes memory data = new bytes(8);
         address recipient;
 
@@ -168,12 +253,16 @@ contract HyperRouterTest is Test {
         (address specifiedToken, address calculatedToken) =
             (tokens.resolve(testCase.specifiedTokenInfo), tokens.resolve(testCase.calculatedTokenInfo));
 
+        int256 totalSpecified;
+
         for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
             MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
             uint256 swapCount = multiHopSwap.swaps.length;
             uint256 additionalSwaps = swapCount - 1;
 
             assertLt(additionalSwaps, type(uint8).max);
+
+            totalSpecified += int256(uint256(multiHopSwap.specifiedAmount));
 
             data = bytes.concat(
                 data,
@@ -231,10 +320,9 @@ contract HyperRouterTest is Test {
             }
         }
 
-        IntegrationFee memory integrationFee = testCase.integrationFee;
-        address integrator = integrationFee.integrator;
-        if (integrationFee.nonZeroShare()) {
-            data = bytes.concat(data, bytes2(integrationFee.share), bytes20(integrator));
+        address integrator = testCase.integrationFee.integrator;
+        if (testCase.integrationFee.nonZeroShare()) {
+            data = bytes.concat(data, bytes2(testCase.integrationFee.share), bytes20(integrator));
         }
 
         if (testCase.recipient != address(0)) {
@@ -245,25 +333,44 @@ contract HyperRouterTest is Test {
             ? (calculatedToken, specifiedToken, specifiedToken)
             : (specifiedToken, calculatedToken, calculatedToken);
 
-        (uint256 thisBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) = (
-            balanceOf(address(this), tokenIn), balanceOf(recipient, tokenOut), savedBalance(integrator, integratorToken)
+        if (tokenIn == NATIVE_TOKEN_ADDRESS) {
+            vm.deal(hyperRouter, DEAL_AMOUNT);
+        } else {
+            deal(tokenIn, address(this), DEAL_AMOUNT);
+            IERC20(tokenIn).approve(hyperRouter, DEAL_AMOUNT);
+        }
+
+        (uint256 payerBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) = (
+            balanceOf(tokenIn == NATIVE_TOKEN_ADDRESS ? hyperRouter : address(this), tokenIn),
+            balanceOf(recipient, tokenOut),
+            savedBalance(integrator, integratorToken)
         );
 
-        (bool success,) = testCase.delegateCall ? hyperRouter.delegatecall(data) : hyperRouter.call(data);
+        (bool success, bytes memory returndata) =
+            testCase.delegateCall ? hyperRouter.delegatecall(data) : hyperRouter.call(data);
         vm.snapshotGasLastCall(testCase.name(tokens));
         assertTrue(success);
 
-        (uint256 thisBalanceAfter, uint256 recipientBalanceAfter, uint128 integratorBalanceAfter) = (
-            balanceOf(address(this), tokenIn), balanceOf(recipient, tokenOut), savedBalance(integrator, integratorToken)
+        (uint256 calculatedAmount, uint128 integrationFee) = abi.decode(returndata, (uint256, uint128));
+
+        (uint256 payerBalanceAfter, uint256 recipientBalanceAfter, uint128 integratorBalanceAfter) = (
+            balanceOf(tokenIn == NATIVE_TOKEN_ADDRESS ? hyperRouter : address(this), tokenIn),
+            balanceOf(recipient, tokenOut),
+            savedBalance(integrator, integratorToken)
         );
 
-        assertEq(testCase.expectedTokenInDiff, int128(int256(thisBalanceAfter)) - int128(int256(thisBalanceBefore)));
+        (int256 expectedTokenInDiff, int256 expectedTokenOutDiff) = testCase.isExactOut
+            ? (-SafeCastLib.toInt256(calculatedAmount), totalSpecified)
+            : (-totalSpecified, SafeCastLib.toInt256(calculatedAmount));
+
         assertEq(
-            testCase.expectedTokenOutDiff,
-            int128(int256(recipientBalanceAfter)) - int128(int256(recipientBalanceBefore))
+            expectedTokenInDiff, SafeCastLib.toInt256(payerBalanceAfter) - SafeCastLib.toInt256(payerBalanceBefore)
         );
-        assertEq(testCase.expectedIntegratorDiff, integratorBalanceAfter - integratorBalanceBefore);
+        assertEq(expectedTokenOutDiff, int128(int256(recipientBalanceAfter)) - int128(int256(recipientBalanceBefore)));
+        assertEq(integrationFee, integratorBalanceAfter - integratorBalanceBefore);
     }
+
+    receive() external payable {}
 
     fallback() external {
         // TODO Forward
