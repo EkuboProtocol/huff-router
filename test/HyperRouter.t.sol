@@ -13,6 +13,7 @@ import {readTokensFromFile} from "../src/TokenReader.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 import {TokenInfo, resolve} from "./TokenInfo.sol";
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/src/math/constants.sol";
+import {LibCall} from "solady/utils/LibCall.sol";
 
 using {resolve} for address[];
 using CoreLib for ICore;
@@ -108,7 +109,7 @@ contract HyperRouterTest is Test {
     }
 
     function fixtureTestCase() external view returns (TestCase[] memory cases) {
-        cases = new TestCase[](RECIPIENTS.length);
+        cases = new TestCase[](RECIPIENTS.length * BOOLS.length);
 
         MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](2);
 
@@ -149,17 +150,19 @@ contract HyperRouterTest is Test {
         }
 
         for (uint256 a = 0; a < RECIPIENTS.length; a++) {
-            cases[a] = TestCase({
-                specifiedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
-                calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
-                isExactOut: false,
-                withSqrtRatioLimit: false,
-                multiHopSwaps: multiHopSwaps,
-                delegateCall: false,
-                recipient: RECIPIENTS[a],
-                calculatedAmountThreshold: 0,
-                integrationFee: IntegrationFee({share: 0, integrator: address(0)})
-            });
+            for (uint256 b = 0; b < BOOLS.length; b++) {
+                cases[a * BOOLS.length + b] = TestCase({
+                    specifiedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
+                    calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
+                    isExactOut: false,
+                    withSqrtRatioLimit: false,
+                    multiHopSwaps: multiHopSwaps,
+                    delegateCall: BOOLS[b],
+                    recipient: RECIPIENTS[a],
+                    calculatedAmountThreshold: 0,
+                    integrationFee: IntegrationFee({share: 0, integrator: address(0)})
+                });
+            }
         }
 
         return cases;
@@ -335,31 +338,32 @@ contract HyperRouterTest is Test {
             ? (calculatedToken, specifiedToken, specifiedToken)
             : (specifiedToken, calculatedToken, calculatedToken);
 
+        address payer = address(this);
+
         if (tokenIn == NATIVE_TOKEN_ADDRESS) {
-            vm.deal(hyperRouter, DEAL_AMOUNT);
+            if (testCase.delegateCall) {
+                vm.deal(address(this), DEAL_AMOUNT);
+            } else {
+                vm.deal(hyperRouter, DEAL_AMOUNT);
+                payer = hyperRouter;
+            }
         } else {
             deal(tokenIn, address(this), DEAL_AMOUNT);
             IERC20(tokenIn).approve(hyperRouter, DEAL_AMOUNT);
         }
 
-        (uint256 payerBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) = (
-            balanceOf(tokenIn == NATIVE_TOKEN_ADDRESS ? hyperRouter : address(this), tokenIn),
-            balanceOf(recipient, tokenOut),
-            savedBalance(integrator, integratorToken)
-        );
+        (uint256 payerBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) =
+            (balanceOf(payer, tokenIn), balanceOf(recipient, tokenOut), savedBalance(integrator, integratorToken));
 
-        (bool success, bytes memory returndata) =
+        (bool success, bytes memory result) =
             testCase.delegateCall ? hyperRouter.delegatecall(data) : hyperRouter.call(data);
         vm.snapshotGasLastCall(testCase.name(tokens));
         assertTrue(success);
 
-        (uint256 calculatedAmount, uint128 integrationFee) = abi.decode(returndata, (uint256, uint128));
+        (uint256 calculatedAmount, uint128 integrationFee) = abi.decode(result, (uint256, uint128));
 
-        (uint256 payerBalanceAfter, uint256 recipientBalanceAfter, uint128 integratorBalanceAfter) = (
-            balanceOf(tokenIn == NATIVE_TOKEN_ADDRESS ? hyperRouter : address(this), tokenIn),
-            balanceOf(recipient, tokenOut),
-            savedBalance(integrator, integratorToken)
-        );
+        (uint256 payerBalanceAfter, uint256 recipientBalanceAfter, uint128 integratorBalanceAfter) =
+            (balanceOf(payer, tokenIn), balanceOf(recipient, tokenOut), savedBalance(integrator, integratorToken));
 
         (int256 expectedTokenInDiff, int256 expectedTokenOutDiff) = testCase.isExactOut
             ? (-SafeCastLib.toInt256(calculatedAmount), totalSpecified)
@@ -368,13 +372,27 @@ contract HyperRouterTest is Test {
         assertEq(
             expectedTokenInDiff, SafeCastLib.toInt256(payerBalanceAfter) - SafeCastLib.toInt256(payerBalanceBefore)
         );
-        assertEq(expectedTokenOutDiff, int128(int256(recipientBalanceAfter)) - int128(int256(recipientBalanceBefore)));
+        assertEq(
+            expectedTokenOutDiff,
+            SafeCastLib.toInt256(recipientBalanceAfter) - SafeCastLib.toInt256(recipientBalanceBefore)
+        );
         assertEq(integrationFee, integratorBalanceAfter - integratorBalanceBefore);
     }
 
     receive() external payable {}
 
     fallback() external {
-        // TODO Forward
+        if (msg.sender == CORE_ADDRESS) {
+            bytes memory result = LibCall.delegateCallContract(hyperRouter, msg.data);
+            uint256 len = result.length;
+
+            assembly ("memory-safe") {
+                let free := mload(0x40)
+                mcopy(free, add(result, 0x20), len)
+                return(free, len)
+            }
+        } else {
+            revert();
+        }
     }
 }

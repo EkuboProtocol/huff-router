@@ -236,21 +236,47 @@
         0x6 calldatasize sub                                                // [callerOffset, caller, routerAddress]
         mstore                                                              // [routerAddress]
 
-        MAYBE_STORE_TRANSFER_FROM(0x1a, 0x3a)
+        MAYBE_STORE_TRANSFER_FROM(
+            STORE_RECIPIENT(address),
+            STORE_RECIPIENT(caller),
+            0x1a,
+            0x3a,
+        )
     withRecipientLbl:                                                       // [routerAddress]
-        MAYBE_STORE_TRANSFER_FROM(0x6, 0x26)
+        MAYBE_STORE_TRANSFER_FROM(
+            NO_OP(),
+            NO_OP(),
+            0x6,
+            0x26,
+        )
 }
 
-#define macro MAYBE_STORE_TRANSFER_FROM(additionalArgsSizeDelegate, additionalArgsSizeNoDelegate) = takes(1) returns(0) {
+#define macro MAYBE_STORE_TRANSFER_FROM(maybeStoreRecipientDelegatecall, maybeStoreRecipientNoDelegatecall, additionalArgsSizeDelegate, additionalArgsSizeNoDelegate) = takes(1) returns(0) {
     // takes: [routerAddress]
 
     address eq noDelegateCallLbl jumpi                                      // []
+        <maybeStoreRecipientDelegatecall>                                   // []
+
         LOCK_END(<additionalArgsSizeDelegate>)
     noDelegateCallLbl:                                                      // []
+        <maybeStoreRecipientNoDelegatecall>                                 // []
+
         // Store ABI-encoded caller address after the end of the calldata
         caller <additionalArgsSizeDelegate> calldatasize add mstore         // []
 
         LOCK_END(<additionalArgsSizeNoDelegate>)
+}
+
+#define macro STORE_RECIPIENT(recipient) = takes(0) returns(0) {
+    <recipient>                                                             // [recipient]
+
+    // Since the minimum `calldatasize` is 10 bytes (`withRecipient`, `specifiedAmountBytes`, `calculatedAmountThresholdBytes`,
+    // `withIntegrationFee`, `specifiedTokenInfo`, `calculatedTokenInfo`, `additionalMultiHopSwaps`,
+    // `withSqrtRatioLimit` | `isExactOut`, `additionalSwaps`, `extensionInfo`),
+    // we designate 2 bytes between the selector and the calldata as padding to ensure never overwriting the selector.
+    // Therefore, 4 bytes selector - 12 bytes packed `address` offset + 2 bytes padding = -6 bytes offset from `calldatasize`
+    0x6 calldatasize sub                                                    // [recipientOffset, recipient]
+    mstore                                                                  // []
 }
 
 #define macro LOCK_END(additionalArgsSize) = takes(0) returns(0) {
