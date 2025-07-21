@@ -6,6 +6,7 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HyperRouter, CORE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
 import {TestCase, MultiHopSwap, Swap, IntegrationFee, PoolConfig, BasePoolConfig} from "./TestCase.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
+import {MIN_SQRT_RATIO_RAW, MAX_SQRT_RATIO_RAW} from "ekubo/src/types/sqrtRatio.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {ICore} from "ekubo/interfaces/ICore.sol";
 import {CoreLib} from "ekubo/libraries/CoreLib.sol";
@@ -165,7 +166,7 @@ contract HyperRouterTest is Test {
     function fixtureTestCase() external view returns (TestCase[] memory cases) {
         uint256 specialCaseCount = 2;
 
-        cases = new TestCase[](RECIPIENTS.length * BOOLS.length + specialCaseCount);
+        cases = new TestCase[](RECIPIENTS.length * (BOOLS.length ** 3) + specialCaseCount);
 
         {
             TestCase memory specifiedUnknownCase = baseCase;
@@ -182,13 +183,52 @@ contract HyperRouterTest is Test {
         }
 
         for (uint256 a = 0; a < RECIPIENTS.length; a++) {
+            address recipient = RECIPIENTS[a];
+
             for (uint256 b = 0; b < BOOLS.length; b++) {
-                TestCase memory testCase = baseCase;
+                bool delegatecall = BOOLS[b];
 
-                testCase.recipient = RECIPIENTS[a];
-                testCase.delegateCall = BOOLS[b];
+                for (uint256 c = 0; c < BOOLS.length; c++) {
+                    bool withSqrtRatioLimit = BOOLS[c];
 
-                cases[a * BOOLS.length + b + specialCaseCount] = testCase;
+                    for (uint256 d = 0; d < BOOLS.length; d++) {
+                        bool isExactOut = BOOLS[d];
+
+                        TestCase memory testCase = baseCase;
+
+                        testCase.recipient = recipient;
+                        testCase.delegateCall = delegatecall;
+                        testCase.withSqrtRatioLimit = withSqrtRatioLimit;
+                        testCase.isExactOut = isExactOut;
+
+                        if (withSqrtRatioLimit) {
+                            for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
+                                MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
+                                address specifiedToken = resolve(tokens, testCase.specifiedTokenInfo);
+
+                                for (uint256 j = 0; j < multiHopSwap.swaps.length; j++) {
+                                    Swap memory swap = multiHopSwap.swaps[j];
+
+                                    address calculatedToken = resolve(tokens, swap.calculatedTokenInfo);
+
+                                    bool isToken1 = specifiedToken > calculatedToken;
+                                    bool isPriceIncreasing = isExactOut != isToken1;
+
+                                    swap.sqrtRatioLimit = isPriceIncreasing ? MAX_SQRT_RATIO_RAW : MIN_SQRT_RATIO_RAW;
+
+                                    specifiedToken = calculatedToken;
+                                }
+                            }
+                        }
+
+                        if (isExactOut) {
+                            testCase.calculatedAmountThreshold = type(uint128).max;
+                        }
+
+                        cases[a * (BOOLS.length ** 3) + b * (BOOLS.length ** 2) + c * BOOLS.length + d
+                            + specialCaseCount] = testCase;
+                    }
+                }
             }
         }
     }
