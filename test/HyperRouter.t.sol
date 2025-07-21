@@ -66,6 +66,60 @@ contract HyperRouterTest is Test {
     address hyperRouter;
     address[] tokens = readTokensFromFile(vm);
 
+    TestCase baseCase;
+
+    constructor() {
+        MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](2);
+
+        {
+            Swap[] memory firstSwaps = new Swap[](1);
+
+            firstSwaps[0] = Swap({
+                config: ETH_USDC_2_BIPS.toPoolConfig(),
+                isKnownExtension: true,
+                skipAhead: 2,
+                calculatedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
+                sqrtRatioLimit: 0
+            });
+
+            multiHopSwaps[0] = MultiHopSwap({specifiedAmount: 1 ether, swaps: firstSwaps});
+        }
+
+        {
+            Swap[] memory secondSwaps = new Swap[](2);
+
+            secondSwaps[0] = Swap({
+                config: USDT_ETH_2_BIPS.toPoolConfig(),
+                isKnownExtension: false,
+                skipAhead: 1,
+                calculatedTokenInfo: TokenInfo({value: address(2), isKnown: true}),
+                sqrtRatioLimit: 0
+            });
+
+            secondSwaps[1] = Swap({
+                config: USDC_USDT.toPoolConfig(),
+                isKnownExtension: true,
+                skipAhead: 0,
+                calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
+                sqrtRatioLimit: 0
+            });
+
+            multiHopSwaps[1] = MultiHopSwap({specifiedAmount: 1 ether / 2, swaps: secondSwaps});
+        }
+
+        baseCase = TestCase({
+            specifiedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
+            calculatedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
+            isExactOut: false,
+            withSqrtRatioLimit: false,
+            multiHopSwaps: multiHopSwaps,
+            delegateCall: false,
+            recipient: address(0),
+            calculatedAmountThreshold: 0,
+            integrationFee: IntegrationFee({share: 0, integrator: address(0)})
+        });
+    }
+
     modifier setUpFork(uint256 blockNumber) {
         vm.createSelectFork(vm.rpcUrl("mainnet"), blockNumber);
 
@@ -109,99 +163,34 @@ contract HyperRouterTest is Test {
     }
 
     function fixtureTestCase() external view returns (TestCase[] memory cases) {
-        cases = new TestCase[](RECIPIENTS.length * BOOLS.length);
+        uint256 specialCaseCount = 2;
 
-        MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](2);
+        cases = new TestCase[](RECIPIENTS.length * BOOLS.length + specialCaseCount);
 
         {
-            Swap[] memory firstSwaps = new Swap[](1);
+            TestCase memory specifiedUnknownCase = baseCase;
+            specifiedUnknownCase.specifiedTokenInfo = TokenInfo({value: NATIVE_TOKEN_ADDRESS, isKnown: false});
 
-            firstSwaps[0] = Swap({
-                config: ETH_USDC_2_BIPS.toPoolConfig(),
-                isKnownExtension: true,
-                skipAhead: 2,
-                calculatedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
-                sqrtRatioLimit: 0
-            });
-
-            multiHopSwaps[0] = MultiHopSwap({specifiedAmount: 1 ether, swaps: firstSwaps});
+            cases[0] = specifiedUnknownCase;
         }
 
         {
-            Swap[] memory secondSwaps = new Swap[](2);
+            TestCase memory calculatedUnknownCase = baseCase;
+            calculatedUnknownCase.calculatedTokenInfo = TokenInfo({value: USDC_ADDRESS, isKnown: false});
 
-            secondSwaps[0] = Swap({
-                config: USDT_ETH_2_BIPS.toPoolConfig(),
-                isKnownExtension: false,
-                skipAhead: 1,
-                calculatedTokenInfo: TokenInfo({value: address(2), isKnown: true}),
-                sqrtRatioLimit: 0
-            });
-
-            secondSwaps[1] = Swap({
-                config: USDC_USDT.toPoolConfig(),
-                isKnownExtension: true,
-                skipAhead: 0,
-                calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
-                sqrtRatioLimit: 0
-            });
-
-            multiHopSwaps[1] = MultiHopSwap({specifiedAmount: 1 ether / 2, swaps: secondSwaps});
+            cases[1] = calculatedUnknownCase;
         }
 
         for (uint256 a = 0; a < RECIPIENTS.length; a++) {
             for (uint256 b = 0; b < BOOLS.length; b++) {
-                cases[a * BOOLS.length + b] = TestCase({
-                    specifiedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
-                    calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
-                    isExactOut: false,
-                    withSqrtRatioLimit: false,
-                    multiHopSwaps: multiHopSwaps,
-                    delegateCall: BOOLS[b],
-                    recipient: RECIPIENTS[a],
-                    calculatedAmountThreshold: 0,
-                    integrationFee: IntegrationFee({share: 0, integrator: address(0)})
-                });
+                TestCase memory testCase = baseCase;
+
+                testCase.recipient = RECIPIENTS[a];
+                testCase.delegateCall = BOOLS[b];
+
+                cases[a * BOOLS.length + b + specialCaseCount] = testCase;
             }
         }
-
-        return cases;
-
-        /*for (uint256 a = 0; a < BOOLS.length; a++) {
-            bool isKnownExtension = BOOLS[a];
-
-            for (uint256 b = 0; b < TOKEN_AMOUNTS.length; b++) {
-                TokenAmount memory tokenAmount = TOKEN_AMOUNTS[b];
-
-                MultiHopSwap[] memory multiHopSwaps = new MultiHopSwap[](1);
-                Swap[] memory swaps = new Swap[](1);
-
-                swaps[0] = Swap({
-                    config: PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0}),
-                    isKnownExtension: isKnownExtension,
-                    skipAhead: 0,
-                    calculatedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
-                    sqrtRatioLimit: 0
-                });
-
-                multiHopSwaps[0] = MultiHopSwap({specifiedAmount: tokenAmount.amount, swaps: swaps});
-
-                cases[a * BOOLS.length + b] = TestCase({
-                    specifiedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
-                    calculatedTokenInfo: TokenInfo({value: address(0), isKnown: true}),
-                    isExactOut: false,
-                    withSqrtRatioLimit: false,
-                    multiHopSwaps: multiHopSwaps,
-                    delegateCall: false,
-                    recipient: address(0),
-                    calculatedAmountThreshold: 0,
-                    integrationFee: IntegrationFee({share: 0, integrator: address(0)}),
-                    expectedTokenInDiff: -SafeCastLib.toInt128(tokenAmount.amount),
-                    expectedTokenOutDiff: 676799405360384860,
-                    expectedIntegratorDiff: 0
-                });
-            }
-        }*/
     }
 
     function tableTestCaseTest(TestCase memory testCase) public setUpFork(22917920) {
