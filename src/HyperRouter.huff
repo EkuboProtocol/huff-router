@@ -6,9 +6,7 @@
 
 #define error SlippageCheckFailed(int128)
 #define error ETHTransferFailed()
-
-// TODO Core checks
-// TODO Return delta(s) (?)
+#define error CoreOnly()
 
 #define constant BITS_PER_BYTE = 0x8
 #define constant BITS_PER_WORD = 0x100
@@ -285,6 +283,8 @@
 /// swap inputs are transferred from the delegating contract and this value does not exist.
 /// Otherwise, approvals to this contract from the caller are consumed to settle the debt.
 #define macro LOCKED() = takes(0) returns(0) {
+    CORE_CHECK()                                                            // []
+
     [LOCKED_FIRST_WORD_OFFSET] calldataload                                 // [firstWord]
 
     // Parse `specifiedAmountBytes`
@@ -1472,6 +1472,13 @@
         0x24 0x revert
 }
 
+#define macro CORE_CHECK() = takes(0) returns(0) {
+    caller [CORE] eq coreCallerLbl jumpi                                    // []
+        __ERROR(CoreOnly) 0x mstore                                         // []
+        0x4 0x revert
+    coreCallerLbl:                                                          // []
+}
+
 #define macro STORE_KNOWN_TOKEN_AT_TOKEN0_OFFSET() = takes(1) returns(0) {
     // takes: [tokenId]
     [ADDRESS_LENGTH] mul                                                    // [tokenOffset]
@@ -1985,6 +1992,8 @@
 /// Uses ERC-20's approval mechanism for non-zero addresses
 /// and transfers from self if the address is zero.
 #define macro PAY_CALLBACK() = takes(0) returns(0) {
+    CORE_CHECK()                                                            // []
+
     [PAY_CALLBACK_FROM_OFFSET] calldataload                                 // [from]
     dup1 transferFromLbl jumpi                                              // [from]
         pop                                                                 // []
