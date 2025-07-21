@@ -41,7 +41,7 @@ contract HyperRouterTest is Test {
 
     address[2] RECIPIENTS = [address(0), 0x00000C771F6176268D5A9846E0956C3eF58597A1];
 
-    uint256 constant DEAL_AMOUNT = type(uint128).max / 2;
+    uint256 constant EXACT_OUT_DEAL_AMOUNT = type(uint128).max / 2;
 
     PoolConfig ORACLE_CONFIG = PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0});
 
@@ -258,7 +258,7 @@ contract HyperRouterTest is Test {
         (address specifiedToken, address calculatedToken) =
             (tokens.resolve(testCase.specifiedTokenInfo), tokens.resolve(testCase.calculatedTokenInfo));
 
-        int256 totalSpecified;
+        uint256 totalSpecified;
 
         for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
             MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
@@ -267,7 +267,7 @@ contract HyperRouterTest is Test {
 
             assertLt(additionalSwaps, type(uint8).max);
 
-            totalSpecified += int256(uint256(multiHopSwap.specifiedAmount));
+            totalSpecified += multiHopSwap.specifiedAmount;
 
             data = bytes.concat(
                 data,
@@ -339,24 +339,26 @@ contract HyperRouterTest is Test {
             : (specifiedToken, calculatedToken, calculatedToken);
 
         address payer = address(this);
+        uint256 value;
+
+        uint256 dealAmount = testCase.isExactOut ? EXACT_OUT_DEAL_AMOUNT : totalSpecified;
 
         if (tokenIn == NATIVE_TOKEN_ADDRESS) {
-            if (testCase.delegateCall) {
-                vm.deal(address(this), DEAL_AMOUNT);
-            } else {
-                vm.deal(hyperRouter, DEAL_AMOUNT);
-                payer = hyperRouter;
+            vm.deal(address(this), dealAmount);
+
+            if (!testCase.delegateCall) {
+                value = dealAmount;
             }
         } else {
-            deal(tokenIn, address(this), DEAL_AMOUNT);
-            IERC20(tokenIn).approve(hyperRouter, DEAL_AMOUNT);
+            deal(tokenIn, address(this), dealAmount);
+            IERC20(tokenIn).approve(hyperRouter, dealAmount);
         }
 
         (uint256 payerBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) =
             (balanceOf(payer, tokenIn), balanceOf(recipient, tokenOut), savedBalance(integrator, integratorToken));
 
         (bool success, bytes memory result) =
-            testCase.delegateCall ? hyperRouter.delegatecall(data) : hyperRouter.call(data);
+            testCase.delegateCall ? hyperRouter.delegatecall(data) : hyperRouter.call{value: value}(data);
         vm.snapshotGasLastCall(testCase.name(tokens));
         assertTrue(success);
 
@@ -366,8 +368,8 @@ contract HyperRouterTest is Test {
             (balanceOf(payer, tokenIn), balanceOf(recipient, tokenOut), savedBalance(integrator, integratorToken));
 
         (int256 expectedTokenInDiff, int256 expectedTokenOutDiff) = testCase.isExactOut
-            ? (-SafeCastLib.toInt256(calculatedAmount), totalSpecified)
-            : (-totalSpecified, SafeCastLib.toInt256(calculatedAmount));
+            ? (-SafeCastLib.toInt256(calculatedAmount), SafeCastLib.toInt256(totalSpecified))
+            : (-SafeCastLib.toInt256(totalSpecified), SafeCastLib.toInt256(calculatedAmount));
 
         assertEq(
             expectedTokenInDiff, SafeCastLib.toInt256(payerBalanceAfter) - SafeCastLib.toInt256(payerBalanceBefore)
