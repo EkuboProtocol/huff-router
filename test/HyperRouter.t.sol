@@ -64,6 +64,13 @@ contract HyperRouterTest is Test {
         [ETH_USDC_2_BIPS, USDC_USDT, USDT_ETH_3_BIPS]
     ];
 
+    PoolConfig[4] ETH_USDC_EXTENSION_CONFIGS = [
+        ETH_USDC_2_BIPS.toPoolConfig(),
+        ORACLE_CONFIG,
+        PoolConfig({extension: TWAMM_ADDRESS, fee: 9223372036854775, tickSpacing: 0}),
+        PoolConfig({extension: MEV_RESIST_ADDRESS, fee: 1844674407370954, tickSpacing: 1000})
+    ];
+
     address hyperRouter;
     address[] tokens = readTokensFromFile(vm);
 
@@ -165,8 +172,9 @@ contract HyperRouterTest is Test {
 
     function fixtureTestCase() external view returns (TestCase[] memory cases) {
         uint256 specialCaseCount = 2;
+        uint256 extensionVariants = ETH_USDC_EXTENSION_CONFIGS.length + 1;
 
-        cases = new TestCase[](RECIPIENTS.length * (BOOLS.length ** 3) + specialCaseCount);
+        cases = new TestCase[](RECIPIENTS.length * (BOOLS.length ** 3) * extensionVariants + specialCaseCount);
 
         {
             TestCase memory specifiedUnknownCase = baseCase;
@@ -194,46 +202,59 @@ contract HyperRouterTest is Test {
                     for (uint256 d = 0; d < BOOLS.length; d++) {
                         bool isExactOut = BOOLS[d];
 
-                        TestCase memory testCase = baseCase;
+                        for (uint256 e = 0; e <= ETH_USDC_EXTENSION_CONFIGS.length; e++) {
+                            TestCase memory testCase = baseCase;
 
-                        testCase.recipient = recipient;
-                        testCase.delegateCall = delegatecall;
-                        testCase.withSqrtRatioLimit = withSqrtRatioLimit;
-                        testCase.isExactOut = isExactOut;
+                            testCase.recipient = recipient;
+                            testCase.delegateCall = delegatecall;
+                            testCase.withSqrtRatioLimit = withSqrtRatioLimit;
+                            testCase.isExactOut = isExactOut;
 
-                        if (withSqrtRatioLimit) {
-                            for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
-                                MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
-                                address specifiedToken = resolve(tokens, testCase.specifiedTokenInfo);
+                            if (withSqrtRatioLimit) {
+                                for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
+                                    MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
+                                    address specifiedToken = resolve(tokens, testCase.specifiedTokenInfo);
 
-                                for (uint256 j = 0; j < multiHopSwap.swaps.length; j++) {
-                                    Swap memory swap = multiHopSwap.swaps[j];
+                                    for (uint256 j = 0; j < multiHopSwap.swaps.length; j++) {
+                                        Swap memory swap = multiHopSwap.swaps[j];
 
-                                    address calculatedToken = resolve(tokens, swap.calculatedTokenInfo);
+                                        address calculatedToken = resolve(tokens, swap.calculatedTokenInfo);
 
-                                    bool isToken1 = specifiedToken > calculatedToken;
-                                    bool isPriceIncreasing = isExactOut != isToken1;
+                                        bool isToken1 = specifiedToken > calculatedToken;
+                                        bool isPriceIncreasing = isExactOut != isToken1;
 
-                                    swap.sqrtRatioLimit = isPriceIncreasing ? MAX_SQRT_RATIO_RAW : MIN_SQRT_RATIO_RAW;
+                                        swap.sqrtRatioLimit =
+                                            isPriceIncreasing ? MAX_SQRT_RATIO_RAW : MIN_SQRT_RATIO_RAW;
 
-                                    specifiedToken = calculatedToken;
+                                        specifiedToken = calculatedToken;
+                                    }
                                 }
                             }
-                        }
 
-                        if (isExactOut) {
-                            testCase.calculatedAmountThreshold = type(uint128).max;
-                        }
+                            if (isExactOut) {
+                                testCase.calculatedAmountThreshold = type(uint128).max;
+                            }
 
-                        cases[a * (BOOLS.length ** 3) + b * (BOOLS.length ** 2) + c * BOOLS.length + d
-                            + specialCaseCount] = testCase;
+                            Swap memory swap = testCase.multiHopSwaps[0].swaps[0];
+
+                            if (e == ETH_USDC_EXTENSION_CONFIGS.length) {
+                                swap.config = ETH_USDC_EXTENSION_CONFIGS[0];
+                                swap.isKnownExtension = false;
+                            } else {
+                                swap.config = ETH_USDC_EXTENSION_CONFIGS[e];
+                            }
+
+                            cases[a * (BOOLS.length ** 3 * extensionVariants)
+                                + b * (BOOLS.length ** 2 * extensionVariants) + c * (BOOLS.length * extensionVariants)
+                                + d * extensionVariants + e + specialCaseCount] = testCase;
+                        }
                     }
                 }
             }
         }
     }
 
-    function tableTestCaseTest(TestCase memory testCase) public setUpFork(22917920) {
+    function tableTestCaseTest(TestCase memory testCase) public setUpFork(22968156) {
         bytes memory data = new bytes(8);
         address recipient;
 
