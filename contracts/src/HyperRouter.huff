@@ -214,6 +214,10 @@
 /// `feeShare` | `feeRecipient` (2 bytes 0.16 fixed point number | 20 bytes `address`, optional as per `withIntegrationFee`)
 /// The integrator address as well as the share that the integrator receives from the swap output.
 /// Fees are `save`d for the `feeRecipient` in Core.
+///
+/// `recipient` (20 bytes `address`, optional as per `withRecipient`)
+/// Adress of the account that receives the swap output (after possibly deducting integration fees).
+/// If `withRecipient === false`, this will be filled in by LOCK().
 #define macro LOCK() = takes(0) returns(0) {
     // Load lock() selector and router address in one `codecopy`
     __tablesize(LOCK_SIG_AND_ROUTER_ADDRESS)                                // [tableSize]
@@ -299,10 +303,7 @@
 
 /// @notice Ekubo Core callback, executing a multiMultiHopSwap.
 ///
-/// In addition to the calldata passed to LOCK():
-///
-/// `swapRecipient` (20 bytes `address`, determined in LOCK())
-/// Adress of the account that receives the swap output (after possibly deducting integration fees).
+/// In addition to the calldata described in LOCK():
 ///
 /// `transferFrom` (32 bytes ABI-encoded `address`, optional as determined in LOCK(), non-zero)
 /// If this is called via a `delegatecall` (checked via `routerAddress != address(this)`), the
