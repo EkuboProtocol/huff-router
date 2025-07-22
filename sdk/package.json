@@ -16,7 +16,7 @@
     "smart-contracts"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --dts"
+    "build": "tsup src/index.ts --dts --minify"
   },
   "devDependencies": {
     "tsup": "^8.5.0",
