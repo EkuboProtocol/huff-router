@@ -1,20 +1,22 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {Test} from "forge-std/Test.sol";
-import {ERC20} from "solady/tokens/ERC20.sol";
-import {HyperRouter, CORE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
-import {TestCase, MultiHopSwap, Swap, IntegrationFee, PoolConfig, BasePoolConfig} from "./TestCase.sol";
-import {LibBit} from "solady/utils/LibBit.sol";
-import {MIN_SQRT_RATIO_RAW, MAX_SQRT_RATIO_RAW} from "ekubo/src/types/sqrtRatio.sol";
-import {LibBytes} from "solady/utils/LibBytes.sol";
+import {CORE_ADDRESS, HyperRouter, MEV_RESIST_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS} from "../src/HyperRouter.sol";
+
+import {readTokensFromFile} from "../src/TokenReader.sol";
+import {BasePoolConfig, IntegrationFee, MultiHopSwap, PoolConfig, Swap, TestCase} from "./TestCase.sol";
+
+import {TokenInfo, resolve} from "./TokenInfo.sol";
 import {ICore} from "ekubo/interfaces/ICore.sol";
 import {CoreLib} from "ekubo/libraries/CoreLib.sol";
-import {readTokensFromFile} from "../src/TokenReader.sol";
-import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
-import {TokenInfo, resolve} from "./TokenInfo.sol";
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/src/math/constants.sol";
+import {MAX_SQRT_RATIO_RAW, MIN_SQRT_RATIO_RAW} from "ekubo/src/types/sqrtRatio.sol";
+import {Test} from "forge-std/Test.sol";
+import {ERC20} from "solady/tokens/ERC20.sol";
+import {LibBit} from "solady/utils/LibBit.sol";
+import {LibBytes} from "solady/utils/LibBytes.sol";
 import {LibCall} from "solady/utils/LibCall.sol";
+import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 
 contract HyperRouterTest is Test {
     using {resolve} for address[];
@@ -56,7 +58,8 @@ contract HyperRouterTest is Test {
     BasePoolConfig usdtEth09Bips = BasePoolConfig({fee: 1660206966633859, tickSpacing: 4990});
     BasePoolConfig usdtEth3Bips = BasePoolConfig({fee: 5534023222112865, tickSpacing: 4990});
 
-    // Three different base pool swap sequences of length three between tokens with ID 0 to 2 (ETH, USDC, USDT, as per tokens.json)
+    // Three different base pool swap sequences of length three between tokens with ID 0 to 2 (ETH, USDC, USDT, as per
+    // tokens.json)
     BasePoolConfig[3][3] swapSequences = [
         [ethUsdc2Bips, usdcUsdt, usdtEth2Bips],
         [ethUsdc5Bips, usdcUsdt, usdtEth09Bips],
