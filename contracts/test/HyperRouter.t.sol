@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {Test} from "forge-std/Test.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {ERC20} from "solady/tokens/ERC20.sol";
 import {HyperRouter, CORE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
 import {TestCase, MultiHopSwap, Swap, IntegrationFee, PoolConfig, BasePoolConfig} from "./TestCase.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
@@ -159,7 +159,7 @@ contract HyperRouterTest is Test {
         if (token == NATIVE_TOKEN_ADDRESS) {
             return owner.balance;
         } else {
-            return IERC20(token).balanceOf(owner);
+            return ERC20(token).balanceOf(owner);
         }
     }
 
@@ -394,7 +394,7 @@ contract HyperRouterTest is Test {
             }
         } else {
             deal(tokenIn, address(this), dealAmount);
-            IERC20(tokenIn).approve(hyperRouter, dealAmount);
+            ERC20(tokenIn).approve(hyperRouter, dealAmount);
         }
 
         (uint256 payerBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) =
