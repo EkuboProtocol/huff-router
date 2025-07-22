@@ -1,5 +1,6 @@
 import { BytesLike, concat, getAddress, getBigInt, MaxUint256, toBeArray, toBeHex, ZeroAddress } from "ethers";
 import TOKENS from "../../tokens/ethereum.json";
+import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS } from "./address";
 
 export interface PoolConfig {
     extension: string,
@@ -38,10 +39,6 @@ const INT128_MAX = 0x7fffffffffffffffffffffffffffffffn;
 
 const TWO_POW_62 = 2n ** 62n;
 const TWO_POW_256 = MaxUint256 + 1n;
-
-const ORACLE_ADDRESS = "0x51d02A5948496a67827242EaBc5725531342527C";
-const TWAMM_ADDRESS = "0xD4279c050DA1F5c5B2830558C7A08E57e12b54eC";
-const MEV_RESIST_ADDRESS = "0x553a2EFc570c9e104942cEC6aC1c18118e54C091";
 
 const FEE_BYTES = 8;
 const TICK_SPACING_BYTES = 4;
@@ -168,7 +165,7 @@ export function generateCalldata(params: Parameters): string {
 
     for (const { specifiedAmount, swaps } of multiHopSwaps) {
         calldata.push(
-            toBeHex(specifiedAmount, specifiedAmountBytes),
+            specifiedAmountBytes > 0 ? toBeHex(specifiedAmount, specifiedAmountBytes) : "0x",
             new Uint8Array([swaps.length - 1]),
         );
 
