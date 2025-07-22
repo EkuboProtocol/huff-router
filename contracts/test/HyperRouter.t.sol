@@ -231,10 +231,6 @@ contract HyperRouterTest is Test {
                                 }
                             }
 
-                            if (isExactOut) {
-                                testCase.calculatedAmountThreshold = type(uint128).max;
-                            }
-
                             Swap memory swap = testCase.multiHopSwaps[0].swaps[0];
 
                             if (e == ETH_USDC_EXTENSION_CONFIGS.length) {

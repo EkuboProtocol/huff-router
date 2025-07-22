@@ -139,7 +139,7 @@
 /// `specifiedAmountBytes` (1 byte unsigned integer, <= 16)
 /// The length of the `specifiedAmount`s of each multihop swap in bytes.
 ///
-/// `calculatedAmountThresholdBytes` (1 byte `uint8`, <= 16)
+/// `calculatedAmountThresholdBytes` (1 byte `uint8`, <= 32)
 /// The length of `calculatedAmountThreshold` in bytes.
 ///
 /// `specifiedTokenInfo` (1 byte)
@@ -160,7 +160,7 @@
 /// Whether swaps are encoded with a custom sqrt ratio limit and
 /// whether the swap is exact out.
 ///
-/// `calculatedAmountThreshold` (variable length signed integer, up to 16 bytes)
+/// `calculatedAmountThreshold` (variable length unsigned integer, up to 32 bytes)
 /// How much the last swaps of each multiHopSwap need to return in total at minimum for the call to succeed.
 ///
 /// `specifiedTokenAddress` (20 bytes `address`, optional as per `specifiedTokenInfo`)
@@ -171,7 +171,7 @@
 ///
 /// Per multihop swap:
 ///
-/// `specifiedAmount` (variable length signed integer up to 16 bytes, determined by `specifiedAmountBytes`)
+/// `specifiedAmount` (variable length unsigned integer up to 16 bytes, determined by `specifiedAmountBytes`)
 /// The specified amount of the first swap.
 ///
 /// `additionalSwaps` (1 byte unsigned integer)
@@ -1705,7 +1705,7 @@
     SETTLE_BALANCES_IF_FINISHED(
         ADD_CALCULATED_EXACT_IN(),
         <multiHopLbl>,
-        lt,
+        SLIPPAGE_CHECK_EXACT_IN(),
     )                                                                       // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     exactInWithIntegrationFeeLbl jumpi                                      // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -1717,11 +1717,17 @@
         )
 }
 
+#define macro SLIPPAGE_CHECK_EXACT_IN() = takes(5) returns(5) {
+    // takes: [calculatedAmountThreshold, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated]
+
+    dup5 lt                                                                 // [slippageCheckFailed, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated]
+}
+
 #define macro STORE_RETURN_DATA_NO_INTEGRATION_FEE() = takes(1) returns(1) {
     // takes: [totalCalculated]
 
-    dup1 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] mstore                  // [totalCalculated]
-    0x [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                      // [totalCalculated]
+    dup1 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] mstore                      // [totalCalculated]
+    0x [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                          // [totalCalculated]
 }
 
 #define macro SETTLE_BALANCES_IF_FINISHED_EXACT_OUT(multiHopLbl) = takes(12) returns(0) {
@@ -1730,7 +1736,7 @@
     SETTLE_BALANCES_IF_FINISHED(
         ADD_CALCULATED_EXACT_OUT(),
         <multiHopLbl>,
-        gt,
+        SLIPPAGE_CHECK_EXACT_OUT(),
     )                                                                       // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     exactOutWithIntegrationFeeLbl jumpi                                     // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -1742,6 +1748,16 @@
             exactOutWithoutIntegrationFeeNoRefundLbl,
             exactOutWithoutIntegrationFeeRefundSuccessLbl,
         )
+}
+
+#define macro SLIPPAGE_CHECK_EXACT_OUT() = takes(5) returns(5) {
+    // takes: [calculatedAmountThreshold, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated]
+
+    // This allows us to efficiently encode the case of skipping
+    // the slippage check with a `calculatedAmountThreshold` of zero bytes
+    [MINUS_ONE] add                                                         // [calculatedAmountThreshold, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated]
+
+    dup5 gt                                                                 // [slippageCheckFailed, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated]
 }
 
 #define macro SETTLE_BALANCES_IF_FINISHED(addCalculated, multiHopLbl, compOp) = takes(12) returns(8) {
@@ -1756,7 +1772,7 @@
     dup3 <multiHopLbl> jumpi                                                // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     swap8                                                                   // [calculatedAmountThreshold, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-    dup5 <compOp> slippageCheckFailedLbl jumpi                              // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+    <compOp> slippageCheckFailedLbl jumpi                                   // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
     pop pop                                                                 // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 }
 

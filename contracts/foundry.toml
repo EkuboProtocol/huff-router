@@ -1,5 +1,5 @@
 [profile.default]
 solc = "0.8.30"
 ffi = true # Necessary for the HuffNeoDeployer
-fs_permissions = [{ access = "read", path = "src/tokens.json"}]
+fs_permissions = [{ access = "read", path = "../tokens/ethereum.json"}]
 via-ir = true
