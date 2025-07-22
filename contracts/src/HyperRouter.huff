@@ -1790,58 +1790,58 @@
 #define macro SLIPPAGE_CHECK_FAILED() = takes(1) returns(0) {
     // takes: [totalCalculated]
 
-    __ERROR(SlippageCheckFailed) 0x mstore                              // [totalCalculated]
-    0x4 mstore                                                          // []
+    __ERROR(SlippageCheckFailed) 0x mstore                                  // [totalCalculated]
+    0x4 mstore                                                              // []
     0x24 0x revert
 }
 
 #define macro SAVE_INTEGRATION_FEE() = takes(3) returns(2) {
     // takes: [calldataOffset, total, token]
 
-    __tablesize(SAVE_DATA) __tablestart(SAVE_DATA) 0x codecopy          // [calldataOffset, total, token]
+    __tablesize(SAVE_DATA) __tablestart(SAVE_DATA) 0x codecopy              // [calldataOffset, total, token]
 
-    [ADDRESS_LENGTH]                                                    // [addressLength, calldataOffset, total, token]
-    dup2 0x2 add                                                        // [integratorOffset, addressLength, calldataOffset, total, token]
-    [SAVE_OWNER_PACKED_OFFSET] calldatacopy                             // [calldataOffset, total, token]
+    [ADDRESS_LENGTH]                                                        // [addressLength, calldataOffset, total, token]
+    dup2 0x2 add                                                            // [integratorOffset, addressLength, calldataOffset, total, token]
+    [SAVE_OWNER_PACKED_OFFSET] calldatacopy                                 // [calldataOffset, total, token]
 
-    dup3 [SAVE_TOKEN0_OFFSET] mstore                                    // [calldataOffset, total, token]
+    dup3 [SAVE_TOKEN0_OFFSET] mstore                                        // [calldataOffset, total, token]
 
-    calldataload 0xf0 shr                                               // [feeShare, total, token]
-    dup2 mul 0x10 shr                                                   // [integratorShare, total, token]
+    calldataload 0xf0 shr                                                   // [feeShare, total, token]
+    dup2 mul 0x10 shr                                                       // [integratorShare, total, token]
 
-    dup1 [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                    // [integratorShare, total, token]
+    dup1 [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                        // [integratorShare, total, token]
 
-    dup1 [SAVE_AMOUNT0_OFFSET] mstore                                   // [integratorShare, total, token]
-    0x [SAVE_AMOUNT1_OFFSET] mstore                                     // [integratorShare, total, token]
-    swap1 sub                                                           // [remaining, token]
+    dup1 [SAVE_AMOUNT0_OFFSET] mstore                                       // [integratorShare, total, token]
+    0x [SAVE_AMOUNT1_OFFSET] mstore                                         // [integratorShare, total, token]
+    swap1 sub                                                               // [remaining, token]
 
     // ICore#save(address owner, address token0, address token1, bytes32 salt, uint128 amount0, uint128 amount1)
-    0x 0x [SAVE_ARGS_SIZE] 0x 0x [CORE] gas call                        // [success, remaining, token]
-    pop                                                                 // [remaining, token]
+    0x 0x [SAVE_ARGS_SIZE] 0x 0x [CORE] gas call                            // [success, remaining, token]
+    pop                                                                     // [remaining, token]
 
-    dup1 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] mstore                  // [remaining, token]
+    dup1 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] mstore                      // [remaining, token]
 }
 
 #define macro TRANSFER_IF_NATIVE_EXACT_OUT(erc20Lbl, transferFromOffset, noRefundLbl, refundSuccessLbl) = takes(7) returns(0) {
     // takes: [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-    dup2 <erc20Lbl> jumpi                                               // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+    dup2 <erc20Lbl> jumpi                                                   // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         // Transfer native token to Core
-        0x 0x 0x 0x swap4 [CORE] gas call                               // [success, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-        pop pop                                                         // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        0x 0x 0x 0x swap4 [CORE] gas call                                   // [success, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        pop pop                                                             // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
         // Refund potential remaining balance to the caller (if not in a `delegatecall`)
 
-        dup3 <transferFromOffset> add calldataload                      // [transferFrom, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-        selfbalance                                                     // [selfbalance, transferFrom, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        dup3 <transferFromOffset> add calldataload                          // [transferFrom, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        selfbalance                                                         // [selfbalance, transferFrom, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-        iszero dup2 iszero or                                           // [noRefund, transferFrom, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-        <noRefundLbl> jumpi                                             // [transferFrom, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        iszero dup2 iszero or                                               // [noRefund, transferFrom, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        <noRefundLbl> jumpi                                                 // [transferFrom, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
             // Transfer remaining balance
-            0x 0x 0x selfbalance 0x swap5 gas call                      // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            0x 0x 0x selfbalance 0x swap5 gas call                          // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-            <refundSuccessLbl> jumpi                                    // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-                __ERROR(ETHTransferFailed) 0x mstore                    // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            <refundSuccessLbl> jumpi                                        // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+                __ERROR(ETHTransferFailed) 0x mstore                        // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
                 0x4 0x revert
 }
 
