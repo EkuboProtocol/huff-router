@@ -2,11 +2,10 @@
 pragma solidity ^0.8.30;
 
 import {CORE_ADDRESS, HyperRouter, MEV_RESIST_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS} from "../src/HyperRouter.sol";
-
 import {readTokensFromFile} from "../src/TokenReader.sol";
 import {BasePoolConfig, IntegrationFee, MultiHopSwap, PoolConfig, Swap, TestCase} from "./TestCase.sol";
-
 import {TokenInfo, resolve} from "./TokenInfo.sol";
+
 import {ICore} from "ekubo/interfaces/ICore.sol";
 import {CoreLib} from "ekubo/libraries/CoreLib.sol";
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/src/math/constants.sol";
@@ -44,7 +43,7 @@ contract HyperRouterTest is Test {
 
     ICore constant CORE = ICore(CORE_ADDRESS);
 
-    bool[2] bools = [true, false];
+    bool[2] bools = [false, true];
     address[2] recipients = [address(0), 0x00000C771F6176268D5A9846E0956C3eF58597A1];
 
     PoolConfig oracleConfig = PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0});
@@ -174,7 +173,9 @@ contract HyperRouterTest is Test {
         uint256 specialCaseCount = 2;
         uint256 extensionVariants = ethUsdcExtensionConfigs.length + 1;
 
-        cases = new TestCase[](recipients.length * (bools.length ** 4) * extensionVariants + specialCaseCount);
+        cases = new TestCase[](
+            recipients.length * (bools.length ** 3) * extensionVariants * (bools.length + 1) + specialCaseCount
+        );
 
         {
             TestCase memory specifiedUnknownCase = baseCase;
@@ -206,74 +207,91 @@ contract HyperRouterTest is Test {
                             for (uint256 f = 0; f < bools.length; f++) {
                                 bool lastSwap = bools[f];
 
-                                TestCase memory testCase = baseCase;
+                                for (uint256 g = 0; g < bools.length; g++) {
+                                    bool swapTokenKnown = bools[g];
 
-                                testCase.recipient = recipient;
-                                testCase.delegateCall = delegatecall;
-                                testCase.withSqrtRatioLimit = withSqrtRatioLimit;
-                                testCase.isExactOut = isExactOut;
+                                    // For last swaps the calculated token isn't encoded anway, so we only need to test
+                                    // one combination here. Note that we rely on the ordering of `bools` here for the
+                                    // indexing to be correct.
+                                    if (lastSwap && g > 0) break;
 
-                                bool isKnownExtension = e != ethUsdcExtensionConfigs.length;
+                                    TestCase memory testCase = baseCase;
 
-                                Swap memory targetSwap;
-                                targetSwap.calculatedTokenInfo = TokenInfo({value: USDC_ADDRESS, isKnown: false});
-                                targetSwap.isKnownExtension = isKnownExtension;
+                                    testCase.recipient = recipient;
+                                    testCase.delegateCall = delegatecall;
+                                    testCase.withSqrtRatioLimit = withSqrtRatioLimit;
+                                    testCase.isExactOut = isExactOut;
 
-                                if (isKnownExtension) {
-                                    targetSwap.config = ethUsdcExtensionConfigs[e];
-                                } else {
-                                    targetSwap.config = ethUsdcExtensionConfigs[0];
-                                }
+                                    bool isKnownExtension = e != ethUsdcExtensionConfigs.length;
 
-                                if (lastSwap) {
-                                    testCase.multiHopSwaps[0].swaps[0] = targetSwap;
-                                } else {
-                                    Swap[] memory swaps = new Swap[](3);
+                                    Swap memory targetSwap;
 
-                                    swaps[0] = targetSwap;
-                                    swaps[1] = Swap({
-                                        config: usdcUsdt.toPoolConfig(),
-                                        isKnownExtension: true,
-                                        skipAhead: 0,
-                                        calculatedTokenInfo: TokenInfo({value: USDT_ADDRESS, isKnown: false}),
-                                        sqrtRatioLimit: 0
-                                    });
-                                    swaps[2] = Swap({
-                                        config: usdcUsdt.toPoolConfig(),
-                                        isKnownExtension: true,
-                                        skipAhead: 0,
-                                        calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
-                                        sqrtRatioLimit: 0
-                                    });
+                                    if (swapTokenKnown) {
+                                        targetSwap.calculatedTokenInfo = TokenInfo({value: address(1), isKnown: true});
+                                    } else {
+                                        targetSwap.calculatedTokenInfo =
+                                            TokenInfo({value: USDC_ADDRESS, isKnown: false});
+                                    }
 
-                                    testCase.multiHopSwaps[0].swaps = swaps;
-                                }
+                                    targetSwap.isKnownExtension = isKnownExtension;
 
-                                if (withSqrtRatioLimit) {
-                                    for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
-                                        MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
-                                        address specifiedToken = resolve(tokens, testCase.specifiedTokenInfo);
+                                    if (isKnownExtension) {
+                                        targetSwap.config = ethUsdcExtensionConfigs[e];
+                                    } else {
+                                        targetSwap.config = ethUsdcExtensionConfigs[0];
+                                    }
 
-                                        for (uint256 j = 0; j < multiHopSwap.swaps.length; j++) {
-                                            Swap memory swap = multiHopSwap.swaps[j];
+                                    if (lastSwap) {
+                                        testCase.multiHopSwaps[0].swaps[0] = targetSwap;
+                                    } else {
+                                        Swap[] memory swaps = new Swap[](3);
 
-                                            address calculatedToken = resolve(tokens, swap.calculatedTokenInfo);
+                                        swaps[0] = targetSwap;
+                                        swaps[1] = Swap({
+                                            config: usdcUsdt.toPoolConfig(),
+                                            isKnownExtension: true,
+                                            skipAhead: 0,
+                                            calculatedTokenInfo: TokenInfo({value: USDT_ADDRESS, isKnown: false}),
+                                            sqrtRatioLimit: 0
+                                        });
+                                        swaps[2] = Swap({
+                                            config: usdcUsdt.toPoolConfig(),
+                                            isKnownExtension: true,
+                                            skipAhead: 0,
+                                            calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
+                                            sqrtRatioLimit: 0
+                                        });
 
-                                            bool isToken1 = specifiedToken > calculatedToken;
-                                            bool isPriceIncreasing = isExactOut != isToken1;
+                                        testCase.multiHopSwaps[0].swaps = swaps;
+                                    }
 
-                                            swap.sqrtRatioLimit =
-                                                isPriceIncreasing ? MAX_SQRT_RATIO_RAW : MIN_SQRT_RATIO_RAW;
+                                    if (withSqrtRatioLimit) {
+                                        for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
+                                            MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
+                                            address specifiedToken = resolve(tokens, testCase.specifiedTokenInfo);
 
-                                            specifiedToken = calculatedToken;
+                                            for (uint256 j = 0; j < multiHopSwap.swaps.length; j++) {
+                                                Swap memory swap = multiHopSwap.swaps[j];
+
+                                                address calculatedToken = resolve(tokens, swap.calculatedTokenInfo);
+
+                                                bool isToken1 = specifiedToken > calculatedToken;
+                                                bool isPriceIncreasing = isExactOut != isToken1;
+
+                                                swap.sqrtRatioLimit =
+                                                    isPriceIncreasing ? MAX_SQRT_RATIO_RAW : MIN_SQRT_RATIO_RAW;
+
+                                                specifiedToken = calculatedToken;
+                                            }
                                         }
                                     }
-                                }
 
-                                cases[a * (bools.length ** 4 * extensionVariants)
-                                    + b * (bools.length ** 3 * extensionVariants)
-                                    + c * (bools.length ** 2 * extensionVariants) + d * bools.length * extensionVariants
-                                    + e * bools.length + f + specialCaseCount] = testCase;
+                                    cases[a * (bools.length ** 3 * extensionVariants * (bools.length + 1))
+                                        + b * (bools.length ** 2 * extensionVariants * (bools.length + 1))
+                                        + c * (bools.length * extensionVariants * (bools.length + 1))
+                                        + d * (extensionVariants * (bools.length + 1)) + e * (bools.length + 1)
+                                        + f * bools.length + g + specialCaseCount] = testCase;
+                                }
                             }
                         }
                     }

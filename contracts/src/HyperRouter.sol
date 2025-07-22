@@ -2,6 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {TOKEN_COUNT, readTokensFromFile} from "./TokenReader.sol";
+
 import {VmSafe} from "forge-std/Vm.sol";
 import {HuffNeoConfig} from "foundry-huff-neo/HuffNeoConfig.sol";
 
