@@ -1,0 +1,28 @@
+{
+  "name": "evm-ekubo-hyper-router-sdk",
+  "version": "1.0.0",
+  "description": "Calldata generation for Ekubo's gas-efficient and highly configurable HyperRouter smart contract",
+  "main": "index.js",
+  "keywords": [
+    "ekubo",
+    "amm",
+    "dex",
+    "ethereum",
+    "evm",
+    "defi",
+    "finance",
+    "crypto",
+    "blockchain",
+    "smart-contracts"
+  ],
+  "scripts": {
+    "build": "tsup src/index.ts --dts"
+  },
+  "devDependencies": {
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3"
+  },
+  "dependencies": {
+    "ethers": "^6.15.0"
+  }
+}
