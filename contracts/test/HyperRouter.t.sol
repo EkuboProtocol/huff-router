@@ -132,13 +132,7 @@ contract HyperRouterTest is Test {
     modifier setUpFork(uint256 blockNumber) {
         vm.createSelectFork(vm.rpcUrl("mainnet"), blockNumber);
 
-        address addr = HyperRouter.deploy(vm);
-        hyperRouter = addr;
-
-        uint256 routerCodesize;
-        assembly {
-            routerCodesize := extcodesize(addr)
-        }
+        hyperRouter = HyperRouter.deploy(vm);
 
         _;
     }
@@ -455,7 +449,8 @@ contract HyperRouterTest is Test {
 
         (bool success, bytes memory result) =
             testCase.delegateCall ? hyperRouter.delegatecall(data) : hyperRouter.call{value: value}(data);
-        vm.snapshotGasLastCall(testCase.tableTestName(tokens));
+        // FIXME https://github.com/foundry-rs/foundry/issues/11066
+        // vm.snapshotGasLastCall(testCase.tableTestName(tokens));
         assertTrue(success);
 
         (uint256 calculatedAmount, uint128 integrationFee) = abi.decode(result, (uint256, uint128));
