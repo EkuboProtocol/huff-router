@@ -174,7 +174,7 @@ contract HyperRouterTest is Test {
         uint256 specialCaseCount = 2;
         uint256 extensionVariants = ethUsdcExtensionConfigs.length + 1;
 
-        cases = new TestCase[](recipients.length * (bools.length ** 3) * extensionVariants + specialCaseCount);
+        cases = new TestCase[](recipients.length * (bools.length ** 4) * extensionVariants + specialCaseCount);
 
         {
             TestCase memory specifiedUnknownCase = baseCase;
@@ -203,46 +203,78 @@ contract HyperRouterTest is Test {
                         bool isExactOut = bools[d];
 
                         for (uint256 e = 0; e <= ethUsdcExtensionConfigs.length; e++) {
-                            TestCase memory testCase = baseCase;
+                            for (uint256 f = 0; f < bools.length; f++) {
+                                bool lastSwap = bools[f];
 
-                            testCase.recipient = recipient;
-                            testCase.delegateCall = delegatecall;
-                            testCase.withSqrtRatioLimit = withSqrtRatioLimit;
-                            testCase.isExactOut = isExactOut;
+                                TestCase memory testCase = baseCase;
 
-                            if (withSqrtRatioLimit) {
-                                for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
-                                    MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
-                                    address specifiedToken = resolve(tokens, testCase.specifiedTokenInfo);
+                                testCase.recipient = recipient;
+                                testCase.delegateCall = delegatecall;
+                                testCase.withSqrtRatioLimit = withSqrtRatioLimit;
+                                testCase.isExactOut = isExactOut;
 
-                                    for (uint256 j = 0; j < multiHopSwap.swaps.length; j++) {
-                                        Swap memory swap = multiHopSwap.swaps[j];
+                                bool isKnownExtension = e != ethUsdcExtensionConfigs.length;
 
-                                        address calculatedToken = resolve(tokens, swap.calculatedTokenInfo);
+                                Swap memory targetSwap;
+                                targetSwap.calculatedTokenInfo = TokenInfo({value: USDC_ADDRESS, isKnown: false});
+                                targetSwap.isKnownExtension = isKnownExtension;
 
-                                        bool isToken1 = specifiedToken > calculatedToken;
-                                        bool isPriceIncreasing = isExactOut != isToken1;
+                                if (isKnownExtension) {
+                                    targetSwap.config = ethUsdcExtensionConfigs[e];
+                                } else {
+                                    targetSwap.config = ethUsdcExtensionConfigs[0];
+                                }
 
-                                        swap.sqrtRatioLimit =
-                                            isPriceIncreasing ? MAX_SQRT_RATIO_RAW : MIN_SQRT_RATIO_RAW;
+                                if (lastSwap) {
+                                    testCase.multiHopSwaps[0].swaps[0] = targetSwap;
+                                } else {
+                                    Swap[] memory swaps = new Swap[](3);
 
-                                        specifiedToken = calculatedToken;
+                                    swaps[0] = targetSwap;
+                                    swaps[1] = Swap({
+                                        config: usdcUsdt.toPoolConfig(),
+                                        isKnownExtension: true,
+                                        skipAhead: 0,
+                                        calculatedTokenInfo: TokenInfo({value: USDT_ADDRESS, isKnown: false}),
+                                        sqrtRatioLimit: 0
+                                    });
+                                    swaps[2] = Swap({
+                                        config: usdcUsdt.toPoolConfig(),
+                                        isKnownExtension: true,
+                                        skipAhead: 0,
+                                        calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
+                                        sqrtRatioLimit: 0
+                                    });
+
+                                    testCase.multiHopSwaps[0].swaps = swaps;
+                                }
+
+                                if (withSqrtRatioLimit) {
+                                    for (uint256 i = 0; i < testCase.multiHopSwaps.length; i++) {
+                                        MultiHopSwap memory multiHopSwap = testCase.multiHopSwaps[i];
+                                        address specifiedToken = resolve(tokens, testCase.specifiedTokenInfo);
+
+                                        for (uint256 j = 0; j < multiHopSwap.swaps.length; j++) {
+                                            Swap memory swap = multiHopSwap.swaps[j];
+
+                                            address calculatedToken = resolve(tokens, swap.calculatedTokenInfo);
+
+                                            bool isToken1 = specifiedToken > calculatedToken;
+                                            bool isPriceIncreasing = isExactOut != isToken1;
+
+                                            swap.sqrtRatioLimit =
+                                                isPriceIncreasing ? MAX_SQRT_RATIO_RAW : MIN_SQRT_RATIO_RAW;
+
+                                            specifiedToken = calculatedToken;
+                                        }
                                     }
                                 }
+
+                                cases[a * (bools.length ** 4 * extensionVariants)
+                                    + b * (bools.length ** 3 * extensionVariants)
+                                    + c * (bools.length ** 2 * extensionVariants) + d * bools.length * extensionVariants
+                                    + e * bools.length + f + specialCaseCount] = testCase;
                             }
-
-                            Swap memory firstSwap = testCase.multiHopSwaps[0].swaps[0];
-
-                            if (e == ethUsdcExtensionConfigs.length) {
-                                firstSwap.config = ethUsdcExtensionConfigs[0];
-                                firstSwap.isKnownExtension = false;
-                            } else {
-                                firstSwap.config = ethUsdcExtensionConfigs[e];
-                            }
-
-                            cases[a * (bools.length ** 3 * extensionVariants)
-                                + b * (bools.length ** 2 * extensionVariants) + c * (bools.length * extensionVariants)
-                                + d * extensionVariants + e + specialCaseCount] = testCase;
                         }
                     }
                 }
