@@ -165,6 +165,7 @@ export function generateCalldata(params: Parameters): string {
 
     for (const { specifiedAmount, swaps } of multiHopSwaps) {
         calldata.push(
+            // https://github.com/ethers-io/ethers.js/issues/5025
             specifiedAmountBytes > 0 ? toBeHex(specifiedAmount, specifiedAmountBytes) : "0x",
             new Uint8Array([swaps.length - 1]),
         );
