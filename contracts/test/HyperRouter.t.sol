@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {HyperRouter, CORE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS} from "../src/HyperRouter.sol";
 import {TestCase, MultiHopSwap, Swap, IntegrationFee, PoolConfig, BasePoolConfig} from "./TestCase.sol";
@@ -16,57 +16,56 @@ import {TokenInfo, resolve} from "./TokenInfo.sol";
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/src/math/constants.sol";
 import {LibCall} from "solady/utils/LibCall.sol";
 
-using {resolve} for address[];
-using CoreLib for ICore;
-
-bytes32 constant SAVED_BALANCE_SALT = keccak256("HYPER_ROUTER");
-
-ICore constant CORE = ICore(CORE_ADDRESS);
-
-struct TokenAmount {
-    address token;
-    uint128 amount;
-}
-
-struct Route {
-    address specifiedToken;
-    uint128 amount;
-    MultiHopSwap[] multiHopSwaps;
-    uint128 expectedCalculatedExactIn;
-    uint128 expectedCalculatedExactOut;
-}
-
 contract HyperRouterTest is Test {
+    using {resolve} for address[];
+    using CoreLib for ICore;
+
+    struct TokenAmount {
+        address token;
+        uint128 amount;
+    }
+
+    struct Route {
+        address specifiedToken;
+        uint128 amount;
+        MultiHopSwap[] multiHopSwaps;
+        uint128 expectedCalculatedExactIn;
+        uint128 expectedCalculatedExactOut;
+    }
+
     address constant USDC_ADDRESS = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     address constant USDT_ADDRESS = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
 
-    address[2] RECIPIENTS = [address(0), 0x00000C771F6176268D5A9846E0956C3eF58597A1];
+    bytes32 constant SAVED_BALANCE_SALT = keccak256("HYPER_ROUTER");
 
     uint256 constant EXACT_OUT_DEAL_AMOUNT = type(uint128).max / 2;
 
-    PoolConfig ORACLE_CONFIG = PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0});
+    ICore constant CORE = ICore(CORE_ADDRESS);
 
-    BasePoolConfig ETH_USDC_2_BIPS = BasePoolConfig({fee: 3689348814741910, tickSpacing: 4990});
-    BasePoolConfig ETH_USDC_5_BIPS = BasePoolConfig({fee: 9223372036854775, tickSpacing: 1000});
+    bool[2] bools = [true, false];
+    address[2] recipients = [address(0), 0x00000C771F6176268D5A9846E0956C3eF58597A1];
 
-    BasePoolConfig USDC_USDT = BasePoolConfig({fee: 92233720368547, tickSpacing: 50});
+    PoolConfig oracleConfig = PoolConfig({extension: ORACLE_ADDRESS, fee: 0, tickSpacing: 0});
 
-    BasePoolConfig USDT_ETH_2_BIPS = BasePoolConfig({fee: 3689348814741910, tickSpacing: 4990});
-    BasePoolConfig USDT_ETH_09_BIPS = BasePoolConfig({fee: 1660206966633859, tickSpacing: 4990});
-    BasePoolConfig USDT_ETH_3_BIPS = BasePoolConfig({fee: 5534023222112865, tickSpacing: 4990});
+    BasePoolConfig ethUsdc2Bips = BasePoolConfig({fee: 3689348814741910, tickSpacing: 4990});
+    BasePoolConfig ethUsdc5Bips = BasePoolConfig({fee: 9223372036854775, tickSpacing: 1000});
 
-    bool[2] BOOLS = [true, false];
+    BasePoolConfig usdcUsdt = BasePoolConfig({fee: 92233720368547, tickSpacing: 50});
+
+    BasePoolConfig usdtEth2Bips = BasePoolConfig({fee: 3689348814741910, tickSpacing: 4990});
+    BasePoolConfig usdtEth09Bips = BasePoolConfig({fee: 1660206966633859, tickSpacing: 4990});
+    BasePoolConfig usdtEth3Bips = BasePoolConfig({fee: 5534023222112865, tickSpacing: 4990});
 
     // Three different base pool swap sequences of length three between tokens with ID 0 to 2 (ETH, USDC, USDT, as per tokens.json)
     BasePoolConfig[3][3] swapSequences = [
-        [ETH_USDC_2_BIPS, USDC_USDT, USDT_ETH_2_BIPS],
-        [ETH_USDC_5_BIPS, USDC_USDT, USDT_ETH_09_BIPS],
-        [ETH_USDC_2_BIPS, USDC_USDT, USDT_ETH_3_BIPS]
+        [ethUsdc2Bips, usdcUsdt, usdtEth2Bips],
+        [ethUsdc5Bips, usdcUsdt, usdtEth09Bips],
+        [ethUsdc2Bips, usdcUsdt, usdtEth3Bips]
     ];
 
-    PoolConfig[4] ETH_USDC_EXTENSION_CONFIGS = [
-        ETH_USDC_2_BIPS.toPoolConfig(),
-        ORACLE_CONFIG,
+    PoolConfig[4] ethUsdcExtensionConfigs = [
+        ethUsdc2Bips.toPoolConfig(),
+        oracleConfig,
         PoolConfig({extension: TWAMM_ADDRESS, fee: 9223372036854775, tickSpacing: 0}),
         PoolConfig({extension: MEV_RESIST_ADDRESS, fee: 1844674407370954, tickSpacing: 1000})
     ];
@@ -83,7 +82,7 @@ contract HyperRouterTest is Test {
             Swap[] memory firstSwaps = new Swap[](1);
 
             firstSwaps[0] = Swap({
-                config: ETH_USDC_2_BIPS.toPoolConfig(),
+                config: ethUsdc2Bips.toPoolConfig(),
                 isKnownExtension: true,
                 skipAhead: 2,
                 calculatedTokenInfo: TokenInfo({value: address(1), isKnown: true}),
@@ -97,7 +96,7 @@ contract HyperRouterTest is Test {
             Swap[] memory secondSwaps = new Swap[](2);
 
             secondSwaps[0] = Swap({
-                config: USDT_ETH_2_BIPS.toPoolConfig(),
+                config: usdtEth2Bips.toPoolConfig(),
                 isKnownExtension: false,
                 skipAhead: 1,
                 calculatedTokenInfo: TokenInfo({value: address(2), isKnown: true}),
@@ -105,7 +104,7 @@ contract HyperRouterTest is Test {
             });
 
             secondSwaps[1] = Swap({
-                config: USDC_USDT.toPoolConfig(),
+                config: usdcUsdt.toPoolConfig(),
                 isKnownExtension: true,
                 skipAhead: 0,
                 calculatedTokenInfo: TokenInfo({value: USDC_ADDRESS, isKnown: false}),
@@ -139,8 +138,6 @@ contract HyperRouterTest is Test {
             routerCodesize := extcodesize(addr)
         }
 
-        console.log(routerCodesize);
-
         _;
     }
 
@@ -172,9 +169,9 @@ contract HyperRouterTest is Test {
 
     function fixtureTestCase() external view returns (TestCase[] memory cases) {
         uint256 specialCaseCount = 2;
-        uint256 extensionVariants = ETH_USDC_EXTENSION_CONFIGS.length + 1;
+        uint256 extensionVariants = ethUsdcExtensionConfigs.length + 1;
 
-        cases = new TestCase[](RECIPIENTS.length * (BOOLS.length ** 3) * extensionVariants + specialCaseCount);
+        cases = new TestCase[](recipients.length * (bools.length ** 3) * extensionVariants + specialCaseCount);
 
         {
             TestCase memory specifiedUnknownCase = baseCase;
@@ -190,19 +187,19 @@ contract HyperRouterTest is Test {
             cases[1] = calculatedUnknownCase;
         }
 
-        for (uint256 a = 0; a < RECIPIENTS.length; a++) {
-            address recipient = RECIPIENTS[a];
+        for (uint256 a = 0; a < recipients.length; a++) {
+            address recipient = recipients[a];
 
-            for (uint256 b = 0; b < BOOLS.length; b++) {
-                bool delegatecall = BOOLS[b];
+            for (uint256 b = 0; b < bools.length; b++) {
+                bool delegatecall = bools[b];
 
-                for (uint256 c = 0; c < BOOLS.length; c++) {
-                    bool withSqrtRatioLimit = BOOLS[c];
+                for (uint256 c = 0; c < bools.length; c++) {
+                    bool withSqrtRatioLimit = bools[c];
 
-                    for (uint256 d = 0; d < BOOLS.length; d++) {
-                        bool isExactOut = BOOLS[d];
+                    for (uint256 d = 0; d < bools.length; d++) {
+                        bool isExactOut = bools[d];
 
-                        for (uint256 e = 0; e <= ETH_USDC_EXTENSION_CONFIGS.length; e++) {
+                        for (uint256 e = 0; e <= ethUsdcExtensionConfigs.length; e++) {
                             TestCase memory testCase = baseCase;
 
                             testCase.recipient = recipient;
@@ -231,17 +228,17 @@ contract HyperRouterTest is Test {
                                 }
                             }
 
-                            Swap memory swap = testCase.multiHopSwaps[0].swaps[0];
+                            Swap memory firstSwap = testCase.multiHopSwaps[0].swaps[0];
 
-                            if (e == ETH_USDC_EXTENSION_CONFIGS.length) {
-                                swap.config = ETH_USDC_EXTENSION_CONFIGS[0];
-                                swap.isKnownExtension = false;
+                            if (e == ethUsdcExtensionConfigs.length) {
+                                firstSwap.config = ethUsdcExtensionConfigs[0];
+                                firstSwap.isKnownExtension = false;
                             } else {
-                                swap.config = ETH_USDC_EXTENSION_CONFIGS[e];
+                                firstSwap.config = ethUsdcExtensionConfigs[e];
                             }
 
-                            cases[a * (BOOLS.length ** 3 * extensionVariants)
-                                + b * (BOOLS.length ** 2 * extensionVariants) + c * (BOOLS.length * extensionVariants)
+                            cases[a * (bools.length ** 3 * extensionVariants)
+                                + b * (bools.length ** 2 * extensionVariants) + c * (bools.length * extensionVariants)
                                 + d * extensionVariants + e + specialCaseCount] = testCase;
                         }
                     }
