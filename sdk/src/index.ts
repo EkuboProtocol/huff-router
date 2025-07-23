@@ -113,10 +113,6 @@ export interface Parameters {
      */
     specifiedToken: string,
     /**
-     * The address of the token in which the calculated amounts of the final swaps of each {@link MultiHopSwap} are denominated
-     */
-    calculatedToken: string, // TODO Remove
-    /**
      * A sequence of multi-hop swaps
      *
      * @remarks
@@ -190,7 +186,7 @@ const UNKNOWN_TOKEN = 0xff;
  */
 export function generateCalldata(params: Parameters): string {
     const { multiHopSwaps, recipient, calculatedAmountThreshold, integrationFee } = params;
-    const [specifiedToken, calculatedToken] = [getAddress(params.specifiedToken), getAddress(params.calculatedToken)];
+    const specifiedToken = getAddress(params.specifiedToken);
 
     if (multiHopSwaps.length < 1 || multiHopSwaps.length > 256) {
         throw new Error("need between one and 256 multiHopSwaps");
@@ -199,6 +195,7 @@ export function generateCalldata(params: Parameters): string {
     let maxSpecified = 0n;
     let withSqrtRatioLimit = false;
     let isExactOut: boolean | null = null;
+    let calculatedToken: string | null = null;
 
     for (const { specifiedAmount, swaps } of multiHopSwaps) {
         if (swaps.length < 1 || swaps.length > 256) {
@@ -238,8 +235,14 @@ export function generateCalldata(params: Parameters): string {
                 throw new Error("skipAhead must fit into uint8");
             }
 
-            if (i == swaps.length - 1 && getAddress(swapCalculatedToken) !== calculatedToken) {
-                throw new Error("last swaps of each multiHopSwap must end at the calculated token");
+            if (i == swaps.length - 1) {
+                const checksummedSwapCalculatedToken = getAddress(swapCalculatedToken);
+
+                if (calculatedToken === null) {
+                    calculatedToken = checksummedSwapCalculatedToken;
+                } else if (calculatedToken !== checksummedSwapCalculatedToken) {
+                    throw new Error("last swaps of each multiHopSwap must end at the same calculated token");
+                }
             }
 
             withSqrtRatioLimit ||= swapWithSqrtRatioLimit;
@@ -269,6 +272,9 @@ export function generateCalldata(params: Parameters): string {
             calculatedAmountThresholdUnsigned = calculatedAmountThresholdAbs;
         }
     }
+
+    // Holds true because we enforce at least one multiHopSwap and at least one swap per multiHopSwap
+    calculatedToken = calculatedToken!;
 
     isExactOut ??= (calculatedAmountThreshold ?? 0n) < 0n;
 
