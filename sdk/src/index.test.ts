@@ -16,7 +16,6 @@ const SQRT_RATIO_ONE = 0b1100000000000000000000000000000001000000000000000000000
 test("minimal calldata", () => {
     expect(generateCalldata({
         specifiedToken: ETH_ADDRESS,
-        calculatedToken: USDC_ADDRESS,
         multiHopSwaps: [
             {
                 specifiedAmount: 0n,
@@ -38,7 +37,6 @@ test("minimal calldata", () => {
 test("complex scenario", () => {
     expect(generateCalldata({
         specifiedToken: ETH_ADDRESS,
-        calculatedToken: USDT_ADDRESS,
         recipient: RECIPIENT,
         calculatedAmountThreshold: 0x0123n,
         integrationFee: {
