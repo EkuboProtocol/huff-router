@@ -41,8 +41,8 @@ test("complex scenario", () => {
         calculatedToken: USDT_ADDRESS,
         recipient: RECIPIENT,
         calculatedAmountThreshold: 0x0123n,
-        integrationFeeInfo: {
-            share: 0xabcd,
+        integrationFee: {
+            fee: 0xabcd,
             integrator: INTEGRATOR,
         },
         multiHopSwaps: [
