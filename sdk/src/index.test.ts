@@ -1,7 +1,8 @@
-import { expect, test } from "vitest";
+import { assert, expect, test } from "vitest";
 import { generateCalldata } from ".";
-import { WeiPerEther, ZeroAddress } from "ethers";
+import { getAddress, isAddress, WeiPerEther, ZeroAddress } from "ethers";
 import { ORACLE_ADDRESS, TWAMM_ADDRESS } from "./address";
+import TOKENS from "../../tokens/ethereum.json";
 
 const ETH_ADDRESS = ZeroAddress;
 const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
@@ -83,4 +84,10 @@ test("complex scenario", () => {
             },
         ]
     })).toBe("0x010802000201010201230de0b6b3a764000001020020c49ba5e353f70100000000400065a8177fae27000a000053e2d6238da300000032c0000000400000000000000006f05b59d3b20000000000000d1b71758e21960000137e00000000400065a8177fae27abcdf94e5cdf41247e268d4847c30a0dc2893b33e85d00000c771f6176268d5a9846e0956c3ef58597a1");
+});
+
+test("token addresses should be checksummed", () => {
+    for (const { address } of TOKENS) {
+        assert(isAddress(address) && getAddress(address) === address, `${address} should be a checksummed address`);
+    }
 })
