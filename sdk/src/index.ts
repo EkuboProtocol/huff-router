@@ -1,4 +1,4 @@
-import { BytesLike, concat, getAddress, getBigInt, MaxUint256, toBeArray, toBeHex, ZeroAddress } from "ethers";
+import { Address, ByteArray, bytesToHex, concatBytes, getAddress, Hex, hexToBigInt, hexToBytes, maxInt128, maxUint256, minInt128, numberToBytes, numberToHex, pad, padBytes, padHex, size, toBytes, toHex, zeroAddress } from "viem";
 import TOKENS from "../../tokens/ethereum.json";
 import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS } from "./address";
 
@@ -12,7 +12,7 @@ export interface PoolConfig {
      * @remarks
      * Base pools (which includes both concentrated liquidity and full range pools) have this set to the zero address
      */
-    extension: string,
+    extension: Address,
     /**
      * The swap and withdrawal fee
      */
@@ -34,7 +34,7 @@ export interface Swap {
     /**
      * The address of the token in which the calculated amount of this swap is denominated
      */
-    calculatedToken: string,
+    calculatedToken: Address,
     /**
      * The `skipAhead` parameter of a swap
      *
@@ -101,7 +101,7 @@ export interface IntegrationFee {
     /**
      * The owner of the saved balance in which Ekubo Core will save the integration fee
      */
-    integrator: string,
+    integrator: Address,
 }
 
 /**
@@ -111,7 +111,7 @@ export interface Parameters {
     /**
      * The address of the token in which the {@link MultiHopSwap.specifiedAmount | specified amounts} of the {@link multiHopSwaps} are denominated
      */
-    specifiedToken: string,
+    specifiedToken: Address,
     /**
      * A sequence of multi-hop swaps
      *
@@ -128,7 +128,7 @@ export interface Parameters {
      * @defaultValue
      * If the *HyperRouter* is called via a `call`, the `caller`; if called via a `delegatecall`, the delegating contract.
      */
-    recipient?: string,
+    recipient?: Address,
     /**
      * A slippage check for the total calculated amount after the execution of all swaps
      *
@@ -152,11 +152,8 @@ export interface Parameters {
     integrationFee?: IntegrationFee,
 }
 
-const INT128_MIN = -0x80000000000000000000000000000000n;
-const INT128_MAX = 0x7fffffffffffffffffffffffffffffffn;
-
 const TWO_POW_62 = 2n ** 62n;
-const TWO_POW_256 = MaxUint256 + 1n;
+const TWO_POW_256 = maxUint256 + 1n;
 
 const FEE_BYTES = 8;
 const TICK_SPACING_BYTES = 4;
@@ -184,7 +181,7 @@ const UNKNOWN_TOKEN = 0xff;
  * @param params - The parameters determining the generated calldata
  * @returns A hex-encoded calldata string
  */
-export function generateCalldata(params: Parameters): string {
+export function generateCalldata(params: Parameters): Hex {
     const { multiHopSwaps, recipient, calculatedAmountThreshold, integrationFee } = params;
     const specifiedToken = getAddress(params.specifiedToken);
 
@@ -195,7 +192,7 @@ export function generateCalldata(params: Parameters): string {
     let maxSpecified = 0n;
     let withSqrtRatioLimit = false;
     let isExactOut: boolean | null = null;
-    let calculatedToken: string | null = null;
+    let calculatedToken: Address | null = null;
 
     for (const { specifiedAmount, swaps } of multiHopSwaps) {
         if (swaps.length < 1 || swaps.length > 256) {
@@ -209,7 +206,7 @@ export function generateCalldata(params: Parameters): string {
         }
 
         if (specifiedAmount !== 0n) {
-            if (specifiedAmount < INT128_MIN || specifiedAmount > INT128_MAX) {
+            if (specifiedAmount < minInt128 || specifiedAmount > maxInt128) {
                 throw new Error("specified amounts need to fit into int128");
             }
 
@@ -262,7 +259,7 @@ export function generateCalldata(params: Parameters): string {
 
         const calculatedAmountThresholdAbs = isExactOutThreshold ? -calculatedAmountThreshold : calculatedAmountThreshold;
 
-        if (calculatedAmountThresholdAbs > MaxUint256) {
+        if (calculatedAmountThresholdAbs > maxUint256) {
             throw new Error("absolute value of calculatedAmountThreshold can't exceed maximum uint256 value");
         }
 
@@ -279,16 +276,16 @@ export function generateCalldata(params: Parameters): string {
     isExactOut ??= (calculatedAmountThreshold ?? 0n) < 0n;
 
     const withRecipient = typeof recipient !== "undefined";
-    const specifiedAmountBytes = toBeArray(maxSpecified).length;
-    const calculatedAmountThresholdBin = toBeArray(calculatedAmountThresholdUnsigned);
+    const specifiedAmountBytes = maxSpecified === 0n ? 0 : size(numberToHex(maxSpecified));
+    const calculatedAmountThresholdBin = calculatedAmountThresholdUnsigned === 0n ? new Uint8Array() : numberToBytes(calculatedAmountThresholdUnsigned);
     const [specifiedTokenId, calculatedTokenId] = [tokenId(specifiedToken), tokenId(calculatedToken)];
     const withIntegrationFee = typeof integrationFee !== "undefined" && integrationFee.fee !== 0;
 
-    let calldata: BytesLike[] = [
+    let calldata: ByteArray[] = [
         new Uint8Array([
             Number(withRecipient),
             specifiedAmountBytes,
-            calculatedAmountThresholdBin.length,
+            size(calculatedAmountThresholdBin),
             specifiedTokenId ?? UNKNOWN_TOKEN,
             calculatedTokenId ?? UNKNOWN_TOKEN,
             multiHopSwaps.length - 1,
@@ -299,21 +296,20 @@ export function generateCalldata(params: Parameters): string {
     ];
 
     if (specifiedTokenId === null) {
-        calldata.push(specifiedToken);
+        calldata.push(hexToBytes(specifiedToken));
     }
 
     if (calculatedTokenId === null) {
-        calldata.push(calculatedToken);
+        calldata.push(hexToBytes(calculatedToken));
     }
 
     for (const { specifiedAmount, swaps } of multiHopSwaps) {
         calldata.push(
-            // https://github.com/ethers-io/ethers.js/issues/5025
-            specifiedAmountBytes > 0 ? toBeHex(specifiedAmount, specifiedAmountBytes) : "0x",
-            new Uint8Array([swaps.length - 1]),
+            padBytes(specifiedAmount === 0n ? new Uint8Array() : numberToBytes(specifiedAmount), { size: specifiedAmountBytes }),
+            numberToBytes(swaps.length - 1),
         );
 
-        let nextSpecifiedToken = getBigInt(specifiedToken);
+        let nextSpecifiedToken = hexToBigInt(specifiedToken);
 
         for (let i = 0; i < swaps.length; i++) {
             const swap = swaps[i];
@@ -325,29 +321,23 @@ export function generateCalldata(params: Parameters): string {
             const skipAhead = swap.skipAhead ?? 0;
 
             switch (extension) {
-                case ZeroAddress:
+                case zeroAddress:
                     calldata.push(
                         new Uint8Array([
                             0,
                             skipAhead,
                         ]),
-                        toBeHex(fee, FEE_BYTES),
-                        toBeHex(tickSpacing, TICK_SPACING_BYTES),
+                        numberToBytes(fee, { size: FEE_BYTES }),
+                        numberToBytes(tickSpacing, { size: TICK_SPACING_BYTES }),
                     );
                     break;
                 case ORACLE_ADDRESS:
-                    calldata.push(
-                        new Uint8Array([
-                            1,
-                        ]),
-                    );
+                    calldata.push(new Uint8Array([1]));
                     break;
                 case TWAMM_ADDRESS:
                     calldata.push(
-                        new Uint8Array([
-                            2,
-                        ]),
-                        toBeHex(fee, FEE_BYTES),
+                        new Uint8Array([2]),
+                        numberToBytes(fee, { size: FEE_BYTES }),
                     );
                     break;
                 case MEV_RESIST_ADDRESS:
@@ -356,8 +346,8 @@ export function generateCalldata(params: Parameters): string {
                             3,
                             skipAhead,
                         ]),
-                        toBeHex(fee, FEE_BYTES),
-                        toBeHex(tickSpacing, TICK_SPACING_BYTES),
+                        numberToBytes(fee, { size: FEE_BYTES }),
+                        numberToBytes(tickSpacing, { size: TICK_SPACING_BYTES }),
                     );
                     break;
                 default:
@@ -366,9 +356,9 @@ export function generateCalldata(params: Parameters): string {
                             4,
                             skipAhead,
                         ]),
-                        extension,
-                        toBeHex(fee, FEE_BYTES),
-                        toBeHex(tickSpacing, TICK_SPACING_BYTES),
+                        hexToBytes(extension),
+                        numberToBytes(fee, { size: FEE_BYTES }),
+                        numberToBytes(tickSpacing, { size: TICK_SPACING_BYTES }),
                     );
             }
 
@@ -378,11 +368,11 @@ export function generateCalldata(params: Parameters): string {
                 calldata.push(new Uint8Array([swapCalculatedTokenId ?? UNKNOWN_TOKEN]));
 
                 if (swapCalculatedTokenId === null) {
-                    calldata.push(swapCalculatedToken);
+                    calldata.push(hexToBytes(swapCalculatedToken));
                 }
             }
 
-            const swapCalculatedTokenBig = getBigInt(swapCalculatedToken);
+            const swapCalculatedTokenBig = hexToBigInt(swapCalculatedToken);
 
             if (withSqrtRatioLimit) {
                 let sqrtRatioLimit;
@@ -396,7 +386,7 @@ export function generateCalldata(params: Parameters): string {
                     sqrtRatioLimit = sqrtRatioLimitOpt;
                 }
 
-                calldata.push(toBeHex(sqrtRatioLimit, SQRT_RATIO_LIMIT_BYTES));
+                calldata.push(numberToBytes(sqrtRatioLimit, { size: SQRT_RATIO_LIMIT_BYTES }));
             }
 
             nextSpecifiedToken = swapCalculatedTokenBig;
@@ -405,16 +395,16 @@ export function generateCalldata(params: Parameters): string {
 
     if (withIntegrationFee) {
         calldata.push(
-            toBeHex(integrationFee.fee, FEE_SHARE_BYTES),
-            getAddress(integrationFee.integrator),
+            numberToBytes(integrationFee.fee, { size: FEE_SHARE_BYTES }),
+            hexToBytes(getAddress(integrationFee.integrator)),
         );
     }
 
     if (withRecipient) {
-        calldata.push(getAddress(recipient));
+        calldata.push(hexToBytes(getAddress(recipient)));
     }
 
-    return concat(calldata);
+    return bytesToHex(concatBytes(calldata));
 }
 
 function tokenId(address: string): number | null {

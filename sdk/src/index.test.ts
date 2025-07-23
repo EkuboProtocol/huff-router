@@ -1,10 +1,10 @@
 import { assert, expect, test } from "vitest";
 import { generateCalldata } from ".";
-import { getAddress, isAddress, WeiPerEther, ZeroAddress } from "ethers";
 import { ORACLE_ADDRESS, TWAMM_ADDRESS } from "./address";
 import TOKENS from "../../tokens/ethereum.json";
+import { isAddress, parseEther, zeroAddress } from "viem";
 
-const ETH_ADDRESS = ZeroAddress;
+const ETH_ADDRESS = zeroAddress;
 const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
 const USDT_ADDRESS = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
 
@@ -45,7 +45,7 @@ test("complex scenario", () => {
         },
         multiHopSwaps: [
             {
-                specifiedAmount: WeiPerEther,
+                specifiedAmount: parseEther("1"),
                 swaps: [
                     {
                         poolConfig: {
@@ -57,7 +57,7 @@ test("complex scenario", () => {
                     },
                     {
                         poolConfig: {
-                            extension: ZeroAddress,
+                            extension: zeroAddress,
                             fee: 92233720368547n,
                             tickSpacing: 50,
                         },
@@ -68,11 +68,11 @@ test("complex scenario", () => {
                 ],
             },
             {
-                specifiedAmount: WeiPerEther / 2n,
+                specifiedAmount: parseEther("0.5"),
                 swaps: [
                     {
                         poolConfig: {
-                            extension: ZeroAddress,
+                            extension: zeroAddress,
                             fee: 3689348814741910n,
                             tickSpacing: 4990,
                         },
@@ -85,7 +85,7 @@ test("complex scenario", () => {
 });
 
 test("token addresses should be checksummed", () => {
-    for (const { address } of TOKENS) {
-        assert(isAddress(address) && getAddress(address) === address, `${address} should be a checksummed address`);
+    for (const { symbol, address } of TOKENS) {
+        assert(isAddress(address), `${symbol} should have a checksummed address`);
     }
 })
