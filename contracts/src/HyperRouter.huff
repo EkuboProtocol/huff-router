@@ -1455,6 +1455,7 @@
     exactInWithIntegrationFeeLbl:                                           // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         dup5                                                                // [offset, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         SAVE_INTEGRATION_FEE()                                              // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        dup1 STORE_CALCULATED_AMOUNT()                                      // [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
         WITHDRAW_EXACT_IN(
             ADD(INTEGRATION_FEE_LENGTH),
@@ -1471,9 +1472,11 @@
         pop                                                                 // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     exactOutWithoutIntegrationFeeRefundSuccessLbl:                          // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-        WITHDRAW_EXACT_OUT()
+        WITHDRAW_EXACT_OUT(NO_OP())
 
     exactOutWithIntegrationFeeLbl:                                          // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        dup1 STORE_CALCULATED_AMOUNT()                                      // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+
         TRANSFER_IF_NATIVE_EXACT_OUT(
             exactOutWithIntegrationFeePayErc20Lbl,
             ADDRESS_PLUS_INTEGRATION_FEE_LENGTH,
@@ -1487,11 +1490,11 @@
     exactOutWithIntegrationFeeNoRefundLbl:                                  // [transferFrom, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         pop                                                                 // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-    exactOutWithIntegrationFeeRefundSuccessLbl:
+    exactOutWithIntegrationFeeRefundSuccessLbl:                             // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         dup3                                                                // [offset, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         SAVE_INTEGRATION_FEE()                                              // [remainingSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-        WITHDRAW_EXACT_OUT()
+        WITHDRAW_EXACT_OUT(ADD(INTEGRATION_FEE_LENGTH))
 
     slippageCheckFailedLbl:                                                 // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         __ERROR(SlippageCheckFailed) 0x mstore                              // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -1710,7 +1713,7 @@
     )                                                                       // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     exactInWithIntegrationFeeLbl jumpi                                      // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-        STORE_RETURN_DATA_NO_INTEGRATION_FEE()                              // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        dup1 STORE_RETURN_DATA_NO_INTEGRATION_FEE()                         // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
         WITHDRAW_EXACT_IN(
             NO_OP(),
@@ -1724,11 +1727,16 @@
     dup5 lt                                                                 // [slippageCheckFailed, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated]
 }
 
-#define macro STORE_RETURN_DATA_NO_INTEGRATION_FEE() = takes(1) returns(1) {
+#define macro STORE_RETURN_DATA_NO_INTEGRATION_FEE() = takes(1) returns(0) {
     // takes: [totalCalculated]
 
-    dup1 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] mstore                      // [totalCalculated]
-    0x [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                          // [totalCalculated]
+    STORE_CALCULATED_AMOUNT()                                               // []
+    0x [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                          // []
+}
+
+#define macro STORE_CALCULATED_AMOUNT() = takes(1) returns(0) {
+    // takes: [amount]
+    [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] mstore                           // []
 }
 
 #define macro SETTLE_BALANCES_IF_FINISHED_EXACT_OUT(multiHopLbl) = takes(12) returns(0) {
@@ -1741,7 +1749,7 @@
     )                                                                       // [withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     exactOutWithIntegrationFeeLbl jumpi                                     // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-        STORE_RETURN_DATA_NO_INTEGRATION_FEE()                              // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        dup1 STORE_RETURN_DATA_NO_INTEGRATION_FEE()                         // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
         TRANSFER_IF_NATIVE_EXACT_OUT(
             exactOutWithoutIntegrationFeePayErc20Lbl,
@@ -1818,8 +1826,6 @@
     // ICore#save(address owner, address token0, address token1, bytes32 salt, uint128 amount0, uint128 amount1)
     0x 0x [SAVE_ARGS_SIZE] 0x 0x [CORE] gas call                            // [success, remaining, token]
     pop                                                                     // [remaining, token]
-
-    dup1 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] mstore                      // [remaining, token]
 }
 
 #define macro TRANSFER_IF_NATIVE_EXACT_OUT(erc20Lbl, transferFromOffset, noRefundLbl, refundSuccessLbl) = takes(7) returns(0) {
@@ -1848,7 +1854,7 @@
 #define macro WITHDRAW_EXACT_IN(afterDup, erc20Lbl) = takes(7) returns(0) {
     // takes: [remainingCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-    WITHDRAW(DUP_OFFSET_AND(dup4, <afterDup>))                              // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+    WITHDRAW(PUSH_OFFSET_AND(dup4, <afterDup>))                             // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
     pop                                                                     // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     dup2 <erc20Lbl> jumpi                                                   // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -1861,10 +1867,10 @@
     0x40 [RETURN_DATA_CALCULATED_AMOUNT_OFFSET] return
 }
 
-#define macro WITHDRAW_EXACT_OUT() = takes(5) returns(0) {
+#define macro WITHDRAW_EXACT_OUT(afterDup) = takes(5) returns(0) {
     // takes: [amount, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-    WITHDRAW(swap1)                                                         // [success, specifiedAmountBytes, specifiedAmountBits]
+    WITHDRAW(PUSH_OFFSET_AND(swap1, <afterDup>))                            // [success, specifiedAmountBytes, specifiedAmountBits]
     LOCKED_RETURN()
 }
 
@@ -1891,15 +1897,15 @@
 #define macro PAY_ERC20_EXACT_OUT(summand) = takes(7) returns(6) {
     // takes: [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-    PAY_ERC20(DUP_OFFSET_AND(dup3, ADD(<summand>)))                          // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+    PAY_ERC20(PUSH_OFFSET_AND(dup3, ADD(<summand>)))                        // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 }
 
 #define macro ADD(summand) = {
     <summand> add
 }
 
-#define macro DUP_OFFSET_AND(dup, afterDup) = {
-    <dup> <afterDup>
+#define macro PUSH_OFFSET_AND(pushOffset, afterPush) = {
+    <pushOffset> <afterPush>
 }
 
 #define macro PAY_ERC20(pushOffset) = takes(2) returns(1) {

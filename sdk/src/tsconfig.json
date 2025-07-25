@@ -1,0 +1,9 @@
+{
+  "extends": "..",
+  "compilerOptions": {
+    "target": "es2020",
+    "module": "es2015",
+    "moduleResolution": "bundler",
+    "composite": true,
+  },
+}

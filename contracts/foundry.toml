@@ -3,6 +3,7 @@ solc = "0.8.30"
 ffi = true # Necessary for the HuffNeoDeployer
 fs_permissions = [{ access = "read", path = "../tokens/ethereum.json"}]
 via-ir = true
+gas-limit = "4294967296" # MAX_UINT32, required for HyperRouterTest#executeSdkCases
 
 [fmt]
 sort_imports = true
