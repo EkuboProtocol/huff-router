@@ -1,17 +1,17 @@
 import { Address, encodeAbiParameters, getAbiItem, hexToBigInt, parseEther, parseUnits, zeroAddress } from "viem";
 import { hyperRouterTestAbi } from "./abi";
-import { MEV_RESIST_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions";
+import { MEV_RESIST_ADDRESS, TWAMM_ADDRESS } from "../src/extensions";
 import { generateCalldata, IntegrationFee, PoolConfig, Swap } from "../src";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl";
 import type { ElementOf, Writable } from "ts-essentials";
-import { ETH_ADDRESS, USDC_ADDRESS, USDT_ADDRESS } from "./tokens";
+import { ETH_ADDRESS, INTEGRATOR, ORACLE_CONFIG, USDC_ADDRESS, USDT_ADDRESS } from "./shared";
 
 const ETH_SPECIFIED = parseEther("1");
 const USDC_SPECIFIED = parseUnits("3000", 6);
 
-const RECIPIENT: Address = "0x00000C771F6176268D5A9846E0956C3eF58597A1";
+const RECIPIENT: Address = "0x46b7916bCEC93409d18a4771C43dCCdddD62585E";
 const INTEGRATION_FEE: IntegrationFee = {
-    integrator: "0xf94e5Cdf41247E268d4847C30A0DC2893B33e85d",
+    integrator: INTEGRATOR,
     fee: 32768, // 50%
 };
 
@@ -19,7 +19,6 @@ const ETH_USDC_2_BIPS = { extension: zeroAddress, fee: 3689348814741910n, tickSp
 const ETH_USDC_5_BIPS = { extension: zeroAddress, fee: 9223372036854775n, tickSpacing: 1000 };
 const ETH_USDT = { extension: zeroAddress, fee: 3689348814741910n, tickSpacing: 4990 }
 const USDC_USDT = { extension: zeroAddress, fee: 92233720368547n, tickSpacing: 50 };
-const ORACLE_CONFIG = { extension: ORACLE_ADDRESS, fee: 0n, tickSpacing: 0 };
 const TWAMM_ETH_USDC = { extension: TWAMM_ADDRESS, fee: 9223372036854775n, tickSpacing: 0 };
 const MEV_RESIST_ETH_USDC: PoolConfig = { extension: MEV_RESIST_ADDRESS, fee: 1844674407370954n, tickSpacing: 1000 };
 
