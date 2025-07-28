@@ -1,9 +1,9 @@
-import { Address, encodeAbiParameters, getAbiItem, hexToBigInt, parseEther, parseUnits, zeroAddress } from "viem";
+import { Address, encodeAbiParameters, getAbiItem, hexToBigInt, maxUint256, parseEther, parseUnits, zeroAddress } from "viem";
 import { hyperRouterTestAbi } from "./abi";
 import { MEV_RESIST_ADDRESS, TWAMM_ADDRESS } from "../src/extensions";
 import { generateCalldata, IntegrationFee, PoolConfig, Swap } from "../src";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl";
-import type { ElementOf, Writable } from "ts-essentials";
+import type { DeepWritable, ElementOf, Writable } from "ts-essentials";
 import { ETH_ADDRESS, INTEGRATOR, ORACLE_CONFIG, USDC_ADDRESS, USDT_ADDRESS } from "./shared";
 
 const ETH_SPECIFIED = parseEther("1");
@@ -61,7 +61,9 @@ const inputs = getAbiItem({
     "name": "executeSdkCases",
 }).inputs;
 
-const successCases: Writable<ElementOf<Parameters<typeof encodeAbiParameters<typeof inputs>>[1]>["success"]> = [
+type SdkCases = DeepWritable<ElementOf<Parameters<typeof encodeAbiParameters<typeof inputs>>[1]>>;
+
+const successCases: SdkCases["success"] = [
     {
         data: generateCalldata({
             specifiedToken: ETH_ADDRESS,
@@ -235,8 +237,40 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
     }
 }
 
+const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
+    {
+        calculatedAmountThreshold: maxUint256,
+        isExactOut: false,
+        data: generateCalldata({
+            specifiedToken: ETH_ADDRESS,
+            multiHopSwaps: [{
+                specifiedAmount: ETH_SPECIFIED,
+                swaps: [
+                    { calculatedToken: USDC_ADDRESS, poolConfig: ETH_USDC_2_BIPS }
+                ]
+            }],
+            calculatedAmountThreshold: maxUint256,
+        }),
+    },
+    {
+        calculatedAmountThreshold: 1n,
+        isExactOut: true,
+        data: generateCalldata({
+            specifiedToken: ETH_ADDRESS,
+            multiHopSwaps: [{
+                specifiedAmount: -ETH_SPECIFIED,
+                swaps: [
+                    { calculatedToken: USDC_ADDRESS, poolConfig: ETH_USDC_2_BIPS }
+                ]
+            }],
+            calculatedAmountThreshold: -1n,
+        }),
+    },
+];
+
 console.log(encodeAbiParameters(inputs, [{
     success: successCases,
+    slippageCheckFailed: slippageCheckFailedCases,
     refundEthNonPayable: {
         data: generateCalldata({
             specifiedToken: USDC_ADDRESS,

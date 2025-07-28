@@ -7,7 +7,7 @@
 #define function locked(uint256 id) nonpayable returns ()
 #define function payCallback(uint256 id, address token) nonpayable returns ()
 
-#define error SlippageCheckFailed(int128 calculatedAmount)
+#define error SlippageCheckFailed(uint256 calculatedAmount)
 #define error ETHTransferFailed()
 #define error CoreOnly()
 

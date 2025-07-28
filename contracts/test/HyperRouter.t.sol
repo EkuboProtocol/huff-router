@@ -40,12 +40,19 @@ contract HyperRouterTest is Test {
         bytes data;
     }
 
+    struct SlippageCheckFailedCase {
+        bytes data;
+        bool isExactOut;
+        uint256 calculatedAmountThreshold;
+    }
+
     struct SdkCases {
         SuccessCase[] success;
         RefundETHNonPayableCase refundEthNonPayable;
+        SlippageCheckFailedCase[] slippageCheckFailed;
     }
 
-    error SuccessCaseError(SuccessCase s, string err);
+    error SuccessCaseError(SuccessCase c, string err);
     error CoreOnly();
 
     bytes32 private constant _SAVED_BALANCE_SALT = keccak256("HYPER_ROUTER");
@@ -114,12 +121,18 @@ contract HyperRouterTest is Test {
     // public because we need this function to exist in the ABI for the TS calldata generation
     function executeSdkCases(SdkCases memory sdkCases) public {
         for (uint256 i = 0; i < sdkCases.success.length; i++) {
-            SuccessCase memory s = sdkCases.success[i];
+            SuccessCase memory c = sdkCases.success[i];
 
-            try this.executeSuccessCase(s) {}
+            try this._test_Success(c) {}
             catch (bytes memory data) {
-                revert SuccessCaseError({s: s, err: string(data)});
+                revert SuccessCaseError({c: c, err: string(data)});
             }
+
+            setUp();
+        }
+
+        for (uint256 i = 0; i < sdkCases.slippageCheckFailed.length; i++) {
+            _testRevert_SlippageCheckFailed(sdkCases.slippageCheckFailed[i]);
 
             setUp();
         }
@@ -127,7 +140,7 @@ contract HyperRouterTest is Test {
         _testRevert_RefundETHNonPayable(sdkCases.refundEthNonPayable);
     }
 
-    function executeSuccessCase(SuccessCase memory t) external {
+    function _test_Success(SuccessCase memory t) external {
         (address tokenIn, address tokenOut, address integratorToken) = t.isExactOut
             ? (t.calculatedToken, t.specifiedToken, t.specifiedToken)
             : (t.specifiedToken, t.calculatedToken, t.calculatedToken);
@@ -201,6 +214,21 @@ contract HyperRouterTest is Test {
 
         vm.expectRevert(IHyperRouter.ETHTransferFailed.selector);
         LibCall.callContract(address(hyperRouter), _EXACT_OUT_DEAL_AMOUNT, c.data);
+    }
+
+    function _testRevert_SlippageCheckFailed(SlippageCheckFailedCase memory c) private {
+        (bool success, bytes memory result) = address(hyperRouter).call(c.data);
+        assertFalse(success);
+
+        assertEq(IHyperRouter.SlippageCheckFailed.selector, bytes4(result));
+
+        uint256 calculatedAmount = abi.decode(LibBytes.slice(result, 4), (uint256));
+
+        if (c.isExactOut) {
+            assertLt(c.calculatedAmountThreshold, calculatedAmount);
+        } else {
+            assertGt(c.calculatedAmountThreshold, calculatedAmount);
+        }
     }
 
     function _balanceOf(address owner, address token) private view returns (uint256 balance) {

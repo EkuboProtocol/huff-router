@@ -11,7 +11,7 @@ address constant TWAMM_ADDRESS = 0xD4279c050DA1F5c5B2830558C7A08E57e12b54eC;
 address constant MEV_RESIST_ADDRESS = 0x553a2EFc570c9e104942cEC6aC1c18118e54C091;
 
 interface IHyperRouter is ILocker, IPayer {
-    error SlippageCheckFailed(int128 calculatedAmount);
+    error SlippageCheckFailed(uint256 calculatedAmount);
     error ETHTransferFailed();
     error CoreOnly();
 }
