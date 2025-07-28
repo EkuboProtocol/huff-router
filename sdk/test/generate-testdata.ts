@@ -61,7 +61,7 @@ const inputs = getAbiItem({
     "name": "executeSdkCases",
 }).inputs;
 
-const cases: Writable<ElementOf<Parameters<typeof encodeAbiParameters<typeof inputs>>[1]>> = [
+const successCases: Writable<ElementOf<Parameters<typeof encodeAbiParameters<typeof inputs>>[1]>["success"]> = [
     {
         data: generateCalldata({
             specifiedToken: ETH_ADDRESS,
@@ -206,7 +206,7 @@ ${asLastSwapInMultiHop ? "last" : "notLast"}Swap_\
 tokenIn${tokenInNative ? "Native" : "Erc20"}_\
 ${asUnknownToken ? "unknown" : "known"}Tokens`;
 
-                                cases.push({
+                                successCases.push({
                                     data: calldata,
                                     specifiedToken,
                                     calculatedToken,
@@ -235,4 +235,22 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
     }
 }
 
-console.log(encodeAbiParameters(inputs, [cases]));
+console.log(encodeAbiParameters(inputs, [{
+    success: successCases,
+    refundEthNonPayable: {
+        data: generateCalldata({
+            specifiedToken: USDC_ADDRESS,
+            multiHopSwaps: [
+                {
+                    specifiedAmount: -USDC_SPECIFIED,
+                    swaps: [
+                        {
+                            calculatedToken: ETH_ADDRESS,
+                            poolConfig: ETH_USDC_2_BIPS,
+                        },
+                    ],
+                },
+            ],
+        }),
+    },
+}]));

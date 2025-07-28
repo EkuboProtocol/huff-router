@@ -18,8 +18,7 @@
   "scripts": {
     "build": "tsup src/api/index.ts --dts --minify",
     "test": "vitest",
-    "generate-abi": "wagmi generate",
-    "generate-testdata": "npm run generate-abi --silent 2>/dev/null && ts-node test/generate-testdata.ts"
+    "generate-testdata": "wagmi generate 2>/dev/null && ts-node test/generate-testdata.ts"
   },
   "devDependencies": {
     "@wagmi/cli": "^2.3.2",

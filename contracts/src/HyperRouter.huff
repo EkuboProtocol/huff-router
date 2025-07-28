@@ -4,7 +4,10 @@
 
 // Compiled with hnc 1.2.0 (rev: 97a6d380)
 
-#define error SlippageCheckFailed(int128)
+#define function locked(uint256 id) nonpayable returns ()
+#define function payCallback(uint256 id, address token) nonpayable returns ()
+
+#define error SlippageCheckFailed(int128 calculatedAmount)
 #define error ETHTransferFailed()
 #define error CoreOnly()
 
