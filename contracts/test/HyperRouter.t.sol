@@ -54,9 +54,9 @@ contract HyperRouterTest is Test {
     uint256 private constant _EXACT_OUT_DEAL_AMOUNT = type(uint128).max / 2;
 
     address private immutable payer = address(this);
+    IHyperRouter private immutable hyperRouter;
 
     ICore private constant CORE = ICore(CORE_ADDRESS);
-    IHyperRouter private hyperRouter;
 
     modifier disableReceive() {
         assembly ("memory-safe") {
@@ -70,12 +70,13 @@ contract HyperRouterTest is Test {
         }
     }
 
+    constructor() {
+        hyperRouter = HyperRouterLib.deploy(vm);
+        vm.makePersistent(address(hyperRouter));
+    }
+
     function setUp() public {
         vm.createSelectFork(vm.rpcUrl("mainnet"), 22968156);
-
-        hyperRouter = HyperRouterLib.deploy(vm);
-
-        // TODO Use snapshots
     }
 
     function test_MinimalCalldata() external {
