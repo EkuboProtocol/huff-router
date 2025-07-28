@@ -37,4 +37,4 @@ jobs:
           version: v1.2.3
       - run: forge test --gas-snapshot-check=true
         env:
-          MAINNET_RPC_URL_OR_ALIAS: https://eth.llamarpc.com
+          MAINNET_RPC_URL_OR_ALIAS: ${{ secrets.MAINNET_RPC_URL }}
