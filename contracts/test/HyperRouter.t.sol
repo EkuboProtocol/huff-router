@@ -65,6 +65,13 @@ contract HyperRouterTest is Test {
 
     ICore private constant CORE = ICore(CORE_ADDRESS);
 
+    string private _MAINNET_RPC_URL_OR_ALIAS = vm.envString("MAINNET_RPC_URL_OR_ALIAS");
+
+    constructor() {
+        hyperRouter = HyperRouterLib.deploy(vm);
+        vm.makePersistent(address(hyperRouter));
+    }
+
     modifier disableReceive() {
         assembly ("memory-safe") {
             tstore(_DISABLE_RECEIVE_SLOT, 1)
@@ -77,13 +84,8 @@ contract HyperRouterTest is Test {
         }
     }
 
-    constructor() {
-        hyperRouter = HyperRouterLib.deploy(vm);
-        vm.makePersistent(address(hyperRouter));
-    }
-
     function setUp() public {
-        vm.createSelectFork(vm.rpcUrl("mainnet"), 22968156);
+        vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS, 22968156);
     }
 
     function test_MinimalCalldata() external {
