@@ -150,10 +150,10 @@ contract HyperRouterTest is Test {
         (uint256 payerBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) =
             (_balanceOf(payer, tokenIn), _balanceOf(recipient, tokenOut), _savedBalance(t.integrator, integratorToken));
 
-        (bool success, bytes memory result) =
-            t.delegatecall ? address(hyperRouter).delegatecall(t.data) : address(hyperRouter).call{value: value}(t.data);
+        bytes memory result = t.delegatecall
+            ? LibCall.delegateCallContract(address(hyperRouter), t.data)
+            : LibCall.callContract(address(hyperRouter), value, t.data);
         vm.snapshotGasLastCall(t.name);
-        assertTrue(success, "call should succeed");
 
         HyperRouterLib.Returndata memory returndata = HyperRouterLib.decodeReturndata(result);
 
