@@ -2,6 +2,7 @@ name: Test
 on: [push, pull_request]
 jobs:
   test-sdk:
+    runs-on: ubuntu-latest
     defaults:
       run:
         working-directory: ./sdk
