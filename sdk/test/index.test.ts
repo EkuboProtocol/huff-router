@@ -1,19 +1,19 @@
 import { assert, describe, expect, test } from "vitest";
 import TOKENS from "../../tokens/ethereum.json";
-import { IntegerOutOfRangeError, InvalidAddressError, isAddress, parseEther, size, zeroAddress } from "viem";
-import { generateCalldata, Parameters, PoolConfig, Swap } from "../src";
-import { ETH_ADDRESS, INTEGRATOR, minimalCalldata, ORACLE_CONFIG, USDC_ADDRESS } from "./shared";
-import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_SWAPS_LENGTH, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_FEE, MAX_INTEGRATION_FEE, MAX_MULTIHOP_SWAPS_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_SWAPS_LENGTH, MAX_TICK_SPACING, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO } from "../src/impl";
-import { MEV_RESIST_ADDRESS, TWAMM_ADDRESS } from "../src/extensions";
+import { concatHex, Hex, IntegerOutOfRangeError, isAddress, padHex, parseEther, size, SizeExceedsPaddingSizeError } from "viem";
+import { generateCalldata, Parameters, Swap } from "../src";
+import { ETH_ADDRESS, INTEGRATOR, minimalCalldata, ORACLE_CONFIG, USDC_ADDRESS, USDT_ADDRESS } from "./shared";
+import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_HOP_CONNECTION, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_SWAPS_LENGTH, ERROR_TOKEN0_TOKEN1_ORDER, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_INTEGRATION_FEE, MAX_MULTIHOP_SWAPS_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_SWAPS_LENGTH, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO } from "../src/impl";
 
-const WRONG_LENGTH_ADDRESS = "0x1234";
+const VALID_ADDRESS = padHex("0x1", { size: 20 });
+const OVERSIZED_ADDRESS = concatHex([VALID_ADDRESS, "0xff"]);
 const UNKNOWN_EXTENSION = "0x5a6D378003745d1235d6717f0311d9aB586deA82";
 
 function simpleParams({
-    exactOut, poolConfig
+    exactOut, poolConfig: poolConfig
 }: {
     exactOut?: boolean,
-    poolConfig?: PoolConfig,
+    poolConfig?: Hex,
 } = {}): Parameters {
     let specifiedAmount = parseEther("1");
 
@@ -28,8 +28,11 @@ function simpleParams({
                 specifiedAmount,
                 swaps: [
                     {
-                        calculatedToken: USDC_ADDRESS,
-                        poolConfig: poolConfig ?? ORACLE_CONFIG,
+                        poolKey: {
+                            token0: ETH_ADDRESS,
+                            token1: USDC_ADDRESS,
+                            config: poolConfig ?? ORACLE_CONFIG,
+                        },
                     }
                 ],
             }
@@ -52,11 +55,17 @@ test("simple parameters", () => {
 });
 
 describe("specifiedToken", () => {
-    test("wrong length", () => {
-        const params = simpleParams();
-        params.specifiedToken = WRONG_LENGTH_ADDRESS;
+    describe("length", () => {
+        test("valid", () => {
+            expect(() => generateCalldata(simpleParams())).not.toThrow();
+        });
 
-        expect(() => generateCalldata(params)).toThrow(InvalidAddressError);
+        test("too long", () => {
+            const params = simpleParams();
+            params.specifiedToken = OVERSIZED_ADDRESS;
+
+            expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
+        });
     });
 });
 
@@ -96,13 +105,14 @@ describe("multiHopSwaps length", () => {
 
 describe("swaps", () => {
     describe("length", () => {
-        function fillSwaps(swaps: Swap[]) {
-            for (let i = 0; i < swaps.length; i++) {
-                swaps[i] = {
-                    calculatedToken: i % 2 ? ETH_ADDRESS : USDC_ADDRESS,
-                    poolConfig: ORACLE_CONFIG,
-                };
-            }
+        function swaps(length: number): Swap[] {
+            return Array<Swap>(length).fill({
+                poolKey: {
+                    token0: ETH_ADDRESS,
+                    token1: USDC_ADDRESS,
+                    config: ORACLE_CONFIG,
+                }
+            });
         }
 
         test("zero", () => {
@@ -118,415 +128,67 @@ describe("swaps", () => {
 
         test("valid", () => {
             const params = simpleParams();
-
-            const swaps: Swap[] = Array(5);
-            fillSwaps(swaps);
-
-            params.multiHopSwaps[0].swaps = swaps;
+            params.multiHopSwaps[0].swaps = swaps(5);
 
             expect(() => generateCalldata(params)).not.toThrow();
         });
 
         test("max", () => {
             const params = simpleParams();
-
-            const swaps: Swap[] = Array(MAX_SWAPS_LENGTH);
-            fillSwaps(swaps);
-
-            params.multiHopSwaps[0].swaps = swaps;
+            params.multiHopSwaps[0].swaps = swaps(MAX_SWAPS_LENGTH);
 
             expect(() => generateCalldata(params)).not.toThrow();
         });
 
         test("too large", () => {
             const params = simpleParams();
-
-            const swaps: Swap[] = Array(MAX_SWAPS_LENGTH + 1);
-            fillSwaps(swaps);
-
-            params.multiHopSwaps[0].swaps = swaps;
+            params.multiHopSwaps[0].swaps = swaps(MAX_SWAPS_LENGTH + 1);
 
             expect(() => generateCalldata(params)).toThrow(ERROR_SWAPS_LENGTH);
         });
     });
 
-    describe("extension", () => {
-        test("wrong length", () => {
-            const params = simpleParams();
-            params.multiHopSwaps[0].swaps[0].poolConfig.extension = WRONG_LENGTH_ADDRESS;
-
-            expect(() => generateCalldata(params)).toThrow(InvalidAddressError);
-        });
-
-        describe("base", () => {
-            describe("fee", () => {
-                test("negative", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: -1n,
-                            tickSpacing: 0,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
-
-                test("zero", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: 0n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
+    describe("pool key", () => {
+        describe("config", () => {
+            describe("length", () => {
                 test("valid", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: 10n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
+                    const params = simpleParams();
+                    params.multiHopSwaps[0].swaps[0].poolKey.config = padHex("0x", { size: 32 });
+
+                    expect(() => generateCalldata(params)).not.toThrow();
                 });
 
-                test("max", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: MAX_FEE,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
+                test("length too long", () => {
+                    const params = simpleParams();
+                    params.multiHopSwaps[0].swaps[0].poolKey.config = padHex("0x", { size: 33 });
 
-                test("too large", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: MAX_FEE + 1n,
-                            tickSpacing: 0,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
-            });
-
-            describe("tickSpacing", () => {
-                test("negative", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: 0n,
-                            tickSpacing: -1,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
-
-                test("zero", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: 0n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("valid", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: 0n,
-                            tickSpacing: 10,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("max", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: 0n,
-                            tickSpacing: MAX_TICK_SPACING,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("too large", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: zeroAddress,
-                            fee: 0n,
-                            tickSpacing: MAX_TICK_SPACING + 1,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
+                    expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
                 });
             });
         });
 
-        describe("twamm", () => {
-            describe("fee", () => {
-                test("negative", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: TWAMM_ADDRESS,
-                            fee: -1n,
-                            tickSpacing: 0,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
+        describe("tokens", () => {
+            test("token0 == token1", () => {
+                const params = simpleParams();
+                params.multiHopSwaps[0].swaps[0].poolKey.token1 = ETH_ADDRESS;
 
-                test("zero", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: TWAMM_ADDRESS,
-                            fee: 0n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("valid", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: TWAMM_ADDRESS,
-                            fee: 10n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("max", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: TWAMM_ADDRESS,
-                            fee: MAX_FEE,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("too large", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: TWAMM_ADDRESS,
-                            fee: MAX_FEE + 1n,
-                            tickSpacing: 0,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
-            });
-        });
-
-        describe("mevResist", () => {
-            describe("fee", () => {
-                test("negative", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: -1n,
-                            tickSpacing: 0,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
-
-                test("zero", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: 0n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("valid", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: 10n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("max", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: MAX_FEE,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("too large", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: MAX_FEE + 1n,
-                            tickSpacing: 0,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
+                expect(() => generateCalldata(params)).toThrow(ERROR_TOKEN0_TOKEN1_ORDER);
             });
 
-            describe("tickSpacing", () => {
-                test("negative", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: 0n,
-                            tickSpacing: -1,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
+            test("token0 > token1", () => {
+                const params = simpleParams();
 
-                test("zero", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: 0n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
+                const poolKey = params.multiHopSwaps[0].swaps[0].poolKey;
+                [poolKey.token0, poolKey.token1] = [poolKey.token1, poolKey.token0];
 
-                test("valid", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: 0n,
-                            tickSpacing: 10,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("max", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: 0n,
-                            tickSpacing: MAX_TICK_SPACING,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("too large", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: MEV_RESIST_ADDRESS,
-                            fee: 0n,
-                            tickSpacing: MAX_TICK_SPACING + 1,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
-            });
-        });
-
-        describe("unknown", () => {
-            describe("fee", () => {
-                test("negative", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: -1n,
-                            tickSpacing: 0,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
-
-                test("zero", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: 0n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("valid", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: 10n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("max", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: MAX_FEE,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("too large", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: MAX_FEE + 1n,
-                            tickSpacing: 0,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
+                expect(() => generateCalldata(params)).toThrow(ERROR_TOKEN0_TOKEN1_ORDER);
             });
 
-            describe("tickSpacing", () => {
-                test("negative", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: 0n,
-                            tickSpacing: -1,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
+            test("not connected", () => {
+                const params = simpleParams();
+                params.multiHopSwaps[0].swaps[0].poolKey.token0 = VALID_ADDRESS;
 
-                test("zero", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: 0n,
-                            tickSpacing: 0,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("valid", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: 0n,
-                            tickSpacing: 10,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("max", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: 0n,
-                            tickSpacing: MAX_TICK_SPACING,
-                        }
-                    }))).not.toThrow();
-                });
-
-                test("too large", () => {
-                    expect(() => generateCalldata(simpleParams({
-                        poolConfig: {
-                            extension: UNKNOWN_EXTENSION,
-                            fee: 0n,
-                            tickSpacing: MAX_TICK_SPACING + 1,
-                        }
-                    }))).toThrow(IntegerOutOfRangeError);
-                });
+                expect(() => generateCalldata(params)).toThrow(ERROR_HOP_CONNECTION);
             });
         });
     });
@@ -673,16 +335,9 @@ describe("calculatedToken", () => {
         const params = simpleParams();
 
         params.multiHopSwaps.push(structuredClone(params.multiHopSwaps[0]));
-        params.multiHopSwaps[1].swaps[0].calculatedToken = ETH_ADDRESS;
+        params.multiHopSwaps[1].swaps[0].poolKey.token1 = USDT_ADDRESS;
 
         expect(() => generateCalldata(params)).toThrow(ERROR_CALCULATED_TOKEN_MISMATCH);
-    });
-
-    test("wrong length", () => {
-        const params = simpleParams();
-        params.multiHopSwaps[0].swaps[0].calculatedToken = WRONG_LENGTH_ADDRESS;
-
-        expect(() => generateCalldata(params)).toThrow(InvalidAddressError);
     });
 });
 
@@ -809,23 +464,44 @@ describe("integrationFee", () => {
     });
 
     describe("integrator", () => {
-        test("wrong length", () => {
-            const params = simpleParams();
-            params.integrationFee = {
-                fee: 10,
-                integrator: WRONG_LENGTH_ADDRESS,
-            };
+        describe("length", () => {
+            test("valid", () => {
+                const params = simpleParams();
+                params.integrationFee = {
+                    fee: 10,
+                    integrator: VALID_ADDRESS,
+                };
 
-            expect(() => generateCalldata(params)).toThrow(InvalidAddressError);
+                expect(() => generateCalldata(simpleParams())).not.toThrow();
+            });
+
+            test("too long", () => {
+                const params = simpleParams();
+                params.integrationFee = {
+                    fee: 10,
+                    integrator: OVERSIZED_ADDRESS,
+                };
+
+                expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
+            });
         });
     });
 });
 
 describe("recipient", () => {
-    test("wrong length", () => {
-        const params = simpleParams();
-        params.recipient = WRONG_LENGTH_ADDRESS;
+    describe("length", () => {
+        test("valid", () => {
+            const params = simpleParams();
+            params.recipient = VALID_ADDRESS;
 
-        expect(() => generateCalldata(params)).toThrow(InvalidAddressError);
+            expect(() => generateCalldata(params)).not.toThrow();
+        });
+
+        test("too long", () => {
+            const params = simpleParams();
+            params.recipient = OVERSIZED_ADDRESS;
+
+            expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
+        });
     });
 });

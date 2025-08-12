@@ -1,25 +1,22 @@
-import { Address, Hex } from "viem";
+import { Hex } from "viem";
 import { generateCalldataImpl } from "./impl";
 
 /**
- * The unique identifier of a pool (excluding token0 and token1)
+ * The unique identifier of a pool
  */
-export interface PoolConfig {
+export interface PoolKey {
     /**
-     * The address of the pool's extension
-     *
-     * @remarks
-     * Base pools (which includes both concentrated liquidity and full range pools) have this set to the zero address
+     * The numerically smaller token of this pool's token pair
      */
-    extension: Address,
+    token0: Hex,
     /**
-     * The swap and withdrawal fee
+     * The numerically larger token of this pool's token pair
      */
-    fee: bigint,
+    token1: Hex,
     /**
-     * The minimum number of ticks between two initialized ticks
+     * The concatenated extension address (20 bytes) | fee (8 bytes) | tick spacing (4 bytes)
      */
-    tickSpacing: number,
+    config: Hex,
 }
 
 /**
@@ -27,13 +24,9 @@ export interface PoolConfig {
  */
 export interface Swap {
     /**
-     * The pool config of the pool that this swap describes
+     * The pool key of the pool that should be swapped on
      */
-    poolConfig: PoolConfig,
-    /**
-     * The address of the token in which the calculated amount of this swap is denominated
-     */
-    calculatedToken: Address,
+    poolKey: PoolKey,
     /**
      * The `skipAhead` parameter of a swap
      *
@@ -100,7 +93,7 @@ export interface IntegrationFee {
     /**
      * The owner of the saved balance in which Ekubo Core will save the integration fee
      */
-    integrator: Address,
+    integrator: Hex,
 }
 
 /**
@@ -110,7 +103,7 @@ export interface Parameters {
     /**
      * The address of the token in which the {@link MultiHopSwap.specifiedAmount | specified amounts} of the {@link multiHopSwaps} are denominated
      */
-    specifiedToken: Address,
+    specifiedToken: Hex,
     /**
      * A sequence of multi-hop swaps
      *
@@ -127,7 +120,7 @@ export interface Parameters {
      * @defaultValue
      * If the *HyperRouter* is called via a `call`, the `caller`; if called via a `delegatecall`, the delegating contract.
      */
-    recipient?: Address,
+    recipient?: Hex,
     /**
      * A slippage check for the total calculated amount after the execution of all swaps
      *

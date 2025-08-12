@@ -1,4 +1,4 @@
-import { Address, ByteArray, bytesToHex, concatBytes, getAddress, Hex, hexToBigInt, hexToBytes, maxInt128, maxUint16, maxUint256, maxUint32, maxUint64, maxUint8, minInt128, numberToBytes, numberToHex, padBytes, size, zeroAddress } from "viem";
+import { ByteArray, bytesToHex, concatBytes, getAddress, Hex, hexToBigInt, hexToBytes, maxInt128, maxUint16, maxUint256, maxUint32, maxUint64, maxUint8, minInt128, numberToBytes, numberToHex, padBytes, padHex, size, sliceHex, toBytes, zeroAddress } from "viem";
 import TOKENS from "../../tokens/ethereum.json";
 import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS } from "./extensions";
 import { Parameters } from ".";
@@ -6,8 +6,6 @@ import { Parameters } from ".";
 const TWO_POW_62 = 2n ** 62n;
 const TWO_POW_256 = maxUint256 + 1n;
 
-const FEE_BYTES = 8;
-const TICK_SPACING_BYTES = 4;
 const SQRT_RATIO_LIMIT_BYTES = 12;
 const FEE_SHARE_BYTES = 2;
 
@@ -24,8 +22,6 @@ export const MAX_SQRT_RATIO = 79227682466138141934206691491n;
 export const MAX_SKIP_AHEAD = Number(maxUint8);
 export const MIN_CALCULATED_AMOUNT_THRESHOLD = -maxUint256;
 export const MAX_CALCULATED_AMOUNT_THRESHOLD = maxUint256;
-export const MAX_FEE = maxUint64;
-export const MAX_TICK_SPACING = Number(maxUint32);
 export const MAX_INTEGRATION_FEE = Number(maxUint16);
 
 export const ERROR_MULTIHOP_SWAPS_LENGTH = `need between one and ${MAX_MULTIHOP_SWAPS_LENGTH} multiHopSwaps`;
@@ -37,6 +33,8 @@ export const ERROR_SKIP_AHEAD_RANGE = "skipAhead must fit into uint8";
 export const ERROR_CALCULATED_TOKEN_MISMATCH = "last swaps of each multiHopSwap must end at the same calculated token";
 export const ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN = "calculatedAmountThreshold sign and specified amount signs have to be equivalent";
 export const ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE = "absolute value of calculatedAmountThreshold can't exceed maximum uint256 value";
+export const ERROR_TOKEN0_TOKEN1_ORDER = "token0 and token1 are not ordered ascendingly";
+export const ERROR_HOP_CONNECTION = "output of swap can't be used in next hop";
 
 interface TestParameters {
     forceUnknownExtension: boolean;
@@ -48,7 +46,7 @@ export function generateCalldataImpl(
     { forceUnknownExtension, forceUnknownToken }: TestParameters = { forceUnknownExtension: false, forceUnknownToken: false },
 ): Hex {
     const { multiHopSwaps, recipient, calculatedAmountThreshold, integrationFee } = params;
-    const specifiedToken = getAddress(params.specifiedToken);
+    const specifiedToken = getAddress(padHex(params.specifiedToken, { size: 20 }));
 
     if (multiHopSwaps.length < 1 || multiHopSwaps.length > MAX_MULTIHOP_SWAPS_LENGTH) {
         throw new Error(ERROR_MULTIHOP_SWAPS_LENGTH);
@@ -57,7 +55,6 @@ export function generateCalldataImpl(
     let maxSpecified = 0n;
     let withSqrtRatioLimit = false;
     let isExactOut: boolean | null = null;
-    let calculatedToken: Address | null = null;
 
     for (const { specifiedAmount, swaps } of multiHopSwaps) {
         if (swaps.length < 1 || swaps.length > 256) {
@@ -86,7 +83,7 @@ export function generateCalldataImpl(
 
         for (let i = 0; i < swaps.length; i++) {
             const swap = swaps[i];
-            const { sqrtRatioLimit, skipAhead, calculatedToken: swapCalculatedToken } = swap;
+            const { sqrtRatioLimit, skipAhead } = swap;
             const swapWithSqrtRatioLimit = typeof sqrtRatioLimit !== "undefined";
 
             if (swapWithSqrtRatioLimit && (sqrtRatioLimit < MIN_SQRT_RATIO || sqrtRatioLimit > MAX_SQRT_RATIO || (sqrtRatioLimit & NOT_BIT_MASK) < TWO_POW_62)) {
@@ -95,16 +92,6 @@ export function generateCalldataImpl(
 
             if (typeof skipAhead === "number" && (skipAhead < 0 || skipAhead > MAX_SKIP_AHEAD)) {
                 throw new Error(ERROR_SKIP_AHEAD_RANGE);
-            }
-
-            if (i == swaps.length - 1) {
-                const checksummedSwapCalculatedToken = getAddress(swapCalculatedToken);
-
-                if (calculatedToken === null) {
-                    calculatedToken = checksummedSwapCalculatedToken;
-                } else if (calculatedToken !== checksummedSwapCalculatedToken) {
-                    throw new Error(ERROR_CALCULATED_TOKEN_MISMATCH);
-                }
             }
 
             withSqrtRatioLimit ||= swapWithSqrtRatioLimit;
@@ -135,38 +122,16 @@ export function generateCalldataImpl(
         }
     }
 
-    // Holds true because we enforce at least one multiHopSwap and at least one swap per multiHopSwap
-    calculatedToken = calculatedToken!;
+
 
     isExactOut ??= (calculatedAmountThreshold ?? 0n) < 0n;
 
     const withRecipient = typeof recipient !== "undefined";
     const specifiedAmountBytes = maxSpecified === 0n ? 0 : size(numberToHex(maxSpecified));
-    const calculatedAmountThresholdBin = calculatedAmountThresholdUnsigned === 0n ? new Uint8Array() : numberToBytes(calculatedAmountThresholdUnsigned);
-    const [specifiedTokenId, calculatedTokenId] = forceUnknownToken ? [null, null] : [tokenId(specifiedToken), tokenId(calculatedToken)];
     const withIntegrationFee = typeof integrationFee !== "undefined" && integrationFee.fee !== 0;
 
-    let calldata: ByteArray[] = [
-        new Uint8Array([
-            Number(withRecipient),
-            specifiedAmountBytes,
-            size(calculatedAmountThresholdBin),
-            specifiedTokenId ?? UNKNOWN_TOKEN,
-            calculatedTokenId ?? UNKNOWN_TOKEN,
-            multiHopSwaps.length - 1,
-            Number(withIntegrationFee),
-            (Number(withSqrtRatioLimit) << 1) + Number(isExactOut),
-        ]),
-        calculatedAmountThresholdBin,
-    ];
-
-    if (specifiedTokenId === null) {
-        calldata.push(hexToBytes(specifiedToken));
-    }
-
-    if (calculatedTokenId === null) {
-        calldata.push(hexToBytes(calculatedToken));
-    }
+    let calculatedTokenBig: bigint | null = null;
+    const calldata = [];
 
     for (const { specifiedAmount, swaps } of multiHopSwaps) {
         calldata.push(
@@ -178,11 +143,39 @@ export function generateCalldataImpl(
 
         for (let i = 0; i < swaps.length; i++) {
             const swap = swaps[i];
-            const { poolConfig, sqrtRatioLimit: sqrtRatioLimitOpt } = swap;
-            const { fee, tickSpacing } = poolConfig;
-            const swapCalculatedToken = getAddress(swap.calculatedToken);
+            const { poolKey, sqrtRatioLimit: sqrtRatioLimitOpt } = swap;
 
-            const extension = getAddress(poolConfig.extension);
+            const [token0, token1] = [padHex(poolKey.token0, { size: 20 }), padHex(poolKey.token1, { size: 20 })];
+            const [token0Big, token1Big] = [hexToBigInt(token0), hexToBigInt(token1)];
+            const config = padHex(poolKey.config);
+
+            if (token0Big >= token1Big) {
+                throw new Error(ERROR_TOKEN0_TOKEN1_ORDER);
+            }
+
+            let swapCalculatedToken, isToken1;
+
+            if (token0Big === nextSpecifiedToken) {
+                [isToken1, swapCalculatedToken, nextSpecifiedToken] = [
+                    false, getAddress(token1), token1Big
+                ];
+            } else if (token1Big === nextSpecifiedToken) {
+                [isToken1, swapCalculatedToken, nextSpecifiedToken] = [
+                    true, getAddress(token0), token0Big
+                ];
+            } else {
+                throw new Error(ERROR_HOP_CONNECTION);
+            }
+
+            const [
+                extension,
+                fee,
+                tickSpacing
+            ] = [
+                    getAddress(sliceHex(config, 0, 20)),
+                    toBytes(sliceHex(config, 20, 28)),
+                    toBytes(sliceHex(config, 28, 32)),
+                ];
             const skipAhead = swap.skipAhead ?? 0;
 
             function unknownExtension() {
@@ -191,9 +184,7 @@ export function generateCalldataImpl(
                         4,
                         skipAhead,
                     ]),
-                    hexToBytes(extension),
-                    numberToBytes(fee, { size: FEE_BYTES }),
-                    numberToBytes(tickSpacing, { size: TICK_SPACING_BYTES }),
+                    hexToBytes(config),
                 );
             }
 
@@ -207,8 +198,8 @@ export function generateCalldataImpl(
                                 0,
                                 skipAhead,
                             ]),
-                            numberToBytes(fee, { size: FEE_BYTES }),
-                            numberToBytes(tickSpacing, { size: TICK_SPACING_BYTES }),
+                            fee,
+                            tickSpacing,
                         );
                         break;
                     case ORACLE_ADDRESS:
@@ -217,7 +208,7 @@ export function generateCalldataImpl(
                     case TWAMM_ADDRESS:
                         calldata.push(
                             new Uint8Array([2]),
-                            numberToBytes(fee, { size: FEE_BYTES }),
+                            fee,
                         );
                         break;
                     case MEV_RESIST_ADDRESS:
@@ -226,8 +217,8 @@ export function generateCalldataImpl(
                                 3,
                                 skipAhead,
                             ]),
-                            numberToBytes(fee, { size: FEE_BYTES }),
-                            numberToBytes(tickSpacing, { size: TICK_SPACING_BYTES }),
+                            fee,
+                            tickSpacing,
                         );
                         break;
                     default:
@@ -245,13 +236,10 @@ export function generateCalldataImpl(
                 }
             }
 
-            const swapCalculatedTokenBig = hexToBigInt(swapCalculatedToken);
-
             if (withSqrtRatioLimit) {
                 let sqrtRatioLimit;
 
                 if (typeof sqrtRatioLimitOpt === "undefined") {
-                    const isToken1 = nextSpecifiedToken > swapCalculatedTokenBig;
                     const isPriceIncreasing = isToken1 !== isExactOut;
 
                     sqrtRatioLimit = isPriceIncreasing ? MAX_SQRT_RATIO : MIN_SQRT_RATIO;
@@ -261,23 +249,60 @@ export function generateCalldataImpl(
 
                 calldata.push(numberToBytes(sqrtRatioLimit, { size: SQRT_RATIO_LIMIT_BYTES }));
             }
+        }
 
-            nextSpecifiedToken = swapCalculatedTokenBig;
+        if (calculatedTokenBig === null) {
+            calculatedTokenBig = nextSpecifiedToken;
+        } else if (calculatedTokenBig !== nextSpecifiedToken) {
+            throw new Error(ERROR_CALCULATED_TOKEN_MISMATCH);
         }
     }
 
     if (withIntegrationFee) {
         calldata.push(
             numberToBytes(integrationFee.fee, { size: FEE_SHARE_BYTES }),
-            hexToBytes(getAddress(integrationFee.integrator)),
+            hexToBytes(getAddress(padHex(integrationFee.integrator, { size: 20 }))),
         );
     }
 
     if (withRecipient) {
-        calldata.push(hexToBytes(getAddress(recipient)));
+        calldata.push(hexToBytes(getAddress(padHex(recipient, { size: 20 }))));
     }
 
-    return bytesToHex(concatBytes(calldata));
+    const calculatedToken = getAddress(numberToHex(
+        calculatedTokenBig!, // Holds true because we enforce at least one multiHopSwap and at least one swap per multiHopSwap
+        { size: 20 },
+    ));
+
+    const calculatedAmountThresholdBin = calculatedAmountThresholdUnsigned === 0n ? new Uint8Array() : numberToBytes(calculatedAmountThresholdUnsigned);
+    const [specifiedTokenId, calculatedTokenId] = forceUnknownToken ? [null, null] : [tokenId(specifiedToken), tokenId(calculatedToken)];
+
+    let headerCalldata: ByteArray[] = [
+        new Uint8Array([
+            Number(withRecipient),
+            specifiedAmountBytes,
+            size(calculatedAmountThresholdBin),
+            specifiedTokenId ?? UNKNOWN_TOKEN,
+            calculatedTokenId ?? UNKNOWN_TOKEN,
+            multiHopSwaps.length - 1,
+            Number(withIntegrationFee),
+            (Number(withSqrtRatioLimit) << 1) + Number(isExactOut),
+        ]),
+        calculatedAmountThresholdBin,
+    ];
+
+    if (specifiedTokenId === null) {
+        headerCalldata.push(hexToBytes(specifiedToken));
+    }
+
+    if (calculatedTokenId === null) {
+        headerCalldata.push(hexToBytes(calculatedToken));
+    }
+
+    return bytesToHex(concatBytes([
+        concatBytes(headerCalldata),
+        concatBytes(calldata),
+    ]));
 }
 
 function abs(big: bigint): bigint {
