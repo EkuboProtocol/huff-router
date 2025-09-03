@@ -2,7 +2,7 @@
 /// @author Die Herdplatte <https://github.com/die-herdplatte>
 /// @notice A hyper gas-efficient, yet highly configurable, router for executing multiMultiHopSwaps on Ekubo pools
 
-// Compiled with hnc 1.3.6 (rev: b3648148)
+// Compiled with hnc 1.3.7 (rev: c5a3461c)
 
 #define function locked(uint256 id) nonpayable returns ()
 #define function payCallback(uint256 id, address token) nonpayable returns ()
@@ -748,7 +748,7 @@
     )
 }
 
-#define macro STORE_SWAP_ARGS_LAST() = takes(13) returns(12) {
+#define macro STORE_SWAP_ARGS(tokenInfoOffset, sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1, callArgs, settleBalances, multiHopLbl) = takes(13) returns(0) {
     // takes: [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     dup1 notLastSwapLbl jumpi                                               // [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -781,13 +781,7 @@
 
             swap4 [SWAP_DELTA0_OFFSET] mload                                // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         isToken1LastJoinLbl:                                                // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-}
 
-#define macro STORE_SWAP_ARGS(tokenInfoOffset, sqrtRatioLimitIsToken0, sqrtRatioLimitIsToken1, callArgs, settleBalances, multiHopLbl) = takes(13) returns(0) {
-    // takes: [additionalSwaps, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    // Workaround for https://github.com/cakevm/huff-neo/issues/103
-    STORE_SWAP_ARGS_LAST()                                                  // [swapCalculated, totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         <settleBalances>(<multiHopLbl>)
 
     notLastSwapLbl:
