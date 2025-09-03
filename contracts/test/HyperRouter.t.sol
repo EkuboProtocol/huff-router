@@ -15,6 +15,7 @@ import {CoreLib} from "ekubo/libraries/CoreLib.sol";
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/src/math/constants.sol";
 import {MAX_SQRT_RATIO_RAW, MIN_SQRT_RATIO_RAW} from "ekubo/src/types/sqrtRatio.sol";
 import {Test} from "forge-std/Test.sol";
+import {console} from "forge-std/console.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {LibBit} from "solady/utils/LibBit.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
@@ -86,6 +87,18 @@ contract HyperRouterTest is Test {
 
     function setUp() public {
         vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS, 22968156);
+    }
+
+    function test_ContractSize() external view {
+        address hyperRouterAddr = address(hyperRouter);
+        uint256 codeSize;
+        assembly ("memory-safe") {
+            codeSize := extcodesize(hyperRouterAddr)
+        }
+
+        console.log(codeSize);
+
+        assertLe(codeSize, 24_576);
     }
 
     function test_MinimalCalldata() external {
