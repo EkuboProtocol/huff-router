@@ -52,7 +52,7 @@ contract HyperRouterTest is Test {
         SlippageCheckFailedCase[] slippageCheckFailed;
     }
 
-    error SuccessCaseError(SuccessCase c, string err);
+    error SuccessCaseError(SuccessCase c, bytes err);
     error CoreOnly();
 
     bytes32 private constant _SAVED_BALANCE_SALT = keccak256("HYPER_ROUTER");
@@ -127,7 +127,7 @@ contract HyperRouterTest is Test {
 
             try this._test_Success(c) {}
             catch (bytes memory data) {
-                revert SuccessCaseError({c: c, err: string(data)});
+                revert SuccessCaseError({c: c, err: data});
             }
 
             setUp();
