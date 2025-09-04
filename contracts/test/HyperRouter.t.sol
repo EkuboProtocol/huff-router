@@ -62,16 +62,17 @@ contract HyperRouterTest is Test {
     uint256 private constant _DISABLE_RECEIVE_SLOT = 0x27095381dc94d25f5c191482faa73780fd308183456a62f43e8833e46ea4a541;
     uint256 private constant _EXACT_OUT_DEAL_AMOUNT = type(uint128).max / 2;
 
-    address private immutable payer = address(this);
-    IHyperRouter private immutable hyperRouter;
-
-    ICore private constant CORE = ICore(CORE_ADDRESS);
-
     string private _MAINNET_RPC_URL_OR_ALIAS = vm.envString("MAINNET_RPC_URL_OR_ALIAS");
+    uint256 private constant _DEFAULT_FORK_BLOCK_NUMBER = 23287720;
+
+    address private immutable _payer = address(this);
+    IHyperRouter private immutable _hyperRouter;
+
+    ICore private constant _CORE = ICore(CORE_ADDRESS);
 
     constructor() {
-        hyperRouter = HyperRouterLib.deploy(vm);
-        vm.makePersistent(address(hyperRouter));
+        _hyperRouter = HyperRouterLib.deploy(vm);
+        vm.makePersistent(address(_hyperRouter));
     }
 
     modifier disableReceive() {
@@ -86,12 +87,16 @@ contract HyperRouterTest is Test {
         }
     }
 
-    function setUp() public {
-        vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS, 23287720);
+    function selectFork(uint256 blockNumber) private {
+        if (blockNumber == 0) {
+            vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS);
+        } else {
+            vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS, blockNumber);
+        }
     }
 
     function test_ContractSize() external view {
-        address hyperRouterAddr = address(hyperRouter);
+        address hyperRouterAddr = address(_hyperRouter);
         uint256 codeSize;
         assembly ("memory-safe") {
             codeSize := extcodesize(hyperRouterAddr)
@@ -103,7 +108,9 @@ contract HyperRouterTest is Test {
     }
 
     function test_MinimalCalldata() external {
-        (bool success, bytes memory data) = address(hyperRouter).call(hex"00000000010000000001");
+        selectFork(0);
+
+        (bool success, bytes memory data) = address(_hyperRouter).call(hex"00000000010000000001");
         assertTrue(success);
 
         HyperRouterLib.Returndata memory returndata = HyperRouterLib.decodeReturndata(data);
@@ -114,12 +121,12 @@ contract HyperRouterTest is Test {
 
     function testRevert_LockedCoreOnly() external {
         vm.expectRevert(IHyperRouter.CoreOnly.selector);
-        hyperRouter.locked(0);
+        _hyperRouter.locked(0);
     }
 
     function testRevert_PayCallbackCoreOnly() external {
         vm.expectRevert(IHyperRouter.CoreOnly.selector);
-        hyperRouter.payCallback(0, NATIVE_TOKEN_ADDRESS);
+        _hyperRouter.payCallback(0, NATIVE_TOKEN_ADDRESS);
     }
 
     function test_SdkCases() external {
@@ -143,23 +150,23 @@ contract HyperRouterTest is Test {
             catch (bytes memory data) {
                 revert SuccessCaseError({c: c, err: data});
             }
-
-            setUp();
         }
 
         for (uint256 i = 0; i < sdkCases.slippageCheckFailed.length; i++) {
+            selectFork(_DEFAULT_FORK_BLOCK_NUMBER);
             _testRevert_SlippageCheckFailed(sdkCases.slippageCheckFailed[i]);
-
-            setUp();
         }
 
+        selectFork(_DEFAULT_FORK_BLOCK_NUMBER);
         _testRevert_RefundETHNonPayable(sdkCases.refundEthNonPayable);
     }
 
     function _test_Success(SuccessCase memory t) external {
-        if (t.blockNumber != 0) {
-            vm.rollFork(t.blockNumber);
+        if (t.blockNumber == 0) {
+            t.blockNumber = _DEFAULT_FORK_BLOCK_NUMBER;
         }
+
+        selectFork(t.blockNumber);
 
         (address tokenIn, address tokenOut, address integratorToken) = t.isExactOut
             ? (t.calculatedToken, t.specifiedToken, t.specifiedToken)
@@ -169,24 +176,24 @@ contract HyperRouterTest is Test {
         uint256 dealAmount = t.isExactOut ? _EXACT_OUT_DEAL_AMOUNT : t.totalSpecified;
 
         if (tokenIn == NATIVE_TOKEN_ADDRESS) {
-            vm.deal(payer, dealAmount);
+            vm.deal(_payer, dealAmount);
 
             if (!t.delegatecall) {
                 value = dealAmount;
             }
         } else {
-            deal(tokenIn, payer, dealAmount);
-            ERC20(tokenIn).approve(address(hyperRouter), dealAmount);
+            deal(tokenIn, _payer, dealAmount);
+            ERC20(tokenIn).approve(address(_hyperRouter), dealAmount);
         }
 
-        address recipient = t.recipient == address(0) ? payer : t.recipient;
+        address recipient = t.recipient == address(0) ? _payer : t.recipient;
 
         (uint256 payerBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) =
-            (_balanceOf(payer, tokenIn), _balanceOf(recipient, tokenOut), _savedBalance(t.integrator, integratorToken));
+            (_balanceOf(_payer, tokenIn), _balanceOf(recipient, tokenOut), _savedBalance(t.integrator, integratorToken));
 
         bytes memory result = t.delegatecall
-            ? LibCall.delegateCallContract(address(hyperRouter), t.data)
-            : LibCall.callContract(address(hyperRouter), value, t.data);
+            ? LibCall.delegateCallContract(address(_hyperRouter), t.data)
+            : LibCall.callContract(address(_hyperRouter), value, t.data);
         vm.snapshotGasLastCall(t.name);
 
         HyperRouterLib.Returndata memory returndata = HyperRouterLib.decodeReturndata(result);
@@ -198,7 +205,7 @@ contract HyperRouterTest is Test {
         }
 
         (uint256 payerBalanceAfter, uint256 recipientBalanceAfter, uint128 integratorBalanceAfter) =
-            (_balanceOf(payer, tokenIn), _balanceOf(recipient, tokenOut), _savedBalance(t.integrator, integratorToken));
+            (_balanceOf(_payer, tokenIn), _balanceOf(recipient, tokenOut), _savedBalance(t.integrator, integratorToken));
 
         (int256 expectedTokenInDiff, int256 expectedTokenOutDiff) = t.isExactOut
             ? (
@@ -207,7 +214,7 @@ contract HyperRouterTest is Test {
             )
             : (-SafeCastLib.toInt256(t.totalSpecified), SafeCastLib.toInt256(returndata.calculatedAmount));
 
-        if (t.specifiedToken == t.calculatedToken && payer == recipient) {
+        if (t.specifiedToken == t.calculatedToken && _payer == recipient) {
             expectedTokenInDiff += expectedTokenOutDiff;
             expectedTokenOutDiff = expectedTokenInDiff;
         }
@@ -229,15 +236,8 @@ contract HyperRouterTest is Test {
         );
     }
 
-    function _testRevert_RefundETHNonPayable(RefundETHNonPayableCase memory c) private disableReceive {
-        vm.deal(payer, _EXACT_OUT_DEAL_AMOUNT);
-
-        vm.expectRevert(IHyperRouter.ETHTransferFailed.selector);
-        LibCall.callContract(address(hyperRouter), _EXACT_OUT_DEAL_AMOUNT, c.data);
-    }
-
     function _testRevert_SlippageCheckFailed(SlippageCheckFailedCase memory c) private {
-        (bool success, bytes memory result) = address(hyperRouter).call(c.data);
+        (bool success, bytes memory result) = address(_hyperRouter).call(c.data);
         assertFalse(success);
 
         assertEq(IHyperRouter.SlippageCheckFailed.selector, bytes4(result));
@@ -251,6 +251,13 @@ contract HyperRouterTest is Test {
         }
     }
 
+    function _testRevert_RefundETHNonPayable(RefundETHNonPayableCase memory c) private disableReceive {
+        vm.deal(_payer, _EXACT_OUT_DEAL_AMOUNT);
+
+        vm.expectRevert(IHyperRouter.ETHTransferFailed.selector);
+        LibCall.callContract(address(_hyperRouter), _EXACT_OUT_DEAL_AMOUNT, c.data);
+    }
+
     function _balanceOf(address owner, address token) private view returns (uint256 balance) {
         if (token == NATIVE_TOKEN_ADDRESS) {
             return owner.balance;
@@ -260,7 +267,7 @@ contract HyperRouterTest is Test {
     }
 
     function _savedBalance(address owner, address token) private view returns (uint128 balance) {
-        return CORE.savedBalances(owner, token, _SAVED_BALANCE_SALT);
+        return _CORE.savedBalances(owner, token, _SAVED_BALANCE_SALT);
     }
 
     receive() external payable {
@@ -278,7 +285,7 @@ contract HyperRouterTest is Test {
     fallback() external {
         require(msg.sender == CORE_ADDRESS, CoreOnly());
 
-        bytes memory result = LibCall.delegateCallContract(address(hyperRouter), msg.data);
+        bytes memory result = LibCall.delegateCallContract(address(_hyperRouter), msg.data);
         uint256 len = result.length;
 
         assembly ("memory-safe") {
