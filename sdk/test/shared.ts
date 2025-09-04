@@ -13,11 +13,12 @@ export const INTEGRATOR = "0x4a77e6131A6b8067042A0F9dDfaC9eB4cf18e219";
 export function minimalCalldata(): Hex {
     return generateCalldata({
         specifiedToken: ETH_ADDRESS,
-        multiHopSwaps: [
+        multiHops: [
             {
                 specifiedAmount: 0n,
-                swaps: [
+                hops: [
                     {
+                        type: "swap",
                         poolKey: {
                             token0: ETH_ADDRESS,
                             token1: USDC_ADDRESS,

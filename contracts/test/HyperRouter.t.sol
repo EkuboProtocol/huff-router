@@ -34,6 +34,7 @@ contract HyperRouterTest is Test {
         uint256 totalSpecified;
         address recipient;
         address integrator;
+        uint256 blockNumber;
         string name;
     }
 
@@ -86,7 +87,7 @@ contract HyperRouterTest is Test {
     }
 
     function setUp() public {
-        vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS, 22968156);
+        vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS, 23287720);
     }
 
     function test_ContractSize() external view {
@@ -156,6 +157,10 @@ contract HyperRouterTest is Test {
     }
 
     function _test_Success(SuccessCase memory t) external {
+        if (t.blockNumber != 0) {
+            vm.rollFork(t.blockNumber);
+        }
+
         (address tokenIn, address tokenOut, address integratorToken) = t.isExactOut
             ? (t.calculatedToken, t.specifiedToken, t.specifiedToken)
             : (t.specifiedToken, t.calculatedToken, t.calculatedToken);

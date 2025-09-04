@@ -20,9 +20,11 @@ export interface PoolKey {
 }
 
 /**
- * Describes one hop of a {@link MultiHopSwap}
+ * Describes a swap on a liquidity pool
  */
 export interface Swap {
+    type: "swap",
+
     /**
      * The pool key of the pool that should be swapped on
      */
@@ -55,39 +57,63 @@ export interface Swap {
 }
 
 /**
- * A sequence of swaps, passing along the calculated amount of the previous swap to the next one
+ * Describes the wrapping or unwrapping of a timelocked token
+ *
+ * @remarks
+ * Only works with contracts instantiated via Ekubo's [*TokenWrapperFactory*](https://docs.ekubo.org/integration-guides/reference/contract-addresses#ethereum)
  */
-export interface MultiHopSwap {
+export interface WrappedToken {
+    type: "wrappedToken",
+
     /**
-     * The specified amount of the first swap
+     * The underlying ERC-20 token
+     */
+    underlying: Hex,
+    /**
+     * The *TokenWrapper* contract
+     */
+    wrapped: Hex,
+}
+
+/**
+ * Describes one hop of a {@link MultiHop}
+ */
+export type Hop = Swap | WrappedToken;
+
+/**
+ * A sequence of hops, passing along the calculated amount of the previous hop to the next one
+ */
+export interface MultiHop {
+    /**
+     * The specified amount of the first hop
      *
      * @remarks
-     * A negative amount indicates an exact-out, a non-negative amount an exact-in swap.
+     * A negative amount indicates an exact-out, a non-negative amount an exact-in multi-hop.
      *
      * Must fit into an `int128`.
      */
     specifiedAmount: bigint,
     /**
-     * A sequence of swaps
+     * A sequence of hops
      *
      * @remarks
      * The length of the array must be non-zero and at most 256.
      */
-    swaps: Swap[],
+    hops: Hop[],
 }
 
 /**
  * Allows rewarding integrators for the provision of their services
- * by sharing parts of the swap amount with them
+ * by sharing parts of the total amount with them
  */
 export interface IntegrationFee {
     /**
-     * A 0.16 fixed point number describing the share of the swap amount
+     * A 0.16 fixed point number describing the share of the total amount
      * that will be saved for the integrator
      *
      * @remarks
-     * For exact-in swaps, the share is taken from the calculated amount;
-     * for exact-out swaps, from the specified amount
+     * For exact-in routes, the share is taken from the calculated amount;
+     * for exact-out routes, from the specified amount
      */
     fee: number,
     /**
@@ -101,19 +127,19 @@ export interface IntegrationFee {
  */
 export interface Parameters {
     /**
-     * The address of the token in which the {@link MultiHopSwap.specifiedAmount | specified amounts} of the {@link multiHopSwaps} are denominated
+     * The address of the token in which the {@link MultiHop.specifiedAmount | specified amounts} of the {@link multiHops} are denominated
      */
     specifiedToken: Hex,
     /**
-     * A sequence of multi-hop swaps
+     * A sequence of multi-hops
      *
      * @remarks
      * The length of the array has to be non-zero and at most 256.
      *
-     * The sign of the {@link MultiHopSwap.specifiedAmount | specified amounts} and the
-     * {@link Swap.calculatedToken | calculated tokens} of the last swaps have to be equivalent for all elements.
+     * The sign of the {@link MultiHop.specifiedAmount | specified amounts} and the
+     * {@link Hop.calculatedToken | calculated tokens} of the last hops have to be equivalent for all elements.
      */
-    multiHopSwaps: MultiHopSwap[],
+    multiHops: MultiHop[],
     /**
      * The recipient of the tokens received from Ekubo Core
      *
@@ -122,12 +148,12 @@ export interface Parameters {
      */
     recipient?: Hex,
     /**
-     * A slippage check for the total calculated amount after the execution of all swaps
+     * A slippage check for the total calculated amount after the execution of all hops
      *
      * @remarks
-     * Needs to have the same sign as the {@link MultiHopSwap.specifiedAmount | specified amounts}.
+     * Needs to have the same sign as the {@link MultiHop.specifiedAmount | specified amounts}.
      *
-     * If the swap is exact-in, specifies the minimum amount received; if exact-in, the maximum amount spent.
+     * If the route is exact-in, specifies the minimum amount received; if exact-in, the maximum amount spent.
      *
      * The magnitude of this value must fit into an `uint256`.
      *
@@ -136,10 +162,10 @@ export interface Parameters {
      */
     calculatedAmountThreshold?: bigint,
     /**
-     * The integration fee that is applied to the total swap amount
+     * The integration fee that is applied to the total amount
      *
      * @defaultValue
-     * No integrator receives a share from the swap amount
+     * No integrator receives a share from the total amount
      */
     integrationFee?: IntegrationFee,
 }
@@ -150,7 +176,7 @@ export interface Parameters {
  * If called via a `call`, depending on the type of the token that needs to be transferred to Ekubo Core:
  * - ERC-20: The *HyperRouter* needs an approval from the `caller`
  * - Native token: Has to be transferred directly to the *HyperRouter*.
- *      If the swap is exact-out, the remaining balance of the *HyperRouter* after settlement will be refunded to
+ *      If the route is exact-out, the remaining balance of the *HyperRouter* after settlement will be refunded to
  *      the `caller`.
  *
  * If called via a `delegatecall`, all transfers happen directly from the delegating contract and no approvals,

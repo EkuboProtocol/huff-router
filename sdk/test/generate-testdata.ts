@@ -1,13 +1,16 @@
 import { Address, concatHex, encodeAbiParameters, getAbiItem, Hex, hexToBigInt, maxUint256, numberToHex, parseEther, parseUnits, zeroAddress } from "viem";
 import { hyperRouterTestAbi } from "./abi";
 import { MEV_RESIST_ADDRESS, TWAMM_ADDRESS } from "../src/extensions";
-import { generateCalldata, IntegrationFee, Swap } from "../src";
+import { generateCalldata, IntegrationFee, Hop } from "../src";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl";
 import type { DeepWritable, ElementOf } from "ts-essentials";
 import { ETH_ADDRESS, INTEGRATOR, ORACLE_CONFIG, USDC_ADDRESS, USDT_ADDRESS } from "./shared";
 
-const ETH_SPECIFIED = parseEther("1");
-const USDC_SPECIFIED = parseUnits("3000", 6);
+const EKUBO_ADDRESS = "0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f";
+const gEKUBO_26Q2_ADDRESS = "0x0c93b16cb1D8691E629514Fc98f02cbaD340Da3C";
+
+const ETH_SPECIFIED = parseEther("0.001");
+const USDC_SPECIFIED = parseUnits("3", 6);
 
 const RECIPIENT: Address = "0x46b7916bCEC93409d18a4771C43dCCdddD62585E";
 const INTEGRATION_FEE: IntegrationFee = {
@@ -30,7 +33,6 @@ function compressed(config: PoolConfig): Hex {
 }
 
 const ETH_USDC_2_BIPS = compressed({ extension: zeroAddress, fee: 3689348814741910n, tickSpacing: 4990 });
-const ETH_USDC_5_BIPS = compressed({ extension: zeroAddress, fee: 9223372036854775n, tickSpacing: 1000 });
 const ETH_USDT = compressed({ extension: zeroAddress, fee: 3689348814741910n, tickSpacing: 4990 });
 const USDC_USDT = compressed({ extension: zeroAddress, fee: 92233720368547n, tickSpacing: 50 });
 const TWAMM_ETH_USDC = compressed({ extension: TWAMM_ADDRESS, fee: 9223372036854775n, tickSpacing: 0 });
@@ -39,6 +41,7 @@ const MEV_RESIST_ETH_USDC = compressed({ extension: MEV_RESIST_ADDRESS, fee: 184
 interface PoolConfigWithName {
     poolConfig: Hex,
     asUnknownExtension: boolean,
+    specialBlockNumber?: bigint,
     extensionName: string,
 }
 
@@ -61,6 +64,7 @@ const ETH_USDC_CONFIGS: PoolConfigWithName[] = [
     {
         poolConfig: MEV_RESIST_ETH_USDC,
         asUnknownExtension: false,
+        specialBlockNumber: 22968156n,
         extensionName: "mevResist",
     },
     {
@@ -80,15 +84,42 @@ type SdkCases = DeepWritable<ElementOf<Parameters<typeof encodeAbiParameters<typ
 const successCases: SdkCases["success"] = [
     {
         data: generateCalldata({
+            specifiedToken: EKUBO_ADDRESS,
+            multiHops: [
+                {
+                    specifiedAmount: parseEther("1"),
+                    hops: [
+                        {
+                            type: "wrappedToken",
+                            underlying: EKUBO_ADDRESS,
+                            wrapped: gEKUBO_26Q2_ADDRESS,
+                        },
+                    ],
+                },
+            ]
+        }),
+        specifiedToken: EKUBO_ADDRESS,
+        calculatedToken: gEKUBO_26Q2_ADDRESS,
+        isExactOut: false,
+        delegatecall: false,
+        totalSpecified: parseEther("1"),
+        recipient: zeroAddress,
+        integrator: zeroAddress,
+        blockNumber: 0n,
+        name: "test_wrappedToken",
+    },
+    {
+        data: generateCalldata({
             specifiedToken: ETH_ADDRESS,
             recipient: RECIPIENT,
             calculatedAmountThreshold: parseUnits("2000", 6),
             integrationFee: INTEGRATION_FEE,
-            multiHopSwaps: [
+            multiHops: [
                 {
                     specifiedAmount: parseEther("1"),
-                    swaps: [
+                    hops: [
                         {
+                            type: "swap",
                             poolKey: {
                                 token0: ETH_ADDRESS,
                                 token1: USDC_ADDRESS,
@@ -96,6 +127,7 @@ const successCases: SdkCases["success"] = [
                             }
                         },
                         {
+                            type: "swap",
                             poolKey: {
                                 token0: USDC_ADDRESS,
                                 token1: USDT_ADDRESS,
@@ -108,8 +140,9 @@ const successCases: SdkCases["success"] = [
                 },
                 {
                     specifiedAmount: parseEther("0.5"),
-                    swaps: [
+                    hops: [
                         {
+                            type: "swap",
                             poolKey: {
                                 token0: ETH_ADDRESS,
                                 token1: USDT_ADDRESS,
@@ -127,6 +160,7 @@ const successCases: SdkCases["success"] = [
         totalSpecified: parseEther("1.5"),
         recipient: RECIPIENT,
         integrator: INTEGRATION_FEE.integrator,
+        blockNumber: 0n,
         name: "example_scenario",
     }
 ];
@@ -140,13 +174,13 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
         for (const isExactOut of [false, true]) {
             integrationFee: for (const integrationFee of [INTEGRATION_FEE, undefined]) {
                 for (const withSqrtRatioLimit of [false, true]) {
-                    for (const { poolConfig, asUnknownExtension, extensionName } of ETH_USDC_CONFIGS) {
+                    for (const { poolConfig, asUnknownExtension, specialBlockNumber, extensionName } of ETH_USDC_CONFIGS) {
                         for (const asLastSwapInMultiHop of [true, false]) {
                             // These two decisions don't depend on each other
                             const tokenInNative = asLastSwapInMultiHop;
 
                             for (const asUnknownToken of [false, true]) {
-                                // For the last swaps the calculated tokens aren't encoded anyway
+                                // For the last hops the calculated tokens aren't encoded anyway
                                 if (asUnknownToken && asLastSwapInMultiHop) {
                                     continue;
                                 }
@@ -174,12 +208,13 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
                                         : undefined;
                                 }
 
-                                let swaps: Swap[], calculatedToken: Address;
+                                let hops: Hop[], calculatedToken: Address;
 
                                 if (asLastSwapInMultiHop) {
                                     calculatedToken = firstCalculatedToken;
-                                    swaps = [
+                                    hops = [
                                         {
+                                            type: "swap",
                                             poolKey: {
                                                 token0: ETH_ADDRESS,
                                                 token1: USDC_ADDRESS,
@@ -195,8 +230,9 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
 
                                     calculatedToken = secondCalculatedToken;
 
-                                    swaps = [
+                                    hops = [
                                         {
+                                            type: "swap",
                                             poolKey: {
                                                 token0: ETH_ADDRESS,
                                                 token1: USDC_ADDRESS,
@@ -205,10 +241,11 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
                                             sqrtRatioLimit: getSqrtRatioLimit(firstCalculatedToken),
                                         },
                                         {
+                                            type: "swap",
                                             poolKey: {
                                                 token0: ETH_ADDRESS,
                                                 token1: USDC_ADDRESS,
-                                                config: ETH_USDC_5_BIPS,
+                                                config: ETH_USDC_2_BIPS,
                                             },
                                         },
                                     ];
@@ -217,10 +254,10 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
                                 const calldata = generateCalldataImpl({
                                     specifiedToken,
                                     recipient,
-                                    multiHopSwaps: [
+                                    multiHops: [
                                         {
                                             specifiedAmount: isExactOut ? -specifiedAmount : specifiedAmount,
-                                            swaps,
+                                            hops: hops,
                                         }
                                     ],
                                     integrationFee,
@@ -249,6 +286,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     totalSpecified: specifiedAmount,
                                     recipient: recipient ?? zeroAddress,
                                     integrator: integrationFee?.integrator ?? zeroAddress,
+                                    blockNumber: specialBlockNumber ?? 0n,
                                     name,
                                 } as const);
 
@@ -275,10 +313,11 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
         isExactOut: false,
         data: generateCalldata({
             specifiedToken: ETH_ADDRESS,
-            multiHopSwaps: [{
+            multiHops: [{
                 specifiedAmount: ETH_SPECIFIED,
-                swaps: [
+                hops: [
                     {
+                        type: "swap",
                         poolKey: {
                             token0: ETH_ADDRESS,
                             token1: USDC_ADDRESS,
@@ -295,10 +334,11 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
         isExactOut: true,
         data: generateCalldata({
             specifiedToken: ETH_ADDRESS,
-            multiHopSwaps: [{
+            multiHops: [{
                 specifiedAmount: -ETH_SPECIFIED,
-                swaps: [
+                hops: [
                     {
+                        type: "swap",
                         poolKey: {
                             token0: ETH_ADDRESS,
                             token1: USDC_ADDRESS,
@@ -318,11 +358,12 @@ console.log(encodeAbiParameters(inputs, [{
     refundEthNonPayable: {
         data: generateCalldata({
             specifiedToken: USDC_ADDRESS,
-            multiHopSwaps: [
+            multiHops: [
                 {
                     specifiedAmount: -USDC_SPECIFIED,
-                    swaps: [
+                    hops: [
                         {
+                            type: "swap",
                             poolKey: {
                                 token0: ETH_ADDRESS,
                                 token1: USDC_ADDRESS,
