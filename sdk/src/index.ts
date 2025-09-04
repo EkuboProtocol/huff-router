@@ -1,5 +1,7 @@
-import { Hex } from "viem";
+import { Address, Hex } from "viem";
 import { generateCalldataImpl } from "./impl";
+
+export const SEPOLIA_ADDRESS: Address = "0x00BcfB5908c500DeDe7a72614F592E32685F44B7";
 
 /**
  * The unique identifier of a pool
