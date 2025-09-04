@@ -22,7 +22,7 @@ library HyperRouterLib {
         uint128 integrationFee;
     }
 
-    uint8 private constant _TOKEN_COUNT = 90;
+    uint8 private constant _TOKEN_COUNT = 91;
     uint8 private constant _ALPHABET_LENGTH = 26;
     uint8 private constant _UPPERCASE_LETTER_START = 65;
 

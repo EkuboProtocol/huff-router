@@ -11,6 +11,9 @@ const gEKUBO_26Q2_ADDRESS = "0x0c93b16cb1D8691E629514Fc98f02cbaD340Da3C";
 
 const ETH_SPECIFIED = parseEther("0.001");
 const USDC_SPECIFIED = parseUnits("3", 6);
+const EKUBO_SPECIFIED = parseEther("10");
+const gEKUBO_26Q2_SPECIFIED = EKUBO_SPECIFIED;
+const gEKUBO_26Q2_UNLOCK_TIME = 1775001600n;
 
 const RECIPIENT: Address = "0x46b7916bCEC93409d18a4771C43dCCdddD62585E";
 const INTEGRATION_FEE: IntegrationFee = {
@@ -41,7 +44,7 @@ const MEV_RESIST_ETH_USDC = compressed({ extension: MEV_RESIST_ADDRESS, fee: 184
 interface PoolConfigWithName {
     poolConfig: Hex,
     asUnknownExtension: boolean,
-    specialBlockNumber?: bigint,
+    overrideBlockNumber?: bigint,
     extensionName: string,
 }
 
@@ -64,7 +67,7 @@ const ETH_USDC_CONFIGS: PoolConfigWithName[] = [
     {
         poolConfig: MEV_RESIST_ETH_USDC,
         asUnknownExtension: false,
-        specialBlockNumber: 22968156n,
+        overrideBlockNumber: 22968156n,
         extensionName: "mevResist",
     },
     {
@@ -82,32 +85,6 @@ const inputs = getAbiItem({
 type SdkCases = DeepWritable<ElementOf<Parameters<typeof encodeAbiParameters<typeof inputs>>[1]>>;
 
 const successCases: SdkCases["success"] = [
-    {
-        data: generateCalldata({
-            specifiedToken: EKUBO_ADDRESS,
-            multiHops: [
-                {
-                    specifiedAmount: parseEther("1"),
-                    hops: [
-                        {
-                            type: "wrappedToken",
-                            underlying: EKUBO_ADDRESS,
-                            wrapped: gEKUBO_26Q2_ADDRESS,
-                        },
-                    ],
-                },
-            ]
-        }),
-        specifiedToken: EKUBO_ADDRESS,
-        calculatedToken: gEKUBO_26Q2_ADDRESS,
-        isExactOut: false,
-        delegatecall: false,
-        totalSpecified: parseEther("1"),
-        recipient: zeroAddress,
-        integrator: zeroAddress,
-        blockNumber: 0n,
-        name: "test_wrappedToken",
-    },
     {
         data: generateCalldata({
             specifiedToken: ETH_ADDRESS,
@@ -160,7 +137,8 @@ const successCases: SdkCases["success"] = [
         totalSpecified: parseEther("1.5"),
         recipient: RECIPIENT,
         integrator: INTEGRATION_FEE.integrator,
-        blockNumber: 0n,
+        overrideBlockNumber: 0n,
+        overrideTimestamp: 0n,
         name: "example_scenario",
     }
 ];
@@ -174,14 +152,23 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
         for (const isExactOut of [false, true]) {
             integrationFee: for (const integrationFee of [INTEGRATION_FEE, undefined]) {
                 for (const withSqrtRatioLimit of [false, true]) {
-                    for (const { poolConfig, asUnknownExtension, specialBlockNumber, extensionName } of ETH_USDC_CONFIGS) {
-                        for (const asLastSwapInMultiHop of [true, false]) {
+
+                    function getSqrtRatioLimit(specifiedToken: Address, calculatedToken: Address) {
+                        return withSqrtRatioLimit
+                            ? (hexToBigInt(specifiedToken) > hexToBigInt(calculatedToken) === isExactOut)
+                                ? MIN_SQRT_RATIO
+                                : MAX_SQRT_RATIO
+                            : undefined;
+                    }
+
+                    swaps: for (const { poolConfig, asUnknownExtension, overrideBlockNumber, extensionName } of ETH_USDC_CONFIGS) {
+                        for (const asLastInMultiHop of [true, false]) {
                             // These two decisions don't depend on each other
-                            const tokenInNative = asLastSwapInMultiHop;
+                            const tokenInNative = asLastInMultiHop;
 
                             for (const asUnknownToken of [false, true]) {
                                 // For the last hops the calculated tokens aren't encoded anyway
-                                if (asUnknownToken && asLastSwapInMultiHop) {
+                                if (asUnknownToken && asLastInMultiHop) {
                                     continue;
                                 }
 
@@ -200,17 +187,11 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
                                         USDC_ADDRESS,
                                     ];
 
-                                function getSqrtRatioLimit(calculatedToken: Address) {
-                                    return withSqrtRatioLimit
-                                        ? (hexToBigInt(specifiedToken) > hexToBigInt(calculatedToken) === isExactOut)
-                                            ? MIN_SQRT_RATIO
-                                            : MAX_SQRT_RATIO
-                                        : undefined;
-                                }
+
 
                                 let hops: Hop[], calculatedToken: Address;
 
-                                if (asLastSwapInMultiHop) {
+                                if (asLastInMultiHop) {
                                     calculatedToken = firstCalculatedToken;
                                     hops = [
                                         {
@@ -220,7 +201,7 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
                                                 token1: USDC_ADDRESS,
                                                 config: poolConfig,
                                             },
-                                            sqrtRatioLimit: getSqrtRatioLimit(firstCalculatedToken),
+                                            sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
                                         }
                                     ];
                                 } else {
@@ -238,7 +219,7 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
                                                 token1: USDC_ADDRESS,
                                                 config: poolConfig,
                                             },
-                                            sqrtRatioLimit: getSqrtRatioLimit(firstCalculatedToken),
+                                            sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
                                         },
                                         {
                                             type: "swap",
@@ -257,7 +238,7 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
                                     multiHops: [
                                         {
                                             specifiedAmount: isExactOut ? -specifiedAmount : specifiedAmount,
-                                            hops: hops,
+                                            hops,
                                         }
                                     ],
                                     integrationFee,
@@ -273,7 +254,7 @@ exact${isExactOut ? "Out" : "In"}_\
 ${typeof integrationFee === "undefined" ? "without" : "with"}IntegrationFee_\
 ${withSqrtRatioLimit ? "with" : "without"}SqrtRatioLimit_\
 ${extensionName}Extension_\
-${asLastSwapInMultiHop ? "last" : "notLast"}Swap_\
+${asLastInMultiHop ? "last" : "notLast"}Swap_\
 tokenIn${tokenInNative ? "Native" : "Erc20"}_\
 ${asUnknownToken ? "unknown" : "known"}Tokens`;
 
@@ -286,7 +267,115 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     totalSpecified: specifiedAmount,
                                     recipient: recipient ?? zeroAddress,
                                     integrator: integrationFee?.integrator ?? zeroAddress,
-                                    blockNumber: specialBlockNumber ?? 0n,
+                                    overrideBlockNumber: overrideBlockNumber ?? 0n,
+                                    overrideTimestamp: 0n,
+                                    name,
+                                } as const);
+
+                                if (typeof integrationFee !== "undefined" || delegatecall || typeof recipient === "string") {
+                                    break swaps;
+                                }
+                            }
+                        }
+                    }
+
+                    for (const asLastInMultiHop of [true, false]) {
+                        for (const asUnknownToken of [false, true]) {
+                            // For the last hops the calculated tokens aren't encoded anyway and the sqrtRatioLimit is irrelevant when only a token wrap/unwrap happens
+                            if ((asUnknownToken || withSqrtRatioLimit) && asLastInMultiHop) {
+                                continue;
+                            }
+
+                            for (const tokenInUnderlying of [true, false]) {
+                                const [specifiedToken, specifiedAmount, firstCalculatedToken]: [Address, bigint, Address] = tokenInUnderlying === isExactOut
+                                    ? [
+                                        gEKUBO_26Q2_ADDRESS,
+                                        gEKUBO_26Q2_SPECIFIED,
+                                        EKUBO_ADDRESS,
+                                    ]
+                                    : [
+                                        EKUBO_ADDRESS,
+                                        EKUBO_SPECIFIED,
+                                        gEKUBO_26Q2_ADDRESS,
+                                    ];
+
+                                let hops: Hop[], calculatedToken: Address;
+
+                                if (asLastInMultiHop) {
+                                    calculatedToken = firstCalculatedToken;
+                                    hops = [
+                                        {
+                                            type: "wrappedToken",
+                                            underlying: EKUBO_ADDRESS,
+                                            wrapped: gEKUBO_26Q2_ADDRESS,
+                                        }
+                                    ];
+                                } else {
+                                    const secondCalculatedToken = tokenInUnderlying === isExactOut
+                                        ? gEKUBO_26Q2_ADDRESS
+                                        : EKUBO_ADDRESS;
+
+                                    calculatedToken = secondCalculatedToken;
+
+                                    hops = [
+                                        {
+                                            type: "wrappedToken",
+                                            underlying: EKUBO_ADDRESS,
+                                            wrapped: gEKUBO_26Q2_ADDRESS,
+                                        },
+                                        {
+                                            type: "swap",
+                                            poolKey: {
+                                                token0: EKUBO_ADDRESS,
+                                                token1: gEKUBO_26Q2_ADDRESS,
+                                                config: compressed({
+                                                    extension: MEV_RESIST_ADDRESS,
+                                                    fee: 18446744073709552n,
+                                                    tickSpacing: 4988,
+                                                }),
+                                            },
+                                            sqrtRatioLimit: getSqrtRatioLimit(firstCalculatedToken, secondCalculatedToken),
+                                        },
+                                    ];
+                                }
+
+                                const calldata = generateCalldataImpl({
+                                    specifiedToken,
+                                    recipient,
+                                    multiHops: [
+                                        {
+                                            specifiedAmount: isExactOut ? -specifiedAmount : specifiedAmount,
+                                            hops,
+                                        }
+                                    ],
+                                    integrationFee,
+                                }, {
+                                    forceUnknownExtension: false,
+                                    forceUnknownToken: asUnknownToken,
+                                });
+
+                                const name = `\
+${typeof recipient === "undefined" ? "default" : "custom"}Recipient_\
+${delegatecall ? "delegatecall" : "call"}_\
+exact${isExactOut ? "Out" : "In"}_\
+${typeof integrationFee === "undefined" ? "without" : "with"}IntegrationFee_\
+${withSqrtRatioLimit ? "with" : "without"}SqrtRatioLimit_\
+wrappedToken_\
+${asLastInMultiHop ? "last" : "notLast"}Swap_\
+tokenIn${tokenInUnderlying ? "Underlying" : "Wrapped"}_\
+${asUnknownToken ? "unknown" : "known"}Tokens`;
+
+                                successCases.push({
+                                    data: calldata,
+                                    specifiedToken,
+                                    calculatedToken,
+                                    isExactOut,
+                                    delegatecall,
+                                    totalSpecified: specifiedAmount,
+                                    recipient: recipient ?? zeroAddress,
+                                    integrator: integrationFee?.integrator ?? zeroAddress,
+                                    overrideBlockNumber: 23276148n,
+                                    overrideTimestamp: gEKUBO_26Q2_UNLOCK_TIME,
                                     name,
                                 } as const);
 

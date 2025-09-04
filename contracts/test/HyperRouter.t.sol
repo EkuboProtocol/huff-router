@@ -34,7 +34,8 @@ contract HyperRouterTest is Test {
         uint256 totalSpecified;
         address recipient;
         address integrator;
-        uint256 blockNumber;
+        uint256 overrideBlockNumber;
+        uint256 overrideTimestamp;
         string name;
     }
 
@@ -88,11 +89,7 @@ contract HyperRouterTest is Test {
     }
 
     function selectFork(uint256 blockNumber) private {
-        if (blockNumber == 0) {
-            vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS);
-        } else {
-            vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS, blockNumber);
-        }
+        vm.createSelectFork(_MAINNET_RPC_URL_OR_ALIAS, blockNumber == 0 ? _DEFAULT_FORK_BLOCK_NUMBER : blockNumber);
     }
 
     function test_ContractSize() external view {
@@ -153,20 +150,22 @@ contract HyperRouterTest is Test {
         }
 
         for (uint256 i = 0; i < sdkCases.slippageCheckFailed.length; i++) {
-            selectFork(_DEFAULT_FORK_BLOCK_NUMBER);
+            selectFork(0);
             _testRevert_SlippageCheckFailed(sdkCases.slippageCheckFailed[i]);
         }
 
-        selectFork(_DEFAULT_FORK_BLOCK_NUMBER);
+        selectFork(0);
         _testRevert_RefundETHNonPayable(sdkCases.refundEthNonPayable);
     }
 
     function _test_Success(SuccessCase memory t) external {
-        if (t.blockNumber == 0) {
-            t.blockNumber = _DEFAULT_FORK_BLOCK_NUMBER;
-        }
+        selectFork(t.overrideBlockNumber);
 
-        selectFork(t.blockNumber);
+        uint256 timestampBefore = vm.getBlockTimestamp();
+
+        if (t.overrideTimestamp != 0) {
+            vm.warp(t.overrideTimestamp);
+        }
 
         (address tokenIn, address tokenOut, address integratorToken) = t.isExactOut
             ? (t.calculatedToken, t.specifiedToken, t.specifiedToken)
@@ -234,6 +233,8 @@ contract HyperRouterTest is Test {
             integratorBalanceAfter - integratorBalanceBefore,
             "unexpected integration fee difference"
         );
+
+        vm.warp(timestampBefore);
     }
 
     function _testRevert_SlippageCheckFailed(SlippageCheckFailedCase memory c) private {
