@@ -1,61 +1,64 @@
 import { Address, Hex } from "viem";
 import { generateCalldataImpl } from "./impl";
 
-export const SEPOLIA_ADDRESS: Address = "0x00BcfB5908c500DeDe7a72614F592E32685F44B7";
+export const MAINNET_ADDRESS: Address =
+  "0x8CCB1ffD5C2aa6Bd926473425Dea4c8c15DE60fd";
+export const SEPOLIA_ADDRESS: Address =
+  "0xd906C89cFc36aa668a9cABD2e7387EeF1Ea999Ff";
 
 /**
  * The unique identifier of a pool
  */
 export interface PoolKey {
-    /**
-     * The numerically smaller token of this pool's token pair
-     */
-    token0: Hex,
-    /**
-     * The numerically larger token of this pool's token pair
-     */
-    token1: Hex,
-    /**
-     * The concatenated extension address (20 bytes) | fee (8 bytes) | tick spacing (4 bytes)
-     */
-    config: Hex,
+  /**
+   * The numerically smaller token of this pool's token pair
+   */
+  token0: Hex;
+  /**
+   * The numerically larger token of this pool's token pair
+   */
+  token1: Hex;
+  /**
+   * The concatenated extension address (20 bytes) | fee (8 bytes) | tick spacing (4 bytes)
+   */
+  config: Hex;
 }
 
 /**
  * Describes a swap on a liquidity pool
  */
 export interface Swap {
-    type: "swap",
+  type: "swap";
 
-    /**
-     * The pool key of the pool that should be swapped on
-     */
-    poolKey: PoolKey,
-    /**
-     * The `skipAhead` parameter of a swap
-     *
-     * @remarks
-     * This value isn't useful for every pool type (e.g. for full range pools).
-     *
-     * Must fit into an `uint8`.
-     *
-     * @defaultValue
-     * `0`
-     */
-    skipAhead?: number,
-    /**
-     * The price limit for this swap in compact 96 bit fixed point representation
-     *
-     * @remarks
-     * Has to be a valid according to the Ekubo Core's validation rules.
-     *
-     * Note that if you specify the price limit for just one swap, the generated calldata will need
-     * to contain price limits for every other swap, potentially increasing the gas costs by a lot.
-     *
-     * @defaultValue
-     * Depending on the direction of the swap, the minimum or maximum price
-     */
-    sqrtRatioLimit?: bigint,
+  /**
+   * The pool key of the pool that should be swapped on
+   */
+  poolKey: PoolKey;
+  /**
+   * The `skipAhead` parameter of a swap
+   *
+   * @remarks
+   * This value isn't useful for every pool type (e.g. for full range pools).
+   *
+   * Must fit into an `uint8`.
+   *
+   * @defaultValue
+   * `0`
+   */
+  skipAhead?: number;
+  /**
+   * The price limit for this swap in compact 96 bit fixed point representation
+   *
+   * @remarks
+   * Has to be a valid according to the Ekubo Core's validation rules.
+   *
+   * Note that if you specify the price limit for just one swap, the generated calldata will need
+   * to contain price limits for every other swap, potentially increasing the gas costs by a lot.
+   *
+   * @defaultValue
+   * Depending on the direction of the swap, the minimum or maximum price
+   */
+  sqrtRatioLimit?: bigint;
 }
 
 /**
@@ -65,16 +68,16 @@ export interface Swap {
  * Only works with contracts instantiated via Ekubo's [*TokenWrapperFactory*](https://docs.ekubo.org/integration-guides/reference/contract-addresses#ethereum)
  */
 export interface WrappedToken {
-    type: "wrappedToken",
+  type: "wrappedToken";
 
-    /**
-     * The underlying ERC-20 token
-     */
-    underlying: Hex,
-    /**
-     * The *TokenWrapper* contract
-     */
-    wrapped: Hex,
+  /**
+   * The underlying ERC-20 token
+   */
+  underlying: Hex;
+  /**
+   * The *TokenWrapper* contract
+   */
+  wrapped: Hex;
 }
 
 /**
@@ -86,22 +89,22 @@ export type Hop = Swap | WrappedToken;
  * A sequence of hops, passing along the calculated amount of the previous hop to the next one
  */
 export interface MultiHop {
-    /**
-     * The specified amount of the first hop
-     *
-     * @remarks
-     * A negative amount indicates an exact-out, a non-negative amount an exact-in multi-hop.
-     *
-     * Must fit into an `int128`.
-     */
-    specifiedAmount: bigint,
-    /**
-     * A sequence of hops
-     *
-     * @remarks
-     * The length of the array must be non-zero and at most 256.
-     */
-    hops: Hop[],
+  /**
+   * The specified amount of the first hop
+   *
+   * @remarks
+   * A negative amount indicates an exact-out, a non-negative amount an exact-in multi-hop.
+   *
+   * Must fit into an `int128`.
+   */
+  specifiedAmount: bigint;
+  /**
+   * A sequence of hops
+   *
+   * @remarks
+   * The length of the array must be non-zero and at most 256.
+   */
+  hops: Hop[];
 }
 
 /**
@@ -109,67 +112,67 @@ export interface MultiHop {
  * by sharing parts of the total amount with them
  */
 export interface IntegrationFee {
-    /**
-     * A 0.16 fixed point number describing the share of the total amount
-     * that will be saved for the integrator
-     *
-     * @remarks
-     * For exact-in routes, the share is taken from the calculated amount;
-     * for exact-out routes, from the specified amount
-     */
-    fee: number,
-    /**
-     * The owner of the saved balance in which Ekubo Core will save the integration fee
-     */
-    integrator: Hex,
+  /**
+   * A 0.16 fixed point number describing the share of the total amount
+   * that will be saved for the integrator
+   *
+   * @remarks
+   * For exact-in routes, the share is taken from the calculated amount;
+   * for exact-out routes, from the specified amount
+   */
+  fee: number;
+  /**
+   * The owner of the saved balance in which Ekubo Core will save the integration fee
+   */
+  integrator: Hex;
 }
 
 /**
  * The parameters required for constructing a call to the *HyperRouter*
  */
 export interface Parameters {
-    /**
-     * The address of the token in which the {@link MultiHop.specifiedAmount | specified amounts} of the {@link multiHops} are denominated
-     */
-    specifiedToken: Hex,
-    /**
-     * A sequence of multi-hops
-     *
-     * @remarks
-     * The length of the array has to be non-zero and at most 256.
-     *
-     * The sign of the {@link MultiHop.specifiedAmount | specified amounts} and the
-     * {@link Hop.calculatedToken | calculated tokens} of the last hops have to be equivalent for all elements.
-     */
-    multiHops: MultiHop[],
-    /**
-     * The recipient of the tokens received from Ekubo Core
-     *
-     * @defaultValue
-     * If the *HyperRouter* is called via a `call`, the `caller`; if called via a `delegatecall`, the delegating contract.
-     */
-    recipient?: Hex,
-    /**
-     * A slippage check for the total calculated amount after the execution of all hops
-     *
-     * @remarks
-     * Needs to have the same sign as the {@link MultiHop.specifiedAmount | specified amounts}.
-     *
-     * If the route is exact-in, specifies the minimum amount received; if exact-in, the maximum amount spent.
-     *
-     * The magnitude of this value must fit into an `uint256`.
-     *
-     * @defaultValue
-     * Effectively disables the slippage check
-     */
-    calculatedAmountThreshold?: bigint,
-    /**
-     * The integration fee that is applied to the total amount
-     *
-     * @defaultValue
-     * No integrator receives a share from the total amount
-     */
-    integrationFee?: IntegrationFee,
+  /**
+   * The address of the token in which the {@link MultiHop.specifiedAmount | specified amounts} of the {@link multiHops} are denominated
+   */
+  specifiedToken: Hex;
+  /**
+   * A sequence of multi-hops
+   *
+   * @remarks
+   * The length of the array has to be non-zero and at most 256.
+   *
+   * The sign of the {@link MultiHop.specifiedAmount | specified amounts} and the
+   * {@link Hop.calculatedToken | calculated tokens} of the last hops have to be equivalent for all elements.
+   */
+  multiHops: MultiHop[];
+  /**
+   * The recipient of the tokens received from Ekubo Core
+   *
+   * @defaultValue
+   * If the *HyperRouter* is called via a `call`, the `caller`; if called via a `delegatecall`, the delegating contract.
+   */
+  recipient?: Hex;
+  /**
+   * A slippage check for the total calculated amount after the execution of all hops
+   *
+   * @remarks
+   * Needs to have the same sign as the {@link MultiHop.specifiedAmount | specified amounts}.
+   *
+   * If the route is exact-in, specifies the minimum amount received; if exact-in, the maximum amount spent.
+   *
+   * The magnitude of this value must fit into an `uint256`.
+   *
+   * @defaultValue
+   * Effectively disables the slippage check
+   */
+  calculatedAmountThreshold?: bigint;
+  /**
+   * The integration fee that is applied to the total amount
+   *
+   * @defaultValue
+   * No integrator receives a share from the total amount
+   */
+  integrationFee?: IntegrationFee;
 }
 
 /**
@@ -188,5 +191,5 @@ export interface Parameters {
  * @returns A hex-encoded calldata string
  */
 export function generateCalldata(params: Parameters): Hex {
-    return generateCalldataImpl(params);
+  return generateCalldataImpl(params);
 }
