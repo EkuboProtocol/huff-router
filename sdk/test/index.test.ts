@@ -3,7 +3,7 @@ import TOKENS from "../../tokens/ethereum.json";
 import { concatHex, Hex, IntegerOutOfRangeError, isAddress, padHex, parseEther, size, SizeExceedsPaddingSizeError } from "viem";
 import { generateCalldata, Parameters, Swap } from "../src";
 import { ETH_ADDRESS, INTEGRATOR, minimalCalldata, ORACLE_CONFIG, USDC_ADDRESS, USDT_ADDRESS } from "./shared";
-import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_HOP_CONNECTION, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_HOPS_LENGTH, ERROR_TOKEN0_TOKEN1_ORDER, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_INTEGRATION_FEE, MAX_MULTIHOP_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_HOP_LENGTH, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO } from "../src/impl";
+import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_HOP_CONNECTION, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_HOPS_LENGTH, ERROR_TOKEN0_TOKEN1_ORDER, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_INTEGRATION_FEE, MAX_MULTIHOP_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_HOP_LENGTH, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO, ERROR_UNDERLYING_EQ_WRAPPED } from "../src/impl";
 
 const VALID_ADDRESS = padHex("0x1", { size: 20 });
 const OVERSIZED_ADDRESS = concatHex([VALID_ADDRESS, "0xff"]);
@@ -103,7 +103,7 @@ describe("multiHopSwaps length", () => {
     });
 });
 
-describe("swaps", () => {
+describe("hops", () => {
     describe("length", () => {
         function swaps(length: number): Swap[] {
             return Array<Swap>(length).fill({
@@ -192,6 +192,32 @@ describe("swaps", () => {
                 expect(() => generateCalldata(params)).toThrow(ERROR_HOP_CONNECTION);
             });
         });
+    });
+
+    describe("wrappedToken", () => {
+        describe("tokens", () => {
+            test("wrapped == underlying", () => {
+                const params: Parameters = simpleParams();
+                params.multiHops[0].hops.push({
+                    type: "wrappedToken",
+                    underlying: USDC_ADDRESS,
+                    wrapped: USDC_ADDRESS,
+                });
+
+                expect(() => generateCalldata(params)).toThrow(ERROR_UNDERLYING_EQ_WRAPPED);
+            });
+
+            test("not connected", () => {
+                const params: Parameters = simpleParams();
+                params.multiHops[0].hops.push({
+                    type: "wrappedToken",
+                    underlying: USDT_ADDRESS,
+                    wrapped: VALID_ADDRESS,
+                });
+
+                expect(() => generateCalldata(params)).toThrow(ERROR_HOP_CONNECTION);
+            });
+        })
     });
 });
 
