@@ -1,0 +1,47 @@
+/// @notice Ekubo Core pay callback, settling debt of an ERC-20 token with Core.
+///
+/// `token` (32 bytes ABI-encoded `address`)
+/// The ERC-20 token for which to settle debt.
+///
+/// `amount` (32 bytes ABI-encoded `uint128`)
+/// The amount to pay to Core.
+///
+/// `from` (32 bytes ABI-encoded `address`)
+/// From which address to transfer the funds.
+/// Uses ERC-20's approval mechanism for non-zero addresses
+/// and transfers from self if the address is zero.
+#define macro PAY_CALLBACK() = takes(0) returns(0) {
+    CORE_CHECK()                                                            // []
+
+    [PAY_CALLBACK_FROM_OFFSET] calldataload                                 // [from]
+    dup1 transferFromLbl jumpi                                              // [from]
+        pop                                                                 // []
+
+        __tablesize(TRANSFER_DATA) __tablestart(TRANSFER_DATA) 0x           // [memOffset, tablestart, tablesize]
+        codecopy                                                            // []
+
+        [PAY_CALLBACK_AMOUNT_OFFSET] calldataload                           // [amount]
+        [TRANSFER_AMOUNT_OFFSET] mstore                                     // []
+
+        // IERC20#transfer(address to, uint256 amount)
+        0x 0x [TRANSFER_ARGS_SIZE] 0x 0x                                    // [value, argsOffset, argsSize, retOffset, retSize]
+        [PAY_CALLBACK_TOKEN_OFFSET] calldataload                            // [token, value, argsOffset, argsSize, retOffset, retSize]
+        gas call                                                            // [success]
+
+        stop
+    transferFromLbl:                                                        // [from]
+        __RIGHTPAD(__FUNC_SIG("transferFrom(address,address,uint256)"))     // [selector, from]
+        0x mstore                                                           // [from]
+        [TRANSFER_FROM_FROM_OFFSET] mstore                                  // []
+        [CORE] [TRANSFER_FROM_TO_OFFSET] mstore                             // []
+
+        [PAY_CALLBACK_AMOUNT_OFFSET] calldataload                           // [amount]
+        [TRANSFER_FROM_AMOUNT_OFFSET] mstore                                // []
+
+        // IERC20#transferFrom(address from, address to, uint256 amount)
+        0x 0x [TRANSFER_FROM_ARGS_SIZE] 0x 0x                               // [value, argsOffset, argsSize, retOffset, retSize]
+        [PAY_CALLBACK_TOKEN_OFFSET] calldataload                            // [token, value, argsOffset, argsSize, retOffset, retSize]
+        gas call                                                            // [success]
+
+        stop
+}
