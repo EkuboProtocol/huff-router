@@ -1,0 +1,159 @@
+/// @notice Entrypoint of the router which prepares and executes the call to IFlashAccountant#lock.
+///
+/// `withRecipient` (1 byte `bool`)
+/// Whether the output (after possibly deducting integration fees) should be sent
+/// to an address different from the caller.
+///
+/// `specifiedAmountBytes` (1 byte unsigned integer, <= 16)
+/// The length of the `specifiedAmount`s of each multi-hop in bytes.
+///
+/// `calculatedAmountThresholdBytes` (1 byte `uint8`, <= 32)
+/// The length of `calculatedAmountThreshold` in bytes.
+///
+/// `specifiedTokenInfo` (1 byte)
+/// Describes the input token of the multihops:
+/// 0x00 - 0xfe := Token address stored at the given index in the `TOKENS` table
+/// 0xff := Token address is passed in the calldata
+///
+/// `calculatedTokenInfo` (1 byte)
+/// Analogous to `specifiedTokenInfo`.
+///
+/// `additionalMultiHops` (1 byte `uint8`)
+/// How many more multihops are encoded besides the mandotary one.
+///
+/// `withIntegrationFee` (1 byte `bool`)
+/// Whether a share of the output will be distributed to a given integrator.
+///
+/// `withSqrtRatioLimit` | `isExactOut` (1 bit `bool` | 1 bit `bool`, left-padded)
+/// Whether swaps are encoded with a custom sqrt ratio limit and
+/// whether the route is exact-out.
+///
+/// `calculatedAmountThreshold` (variable length unsigned integer, up to 32 bytes)
+/// How much the last hops of each multi-hop need to return in total at minimum for the call to succeed.
+///
+/// `specifiedTokenAddress` (20 bytes `address`, optional as per `specifiedTokenInfo`)
+/// The address of the input token of the multihops.
+///
+/// `calculatedTokenAddress` (20 bytes `address`, optional as per `calculatedTokenInfo`)
+/// Analogous to `specifiedTokenAddress`.
+///
+/// Per multi-hop:
+///
+/// `specifiedAmount` (variable length unsigned integer up to 16 bytes, determined by `specifiedAmountBytes`)
+/// The specified amount of the first hop.
+///
+/// `additionalHops` (1 byte unsigned integer)
+/// How many more hops are encoded in this multi-hop besides the mandatory one.
+///
+/// Per hop:
+///
+/// `hopType` (1 byte)
+/// Describes the extension of this hop's pool:
+/// 0x00 := Base extension
+/// 0x01 := Oracle extension
+/// 0x02 := TWAMM extension
+/// 0x03 := MEV-resist extension
+/// 0x04 := Pool config is passed in the calldata
+/// 0x05 := Wrapped token
+///
+/// `hopInfo` (variable)
+/// Depending on `hopType`:
+/// Base => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | tickSpacing (4 bytes `uint32`)
+/// Oracle => empty (0 bytes)
+/// TWAMM => fee (8 bytes `uint64`)
+/// MEV-resist => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | tickSpacing (4 bytes `uint32`)
+/// Unknown extension => skipAhead (1 byte `uint8`) | extension (20 bytes `address`) | fee (8 bytes `uint64`) | tickSpacing (4 bytes `uint32`)
+/// Wrapped token => call type (1 byte)
+///
+/// `tokenInfo` (1 byte, for all but the last hop in a multi-hop)
+/// Describes the output token of this hop:
+/// [0x00, 0xfe] := Token address stored at the given index in the `TOKENS` table
+/// 0xff := Token address is passed in the calldata
+///
+/// `tokenAddress` (20 bytes `address`, optional as per `tokenInfo` and only for hops that are not the last hop of a multi-hop)
+/// The address of the output token of this hop.
+///
+/// `sqrtRatioLimit` (12 bytes `uint96`, optional as per `withSqrtRatioLimit` and only for swaps)
+/// The price limit of the swap.
+///
+/// After the hop data:
+///
+/// `feeShare` | `feeRecipient` (2 bytes 0.16 fixed point number | 20 bytes `address`, optional as per `withIntegrationFee`)
+/// The integrator address as well as the share that the integrator receives from the output.
+/// Fees are `save`d for the `feeRecipient` in Core.
+///
+/// `recipient` (20 bytes `address`, optional as per `withRecipient`)
+/// Adress of the account that receives the output (after possibly deducting integration fees).
+/// If `withRecipient === false`, this will be filled in by LOCK().
+#define macro LOCK() = takes(0) returns(0) {
+    // Load lock() selector and router address in one `codecopy`
+    __tablesize(LOCK_SIG_AND_ROUTER_ADDRESS)                                // [tableSize]
+    __tablestart(LOCK_SIG_AND_ROUTER_ADDRESS)                               // [tableStart, tableSize]
+    0x codecopy                                                             // []
+    0x4 mload                                                               // [routerAddress]
+
+    // Load `withRecipient`
+    0x calldataload 0x byte                                                 // [withRecipient, routerAddress]
+
+    // If `withRecipient == true`, the recipient is already stored in the calldata
+    withRecipientLbl jumpi                                                  // [routerAddress]
+        MAYBE_STORE_TRANSFER_FROM(
+            STORE_RECIPIENT(address),
+            STORE_RECIPIENT(caller),
+            0x1a,
+            0x3a,
+        )
+    withRecipientLbl:                                                       // [routerAddress]
+        MAYBE_STORE_TRANSFER_FROM(
+            NO_OP(),
+            NO_OP(),
+            0x6,
+            0x26,
+        )
+}
+
+#define macro MAYBE_STORE_TRANSFER_FROM(maybeStoreRecipientDelegatecall, maybeStoreRecipientNoDelegatecall, additionalArgsSizeDelegate, additionalArgsSizeNoDelegate) = takes(1) returns(0) {
+    // takes: [routerAddress]
+
+    address eq noDelegateCallLbl jumpi                                      // []
+        <maybeStoreRecipientDelegatecall>                                   // []
+
+        LOCK_END(<additionalArgsSizeDelegate>)
+    noDelegateCallLbl:                                                      // []
+        <maybeStoreRecipientNoDelegatecall>                                 // []
+
+        // Store ABI-encoded caller address after the end of the calldata
+        caller <additionalArgsSizeDelegate> calldatasize add mstore         // []
+
+        LOCK_END(<additionalArgsSizeNoDelegate>)
+}
+
+#define macro STORE_RECIPIENT(recipient) = takes(0) returns(0) {
+    <recipient>                                                             // [recipient]
+
+    // Since the minimum `calldatasize` is 10 bytes (`withRecipient`, `specifiedAmountBytes`, `calculatedAmountThresholdBytes`,
+    // `withIntegrationFee`, `specifiedTokenInfo`, `calculatedTokenInfo`, `additionalMultiHops`,
+    // `withSqrtRatioLimit` | `isExactOut`, `additionalHops`, `hopType`),
+    // we designate 2 bytes between the selector and the calldata as padding to ensure never overwriting the selector.
+    // Therefore, 4 bytes selector - 12 bytes packed `address` offset + 2 bytes padding = -6 bytes offset from `calldatasize`
+    0x6 calldatasize sub                                                    // [recipientOffset, recipient]
+    mstore                                                                  // []
+}
+
+#define macro LOCK_END(additionalArgsSize) = takes(0) returns(0) {
+    // Copy calldata unchanged after the selector and the 2 bytes of padding
+    calldatasize 0x 0x6 calldatacopy                                        // []
+
+    0x 0x                                                                   // [retOffset, retSize]
+    calldatasize <additionalArgsSize> add                                   // [argsSize, retOffset, retSize]
+
+    // IFlashAccountant#lock()
+    0x 0x [CORE] gas call                                                   // [success]
+
+    returndatasize 0x 0x returndatacopy                                     // [success]
+
+    successLbl jumpi                                                        // []
+        returndatasize 0x revert
+    successLbl:                                                             // []
+        returndatasize 0x return
+}
