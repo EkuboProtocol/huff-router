@@ -2,7 +2,7 @@
 /// @author Die Herdplatte <https://github.com/die-herdplatte>
 /// @notice A hyper gas-efficient, yet highly configurable, router for executing actions on Ekubo
 
-// Compiled with hnc 1.3.7 (rev: c5a3461c)
+// Compiled with hnc 1.3.9 (rev: 4c0022a9)
 
 /* Imports */
 #include "lock.huff"
