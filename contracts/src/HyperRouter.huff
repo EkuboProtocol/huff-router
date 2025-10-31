@@ -5,8 +5,8 @@
 // Compiled with hnc 1.3.9 (rev: 4c0022a9)
 
 /* Imports */
-#include "lock.huff"
-#include "locked.huff"
+#include "lock/swap.huff"
+#include "locked/swap.huff"
 #include "payCallback.huff"
 
 /* Function Interfaces */
