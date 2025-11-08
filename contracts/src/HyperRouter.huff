@@ -2,7 +2,7 @@
 /// @author Die Herdplatte <https://github.com/die-herdplatte>
 /// @notice A hyper gas-efficient, yet highly configurable, router for executing actions on Ekubo
 ///
-/// Compiled with hnc 1.5.4 (rev: eef47bd4)
+/// Compiled with hnc 1.5.5 (rev: 2e5bdaf0)
 ///
 /// General comments:
 /// - Offsets suffixed with "_PACKED" indicate that the offset marks the first byte in the input containing the non-padded data
@@ -21,8 +21,6 @@
 #define error ETHTransferFailed()
 #define error CoreOnly()
 
-#define constant SLOAD_SELECTOR = __FUNC_SIG("sload()")
-
 #define constant MAX_ADDRESS = 0xffffffffffffffffffffffffffffffffffffffff
 #define constant TWO_POW_8 = 0x100
 
@@ -40,24 +38,13 @@
 // cast sig "claimIntegrationFees(address[])"
 #define constant CLAIM_INTEGRATION_FEES_SELECTOR_FIRST_BYTE = 0xa3
 
-#define constant UPDATE_SAVED_BALANCES_SELECTOR = __FUNC_SIG("updateSavedBalances(address,address,bytes32,int256,int256)")
-
-// TODO Compute in Solidity?
-/*
- * ATTENTION: This is a volatile value and may change even on minor modifications.
- * The reason for that seems to be that hnc doesn't insert jump and code tables in
- * the order that they appear in the source file but their first usage.
- * As of now, this offset includes the TOKENS, SAVE_DATA, and TRANSFER_DATA code tables and all jump tables.
- */
-#define constant ROUTER_ADDRESS_END_OFFSET = 0x894
-
 /* Constructor */
 #define macro CONSTRUCTOR() = {
     // Copy runtime code into memory
     __codesize(CONSTRUCTOR)                                                 // [constructorSize]
     codesize sub                                                            // [runtimeSize]
     address                                                                 // [address, runtimeSize]
-    [ROUTER_ADDRESS_END_OFFSET] dup3 sub                                    // [routerAddressOffset, address, runtimeSize]
+    [ROUTER_ADDRESS_CODE_OFFSET]                                         // [routerAddressOffset, address, runtimeSize]
     dup3 __codesize(CONSTRUCTOR) 0x                                         // [memOffset, constructorSize, runtimeSize, routerAddressOffset, address, runtimeSize]
     codecopy                                                                // [routerAddressOffset, address, runtimeSize]
 

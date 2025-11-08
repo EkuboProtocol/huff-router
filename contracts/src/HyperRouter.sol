@@ -38,8 +38,6 @@ library HyperRouterLib {
             .with_addr_constant("MEV_CAPTURE", MEV_CAPTURE_ADDRESS);
 
         // TODO Use numbers & allow variable amounts of tokens per deployment
-        // This would also probably require for us to have a dynamic way of determining the ROUTER_ADDRESS_END_OFFSET
-        // and passing it as a constant
         for (uint8 i = 0; i < _TOKEN_COUNT; i++) {
             string memory name = string.concat(
                 "TOKEN_", _letterFromAsciiOffset(i / _ALPHABET_LENGTH), _letterFromAsciiOffset(i % _ALPHABET_LENGTH)

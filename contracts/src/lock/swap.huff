@@ -1,6 +1,9 @@
 #define constant LOCK_SWAP_SELECTOR_OFFSET_PACKED = 0x0
 #define constant ROUTER_ADDRESS_OFFSET = 0x4
 
+#define constant ROUTER_ADDRESS_TABLE_CODE_OFFSET = 0x91
+#define constant ROUTER_ADDRESS_CODE_OFFSET = [ROUTER_ADDRESS_TABLE_CODE_OFFSET] + [SELECTOR_SIZE]
+
 #define constant MINIMUM_CALLDATA_SIZE = 0xa
 #define constant PADDING = [PACKED_ADDRESS_OFFSET] - [MINIMUM_CALLDATA_SIZE] // Must be positive
 
@@ -124,6 +127,12 @@
             ADDITIONAL_ARGS_SIZE_NO_RECIPIENT_WITH_DELEGATE,
             ADDITIONAL_ARGS_SIZE_NO_RECIPIENT_NO_DELEGATE,
         )
+
+        // Store the code table at a position in code that won't be executed.
+        // This is the first (unambiguous) position of this kind which ensures
+        // that the constant doesn't have to be updated too often.
+        __ASSERT_PC([ROUTER_ADDRESS_TABLE_CODE_OFFSET])
+        __EMBED_TABLE(LOCK_SELECTOR_AND_ROUTER_ADDRESS)
     withRecipientLbl:                                                       // [routerAddress]
         MAYBE_STORE_TRANSFER_FROM(
             __NOOP,
