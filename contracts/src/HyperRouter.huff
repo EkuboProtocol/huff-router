@@ -21,6 +21,11 @@
 #define error ETHTransferFailed()
 #define error CoreOnly()
 
+/* General constants */
+#define constant BITS_PER_BYTE = 0x8
+#define constant BITS_PER_WORD = 0x100
+#define constant MINUS_ONE = -0x1
+
 #define constant MAX_ADDRESS = 0xffffffffffffffffffffffffffffffffffffffff
 #define constant TWO_POW_8 = 0x100
 

@@ -1,11 +1,6 @@
-/* General constants */
-#define constant BITS_PER_BYTE = 0x8
-#define constant BITS_PER_WORD = 0x100
-#define constant MINUS_ONE = -0x1
-
 /* Size constants */
 #define constant FEE_SHARE_SIZE = 0x2
-#define constant INTEGRATION_FEE_SIZE = [ADDRESS_SIZE] + [FEE_SHARE_SIZE]
+#define constant INTEGRATION_FEE_SIZE = [FEE_SHARE_SIZE] + [ADDRESS_SIZE]
 #define constant ADDRESS_PLUS_INTEGRATION_FEE_SIZE = [ADDRESS_SIZE] + [INTEGRATION_FEE_SIZE]
 
 /* Protocol constants */
@@ -52,6 +47,7 @@
 #define constant FORWARD_SELECTOR_OFFSET_PACKED = 0x
 #define constant FORWARD_TO_OFFSET = [FORWARD_SELECTOR_OFFSET_PACKED] + [SELECTOR_SIZE]
 #define constant FORWARD_TO_OFFSET_PACKED = [FORWARD_TO_OFFSET] + [PACKED_ADDRESS_OFFSET]
+#define constant FORWARD_ARGS_SIZE = [SWAP_FORWARD_PARAMS_OFFSET] + [WORD_SIZE] - [FORWARD_SELECTOR_OFFSET_PACKED]
 
 /* ICore#swap_6269342730() */
 #define constant SWAP_SELECTOR = 0x // cast sig "swap_6269342730()" is zero
@@ -147,7 +143,7 @@
 /// swap inputs are transferred from the delegating contract and this value does not exist.
 /// Otherwise, approvals to this contract from the caller are consumed to settle the debt.
 #define macro LOCKED_SWAP() = takes(0) returns(0) {
-    [LOCKED_SWAP_FIRST_WORD_OFFSET] calldataload                                 // [firstWord]
+    [LOCKED_SWAP_FIRST_WORD_OFFSET] calldataload                            // [firstWord]
 
     // Parse `specifiedAmountBytes`
     dup1 0x byte                                                            // [specifiedAmountBytes, firstWord]
@@ -166,7 +162,7 @@
     dup5 0x2 byte                                                           // [specifiedTokenInfo, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
     dup1 0xff gt specifiedKnownLbl jumpi                                    // [specifiedTokenInfo, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         pop                                                                 // [totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
-        [ADDRESS_SIZE]                                                    // [addressLength, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
+        [ADDRESS_SIZE]                                                      // [addressLength, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         dup3 calldataload 0x60 shr                                          // [specifiedToken, addressLength, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         swap3                                                               // [offset, addressLength, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         add                                                                 // [offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
@@ -521,10 +517,10 @@
     // `shr` the fee to its place and unset other bits, then add the extension address
     0x98 shr 0xffffffffffffffff00000000 and                                 // [shiftedFee, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     __RIGHTPAD([TWAMM]) or                                                  // [config, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    [SWAP_FORWARD_CONFIG_OFFSET] mstore                                             // [nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    [SWAP_FORWARD_CONFIG_OFFSET] mstore                                     // [nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     SHIFT_SWAP_PARAMS_AMOUNT()                                              // [nextSpecifiedAmountShifted, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    [SWAP_FORWARD_PARAMS_OFFSET] mstore                                             // [additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    [SWAP_FORWARD_PARAMS_OFFSET] mstore                                     // [additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     STORE_SWAP_SELECTOR()                                                   // [additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
@@ -629,9 +625,9 @@
         SWAP_FORWARD_TOKEN0_OFFSET_PACKED,
         SWAP_FORWARD_TOKEN0_OFFSET,
         EXECUTE_SWAP_LAST(
+            <callArgs>,
             <sqrtRatioLimitIsToken0>,
             <sqrtRatioLimitIsToken1>,
-            <callArgs>,
         ),
         EXECUTE_SWAP_NOT_LAST(
             <sqrtRatioLimitIsToken0>,
@@ -718,7 +714,7 @@
         )
 }
 
-#define macro EXECUTE_SWAP_LAST(callArgs isToken0, isToken1) = takes(12) returns(12) {
+#define macro EXECUTE_SWAP_LAST(callArgs, isToken0, isToken1) = takes(12) returns(12) {
     // takes: [offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     dup6                                                                    // [nextCalculatedToken, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
@@ -1232,7 +1228,7 @@
     [SWAP_ARGS_SIZE] [SWAP_SELECTOR_OFFSET_PACKED]                          // [argsOffset, argsSize, ...]
 }
 #define macro PUSH_FORWARD_CALL_OFFSET_AND_LENGTH() = {
-    0x104 0x                                                                // [argsOffset, argsSize, ...]
+    [FORWARD_ARGS_SIZE] [FORWARD_SELECTOR_OFFSET_PACKED]                    // [argsOffset, argsSize, ...]
 }
 
 // TODO Replace with constant
@@ -1300,7 +1296,7 @@
 
 // TODO Use numbers and make this variable
 #define table TOKENS {
-    /*[TOKEN_AA]
+    [TOKEN_AA]
     [TOKEN_AB]
     [TOKEN_AC]
     [TOKEN_AD]
@@ -1390,5 +1386,5 @@
     [TOKEN_DJ]
     [TOKEN_DK]
     [TOKEN_DL]
-    [TOKEN_DM]*/
+    [TOKEN_DM]
 }
