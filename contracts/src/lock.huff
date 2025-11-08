@@ -1,0 +1,4 @@
+#include "lock/swap.huff"
+#include "lock/claim.huff"
+
+#define constant LOCK_SELECTOR = __FUNC_SIG("lock()")

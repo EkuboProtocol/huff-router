@@ -1,6 +1,6 @@
 import { ByteArray, bytesToHex, concatBytes, getAddress, Hex, hexToBigInt, hexToBytes, maxInt128, maxUint16, maxUint256, maxUint32, maxUint64, maxUint8, minInt128, numberToBytes, numberToHex, padBytes, padHex, size, sliceHex, toBytes, zeroAddress } from "viem";
-import TOKENS from "../../tokens/ethereum.json";
-import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS } from "./extensions";
+import TOKENS from "../../tokens/1.json";
+import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_CAPTURE_ADDRESS } from "./extensions";
 import { Hop, Parameters, Swap } from ".";
 
 const TWO_POW_62 = 2n ** 62n;
@@ -227,7 +227,7 @@ export function generateCalldataImpl(
                                 fee,
                             );
                             break;
-                        case MEV_RESIST_ADDRESS:
+                        case MEV_CAPTURE_ADDRESS:
                             calldata.push(
                                 new Uint8Array([
                                     3,

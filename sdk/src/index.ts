@@ -1,10 +1,9 @@
 import { Address, Hex } from "viem";
 import { generateCalldataImpl } from "./impl";
 
-export const MAINNET_ADDRESS: Address =
-  "0x8CCB1ffD5C2aa6Bd926473425Dea4c8c15DE60fd";
-export const SEPOLIA_ADDRESS: Address =
-  "0xd906C89cFc36aa668a9cABD2e7387EeF1Ea999Ff";
+// TODO
+//export const MAINNET_ADDRESS: Address = "0x8CCB1ffD5C2aa6Bd926473425Dea4c8c15DE60fd";
+//export const SEPOLIA_ADDRESS: Address = "0xd906C89cFc36aa668a9cABD2e7387EeF1Ea999Ff";
 
 /**
  * The unique identifier of a pool

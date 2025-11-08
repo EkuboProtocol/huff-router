@@ -1,4 +1,24 @@
-/// @notice Entrypoint of the router which prepares and executes the call to IFlashAccountant#lock.
+#define constant LOCK_SWAP_SELECTOR_OFFSET_PACKED = 0x0
+#define constant ROUTER_ADDRESS_OFFSET = 0x4
+
+#define constant MINIMUM_CALLDATA_SIZE = 0xa
+#define constant PADDING = [PACKED_ADDRESS_OFFSET] - [MINIMUM_CALLDATA_SIZE] // Must be positive
+
+#define constant ADDITIONAL_ARGS_SIZE_WITH_RECIPIENT_WITH_DELEGATE = [SELECTOR_SIZE] + [PADDING]
+#define constant ADDITIONAL_ARGS_SIZE_WITH_RECIPIENT_NO_DELEGATE = [ADDITIONAL_ARGS_SIZE_WITH_RECIPIENT_WITH_DELEGATE] + [WORD_SIZE]
+#define constant ADDITIONAL_ARGS_SIZE_NO_RECIPIENT_WITH_DELEGATE = [ADDITIONAL_ARGS_SIZE_WITH_RECIPIENT_WITH_DELEGATE] + [ADDRESS_SIZE]
+#define constant ADDITIONAL_ARGS_SIZE_NO_RECIPIENT_NO_DELEGATE = [ADDITIONAL_ARGS_SIZE_NO_RECIPIENT_WITH_DELEGATE] + [WORD_SIZE]
+
+#define constant WITH_RECIPIENT_SIZE = 0x1
+#define constant SPECIFIED_AMOUNT_BYTES_SIZE = 0x1
+#define constant CALCULATED_AMOUNT_THRESHOLD_BYTES_SIZE = 0x1
+#define constant SPECIFIED_TOKEN_INFO_SIZE = 0x1
+#define constant CALCULATED_TOKEN_INFO_SIZE = 0x1
+#define constant ADDITIONAL_MULTI_HOPS_SIZE = 0x1
+#define constant WITH_INTEGRATION_FEE_SIZE = 0x1
+#define constant WITH_SQRT_RATIO_LIMIT_IS_EXACT_OUT_SIZE = 0x1
+
+/// @notice Entrypoint of the swap routine which prepares and executes the call to IFlashAccountant#lock.
 ///
 /// `withRecipient` (1 byte `bool`)
 /// Whether the output (after possibly deducting integration fees) should be sent
@@ -52,17 +72,17 @@
 /// 0x00 := Base extension
 /// 0x01 := Oracle extension
 /// 0x02 := TWAMM extension
-/// 0x03 := MEV-resist extension
+/// 0x03 := MEV-capture extension
 /// 0x04 := Pool config is passed in the calldata
 /// 0x05 := Wrapped token
 ///
 /// `hopInfo` (variable)
 /// Depending on `hopType`:
-/// Base => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | tickSpacing (4 bytes `uint32`)
+/// Base => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | poolTypeConfig (4 bytes `bytes4`)
 /// Oracle => empty (0 bytes)
 /// TWAMM => fee (8 bytes `uint64`)
-/// MEV-resist => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | tickSpacing (4 bytes `uint32`)
-/// Unknown extension => skipAhead (1 byte `uint8`) | extension (20 bytes `address`) | fee (8 bytes `uint64`) | tickSpacing (4 bytes `uint32`)
+/// MEV-capture => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | poolTypeConfig (4 bytes `bytes4`)
+/// Unknown extension => skipAhead (1 byte `uint8`) | extension (20 bytes `address`) | fee (8 bytes `uint64`) | poolTypeConfig (4 bytes `bytes4`)
 /// Wrapped token => call type (1 byte)
 ///
 /// `tokenInfo` (1 byte, for all but the last hop in a multi-hop)
@@ -84,13 +104,14 @@
 ///
 /// `recipient` (20 bytes `address`, optional as per `withRecipient`)
 /// Adress of the account that receives the output (after possibly deducting integration fees).
-/// If `withRecipient === false`, this will be filled in by LOCK().
-#define macro LOCK() = takes(0) returns(0) {
+/// If `withRecipient == false`, this will be filled in here.
+#define macro LOCK_SWAP() = takes(0) returns(0) {
     // Load lock() selector and router address in one `codecopy`
-    __tablesize(LOCK_SIG_AND_ROUTER_ADDRESS)                                // [tableSize]
-    __tablestart(LOCK_SIG_AND_ROUTER_ADDRESS)                               // [tableStart, tableSize]
-    0x codecopy                                                             // []
-    0x4 mload                                                               // [routerAddress]
+    __tablesize(LOCK_SELECTOR_AND_ROUTER_ADDRESS)                           // [tableSize]
+    __tablestart(LOCK_SELECTOR_AND_ROUTER_ADDRESS)                          // [tableStart, tableSize]
+    [LOCK_SWAP_SELECTOR_OFFSET_PACKED] codecopy                                         // []
+
+    [ROUTER_ADDRESS_OFFSET] mload                                           // [routerAddress]
 
     // Load `withRecipient`
     0x calldataload 0x byte                                                 // [withRecipient, routerAddress]
@@ -100,21 +121,26 @@
         MAYBE_STORE_TRANSFER_FROM(
             STORE_RECIPIENT(address),
             STORE_RECIPIENT(caller),
-            0x1a,
-            0x3a,
+            ADDITIONAL_ARGS_SIZE_NO_RECIPIENT_WITH_DELEGATE,
+            ADDITIONAL_ARGS_SIZE_NO_RECIPIENT_NO_DELEGATE,
         )
     withRecipientLbl:                                                       // [routerAddress]
         MAYBE_STORE_TRANSFER_FROM(
-            NO_OP(),
-            NO_OP(),
-            0x6,
-            0x26,
+            __NOOP,
+            __NOOP,
+            ADDITIONAL_ARGS_SIZE_WITH_RECIPIENT_WITH_DELEGATE,
+            ADDITIONAL_ARGS_SIZE_WITH_RECIPIENT_NO_DELEGATE,
         )
 }
 
-#define macro MAYBE_STORE_TRANSFER_FROM(maybeStoreRecipientDelegatecall, maybeStoreRecipientNoDelegatecall, additionalArgsSizeDelegate, additionalArgsSizeNoDelegate) = takes(1) returns(0) {
-    // takes: [routerAddress]
+#define macro MAYBE_STORE_TRANSFER_FROM(
+    maybeStoreRecipientDelegatecall,
+    maybeStoreRecipientNoDelegatecall,
 
+    additionalArgsSizeDelegate,
+    additionalArgsSizeNoDelegate,
+) = takes(1) returns(0) {
+    // takes: [routerAddress]
     address eq noDelegateCallLbl jumpi                                      // []
         <maybeStoreRecipientDelegatecall>                                   // []
 
@@ -131,11 +157,14 @@
 #define macro STORE_RECIPIENT(recipient) = takes(0) returns(0) {
     <recipient>                                                             // [recipient]
 
-    // Since the minimum `calldatasize` is 10 bytes (`withRecipient`, `specifiedAmountBytes`, `calculatedAmountThresholdBytes`,
-    // `withIntegrationFee`, `specifiedTokenInfo`, `calculatedTokenInfo`, `additionalMultiHops`,
-    // `withSqrtRatioLimit` | `isExactOut`, `additionalHops`, `hopType`),
-    // we designate 2 bytes between the selector and the calldata as padding to ensure never overwriting the selector.
-    // Therefore, 4 bytes selector - 12 bytes packed `address` offset + 2 bytes padding = -6 bytes offset from `calldatasize`
+    // Since writing a packed `address` requires to write to the desired offset of the first address byte - 12,
+    // we have to ensure that it doesn't overwrite already written information.
+    // The calldata (which hasn't been copied to memory yet) has a minimum size of 10 bytes (`withRecipient`,
+    // `specifiedAmountBytes`, `calculatedAmountThresholdBytes`, `withIntegrationFee`, `specifiedTokenInfo`,
+    // `calculatedTokenInfo`, `additionalMultiHops`, `withSqrtRatioLimit` | `isExactOut`, `additionalHops`, `hopType`),
+    // so we need 2 bytes of padding after the preceding selector of 4 bytes.
+    // Therefore, to write the `address` after the end of the passed calldata, we need
+    // 4 bytes selector + 2 bytes padding - 12 bytes packed `address` offset = -6 bytes offset from `calldatasize`.
     0x6 calldatasize sub                                                    // [recipientOffset, recipient]
     mstore                                                                  // []
 }
@@ -144,11 +173,10 @@
     // Copy calldata unchanged after the selector and the 2 bytes of padding
     calldatasize 0x 0x6 calldatacopy                                        // []
 
-    0x 0x                                                                   // [retOffset, retSize]
-    calldatasize <additionalArgsSize> add                                   // [argsSize, retOffset, retSize]
+    0x 0x calldatasize <additionalArgsSize> add                             // [argsSize, retOffset, retSize]
 
     // IFlashAccountant#lock()
-    0x 0x [CORE] gas call                                                   // [success]
+    [LOCK_SWAP_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call                        // [success]
 
     returndatasize 0x 0x returndatacopy                                     // [success]
 
@@ -156,4 +184,11 @@
         returndatasize 0x revert
     successLbl:                                                             // []
         returndatasize 0x return
+}
+
+#define table LOCK_SELECTOR_AND_ROUTER_ADDRESS {
+    __FUNC_SIG("lock()")
+    __LEFTPAD(0x)           // Will be replaced with the ABI-encoded address of this contract in the constructor.
+                            // The MSB (always zero for `address` types) is also used to distinguish the call type
+                            // in the locked implementation.
 }

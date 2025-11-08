@@ -2,7 +2,7 @@
 optimizer = true
 solc = "0.8.30"
 ffi = true # Necessary for the HuffNeoDeployer
-fs_permissions = [{ access = "read", path = "../tokens/ethereum.json"}]
+fs_permissions = [{ access = "read", path = "../tokens/"}]
 via-ir = true
 gas-limit = "4294967296" # MAX_UINT32, required for HyperRouterTest#executeSdkCases
 

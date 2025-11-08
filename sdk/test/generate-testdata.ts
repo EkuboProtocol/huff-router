@@ -1,6 +1,6 @@
 import { Address, concatHex, encodeAbiParameters, getAbiItem, Hex, hexToBigInt, maxUint256, numberToHex, parseEther, parseUnits, zeroAddress } from "viem";
 import { hyperRouterTestAbi } from "./abi";
-import { MEV_RESIST_ADDRESS, TWAMM_ADDRESS } from "../src/extensions";
+import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions";
 import { generateCalldata, IntegrationFee, Hop } from "../src";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl";
 import type { DeepWritable, ElementOf } from "ts-essentials";
@@ -18,7 +18,7 @@ const gEKUBO_26Q2_UNLOCK_TIME = 1775001600n;
 const RECIPIENT: Address = "0x46b7916bCEC93409d18a4771C43dCCdddD62585E";
 const INTEGRATION_FEE: IntegrationFee = {
     integrator: INTEGRATOR,
-    fee: 32768, // 50%
+    fee: 2 ** 15, // 50%
 };
 
 interface PoolConfig {
@@ -39,7 +39,7 @@ const ETH_USDC_2_BIPS = compressed({ extension: zeroAddress, fee: 36893488147419
 const ETH_USDT = compressed({ extension: zeroAddress, fee: 3689348814741910n, tickSpacing: 4990 });
 const USDC_USDT = compressed({ extension: zeroAddress, fee: 92233720368547n, tickSpacing: 50 });
 const TWAMM_ETH_USDC = compressed({ extension: TWAMM_ADDRESS, fee: 9223372036854775n, tickSpacing: 0 });
-const MEV_RESIST_ETH_USDC = compressed({ extension: MEV_RESIST_ADDRESS, fee: 1844674407370954n, tickSpacing: 1000 });
+const MEV_CAPTURE_ETH_USDC = compressed({ extension: MEV_CAPTURE_ADDRESS, fee: 1844674407370954n, tickSpacing: 1000 });
 
 interface PoolConfigWithName {
     poolConfig: Hex,
@@ -65,10 +65,10 @@ const ETH_USDC_CONFIGS: PoolConfigWithName[] = [
         extensionName: "twamm",
     },
     {
-        poolConfig: MEV_RESIST_ETH_USDC,
+        poolConfig: MEV_CAPTURE_ETH_USDC,
         asUnknownExtension: false,
         overrideBlockNumber: 22968156n,
-        extensionName: "mevResist",
+        extensionName: "mevCapture",
     },
     {
         poolConfig: ETH_USDC_2_BIPS,
@@ -328,7 +328,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                                     token0: EKUBO_ADDRESS,
                                                     token1: gEKUBO_26Q2_ADDRESS,
                                                     config: compressed({
-                                                        extension: MEV_RESIST_ADDRESS,
+                                                        extension: MEV_CAPTURE_ADDRESS,
                                                         fee: 18446744073709552n,
                                                         tickSpacing: 4988,
                                                     }),
