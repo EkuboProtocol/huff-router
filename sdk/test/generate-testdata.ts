@@ -1,21 +1,13 @@
 import { Address, concatHex, encodeAbiParameters, getAbiItem, Hex, hexToBigInt, maxUint256, numberToHex, parseEther, parseUnits, zeroAddress } from "viem";
-import { hyperRouterTestAbi } from "./abi";
-import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions";
-import { generateCalldata, IntegrationFee, Hop } from "../src";
-import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl";
+import { hyperRouterTestAbi } from "./abi.js";
+import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions.js";
+import { generateCalldata, IntegrationFee, Hop } from "../src/index.js";
+import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl.js";
 import type { DeepWritable, ElementOf } from "ts-essentials";
-import { ETH_ADDRESS, INTEGRATOR, ORACLE_CONFIG, USDC_ADDRESS, USDT_ADDRESS } from "./shared";
+import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, CHAIN_ID, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
 
-const EKUBO_ADDRESS = "0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f";
-const gEKUBO_26Q2_ADDRESS = "0x0c93b16cb1D8691E629514Fc98f02cbaD340Da3C";
-
-const ETH_SPECIFIED = parseEther("0.001");
-const USDC_SPECIFIED = parseUnits("3", 6);
-const EKUBO_SPECIFIED = parseEther("10");
-const gEKUBO_26Q2_SPECIFIED = EKUBO_SPECIFIED;
-const gEKUBO_26Q2_UNLOCK_TIME = 1775001600n;
-
-const RECIPIENT: Address = "0x46b7916bCEC93409d18a4771C43dCCdddD62585E";
+const SPECIFIED_AMOUNT = parseEther("1");
+const RECIPIENT: Address = "0xffffffffffffffffffffffffffffffffffffffff";
 const INTEGRATION_FEE: IntegrationFee = {
     integrator: INTEGRATOR,
     fee: 2 ** 15, // 50%
@@ -24,33 +16,42 @@ const INTEGRATION_FEE: IntegrationFee = {
 interface PoolConfig {
     extension: Address;
     fee: bigint;
-    tickSpacing: number;
+    poolTypeConfig: bigint;
 }
+
+function concentratedPoolTypeConfig(tickSpacing: number): bigint {
+    return 0x80000000n | BigInt(tickSpacing)
+}
+
+function stableswapPoolTypeConfig(amplificationFactor: number, centerTick: number): bigint {
+    return BigInt(amplificationFactor) << 24n | BigInt.asIntN(24, BigInt(centerTick));
+}
+
+const FULL_RANGE_POOL_TYPE_CONFIG = 0n;
 
 function compressed(config: PoolConfig): Hex {
     return concatHex([
         config.extension,
         numberToHex(config.fee, { size: 8 }),
-        numberToHex(config.tickSpacing, { size: 4 }),
+        numberToHex(config.poolTypeConfig, { size: 4 }),
     ]);
 }
 
-const ETH_USDC_2_BIPS = compressed({ extension: zeroAddress, fee: 3689348814741910n, tickSpacing: 4990 });
-const ETH_USDT = compressed({ extension: zeroAddress, fee: 3689348814741910n, tickSpacing: 4990 });
-const USDC_USDT = compressed({ extension: zeroAddress, fee: 92233720368547n, tickSpacing: 50 });
-const TWAMM_ETH_USDC = compressed({ extension: TWAMM_ADDRESS, fee: 9223372036854775n, tickSpacing: 0 });
-const MEV_CAPTURE_ETH_USDC = compressed({ extension: MEV_CAPTURE_ADDRESS, fee: 1844674407370954n, tickSpacing: 1000 });
+const CONCENTRATED_CONFIG = compressed({ extension: zeroAddress, fee: 3689348814741910n, poolTypeConfig: concentratedPoolTypeConfig(4990) });
+const STABLESWAP_CONFIG = compressed({ extension: zeroAddress, fee: 3689348814741910n, poolTypeConfig: stableswapPoolTypeConfig(10, 0) });
+const FULL_RANGE_CONFIG = compressed({ extension: zeroAddress, fee: 92233720368547n, poolTypeConfig: FULL_RANGE_POOL_TYPE_CONFIG });
+const TWAMM_CONFIG = compressed({ extension: TWAMM_ADDRESS, fee: 9223372036854775n, poolTypeConfig: FULL_RANGE_POOL_TYPE_CONFIG });
+const MEV_CAPTURE_CONFIG = compressed({ extension: MEV_CAPTURE_ADDRESS, fee: 1844674407370954n, poolTypeConfig: concentratedPoolTypeConfig(1000) });
 
 interface PoolConfigWithName {
     poolConfig: Hex,
     asUnknownExtension: boolean,
-    overrideBlockNumber?: bigint,
     extensionName: string,
 }
 
-const ETH_USDC_CONFIGS: PoolConfigWithName[] = [
+const NATIVE_ERC20_CONFIGS: PoolConfigWithName[] = [
     {
-        poolConfig: ETH_USDC_2_BIPS,
+        poolConfig: CONCENTRATED_CONFIG,
         asUnknownExtension: false,
         extensionName: "base",
     },
@@ -60,18 +61,17 @@ const ETH_USDC_CONFIGS: PoolConfigWithName[] = [
         extensionName: "oracle",
     },
     {
-        poolConfig: TWAMM_ETH_USDC,
+        poolConfig: TWAMM_CONFIG,
         asUnknownExtension: false,
         extensionName: "twamm",
     },
     {
-        poolConfig: MEV_CAPTURE_ETH_USDC,
+        poolConfig: MEV_CAPTURE_CONFIG,
         asUnknownExtension: false,
-        overrideBlockNumber: 22968156n,
         extensionName: "mevCapture",
     },
     {
-        poolConfig: ETH_USDC_2_BIPS,
+        poolConfig: STABLESWAP_CONFIG,
         asUnknownExtension: true,
         extensionName: "unknown",
     },
@@ -86,10 +86,11 @@ type SdkCases = DeepWritable<ElementOf<Parameters<typeof encodeAbiParameters<typ
 
 const successCases: SdkCases["success"] = [
     {
-        data: generateCalldata({
-            specifiedToken: ETH_ADDRESS,
+        data: await generateCalldata({
+            chainId: CHAIN_ID,
+            specifiedToken: NATIVE_TOKEN_ADDRESS,
             recipient: RECIPIENT,
-            calculatedAmountThreshold: parseUnits("2000", 6),
+            calculatedAmountThreshold: parseEther("1"),
             integrationFee: INTEGRATION_FEE,
             multiHops: [
                 {
@@ -98,17 +99,17 @@ const successCases: SdkCases["success"] = [
                         {
                             type: "swap",
                             poolKey: {
-                                token0: ETH_ADDRESS,
-                                token1: USDC_ADDRESS,
-                                config: TWAMM_ETH_USDC,
+                                token0: NATIVE_TOKEN_ADDRESS,
+                                token1: ERC20_FIRST_ADDRESS,
+                                config: TWAMM_CONFIG,
                             }
                         },
                         {
                             type: "swap",
                             poolKey: {
-                                token0: USDC_ADDRESS,
-                                token1: USDT_ADDRESS,
-                                config: USDC_USDT,
+                                token0: ERC20_FIRST_ADDRESS,
+                                token1: ERC20_SECOND_ADDRESS,
+                                config: FULL_RANGE_CONFIG,
                             },
                             skipAhead: 10,
                             sqrtRatioLimit: MIN_SQRT_RATIO,
@@ -121,24 +122,35 @@ const successCases: SdkCases["success"] = [
                         {
                             type: "swap",
                             poolKey: {
-                                token0: ETH_ADDRESS,
-                                token1: USDT_ADDRESS,
-                                config: ETH_USDT,
+                                token0: NATIVE_TOKEN_ADDRESS,
+                                token1: ERC20_SECOND_ADDRESS,
+                                config: STABLESWAP_CONFIG,
                             },
                         }
                     ],
                 },
             ]
         }),
-        specifiedToken: ETH_ADDRESS,
-        calculatedToken: USDT_ADDRESS,
+        specifiedToken: NATIVE_TOKEN_ADDRESS,
+        calculatedToken: ERC20_SECOND_ADDRESS,
         isExactOut: false,
         delegatecall: true,
         totalSpecified: parseEther("1.5"),
         recipient: RECIPIENT,
         integrator: INTEGRATION_FEE.integrator,
-        overrideBlockNumber: 0n,
-        overrideTimestamp: 0n,
+        pools: [{
+            token0: NATIVE_TOKEN_ADDRESS,
+            token1: ERC20_FIRST_ADDRESS,
+            config: TWAMM_CONFIG,
+        }, {
+            token0: ERC20_FIRST_ADDRESS,
+            token1: ERC20_SECOND_ADDRESS,
+            config: FULL_RANGE_CONFIG,
+        }, {
+            token0: NATIVE_TOKEN_ADDRESS,
+            token1: ERC20_SECOND_ADDRESS,
+            config: STABLESWAP_CONFIG,
+        }],
         name: "example_scenario",
     }
 ];
@@ -181,37 +193,35 @@ tokenIn${tokenIn}_\
 ${asUnknownToken ? "unknown" : "known"}Tokens`;
                             }
 
-                            for (const { poolConfig, asUnknownExtension, overrideBlockNumber, extensionName } of ETH_USDC_CONFIGS) {
+                            // Pool swaps
+                            for (const { poolConfig, asUnknownExtension, extensionName } of NATIVE_ERC20_CONFIGS) {
+                                // TODO Not true anymore
                                 // Ideally we'd also have a loop over isToken1 here but ETH/USDC is currently the only pair
                                 // that has pools of every extension type
 
                                 // These two decisions don't depend on each other
                                 const tokenInNative = asLastInMultiHop;
 
-                                const [specifiedToken, specifiedAmount, firstCalculatedToken]: [Address, bigint, Address] = tokenInNative === isExactOut
+                                const [specifiedToken, firstCalculatedToken]: [Address, Address] = tokenInNative === isExactOut
                                     ? [
-                                        USDC_ADDRESS,
-                                        USDC_SPECIFIED,
-                                        ETH_ADDRESS,
+                                        ERC20_FIRST_ADDRESS,
+                                        NATIVE_TOKEN_ADDRESS,
                                     ]
                                     : [
-                                        ETH_ADDRESS,
-                                        ETH_SPECIFIED,
-                                        USDC_ADDRESS,
+                                        NATIVE_TOKEN_ADDRESS,
+                                        ERC20_FIRST_ADDRESS,
                                     ];
 
-
-
-                                let hops: Hop[], calculatedToken: Address;
+                                let hops, calculatedToken: Address;
 
                                 if (asLastInMultiHop) {
                                     calculatedToken = firstCalculatedToken;
                                     hops = [
                                         {
-                                            type: "swap",
+                                            type: "swap" as const,
                                             poolKey: {
-                                                token0: ETH_ADDRESS,
-                                                token1: USDC_ADDRESS,
+                                                token0: NATIVE_TOKEN_ADDRESS,
+                                                token1: ERC20_FIRST_ADDRESS,
                                                 config: poolConfig,
                                             },
                                             sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
@@ -219,38 +229,39 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     ];
                                 } else {
                                     const secondCalculatedToken = tokenInNative === isExactOut
-                                        ? USDC_ADDRESS
-                                        : ETH_ADDRESS;
+                                        ? ERC20_FIRST_ADDRESS
+                                        : NATIVE_TOKEN_ADDRESS;
 
                                     calculatedToken = secondCalculatedToken;
 
                                     hops = [
                                         {
-                                            type: "swap",
+                                            type: "swap" as const,
                                             poolKey: {
-                                                token0: ETH_ADDRESS,
-                                                token1: USDC_ADDRESS,
+                                                token0: NATIVE_TOKEN_ADDRESS,
+                                                token1: ERC20_FIRST_ADDRESS,
                                                 config: poolConfig,
                                             },
                                             sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
                                         },
                                         {
-                                            type: "swap",
+                                            type: "swap" as const,
                                             poolKey: {
-                                                token0: ETH_ADDRESS,
-                                                token1: USDC_ADDRESS,
-                                                config: ETH_USDC_2_BIPS,
+                                                token0: NATIVE_TOKEN_ADDRESS,
+                                                token1: ERC20_FIRST_ADDRESS,
+                                                config: CONCENTRATED_CONFIG,
                                             },
                                         },
                                     ];
                                 }
 
-                                const calldata = generateCalldataImpl({
+                                const calldata = await generateCalldataImpl({
+                                    chainId: CHAIN_ID,
                                     specifiedToken,
                                     recipient,
                                     multiHops: [
                                         {
-                                            specifiedAmount: isExactOut ? -specifiedAmount : specifiedAmount,
+                                            specifiedAmount: isExactOut ? -SPECIFIED_AMOUNT : SPECIFIED_AMOUNT,
                                             hops,
                                         }
                                     ],
@@ -266,11 +277,10 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     calculatedToken,
                                     isExactOut,
                                     delegatecall,
-                                    totalSpecified: specifiedAmount,
+                                    totalSpecified: SPECIFIED_AMOUNT,
                                     recipient: recipient ?? zeroAddress,
                                     integrator: integrationFee?.integrator ?? zeroAddress,
-                                    overrideBlockNumber: overrideBlockNumber ?? 0n,
-                                    overrideTimestamp: 0n,
+                                    pools: hops.map(hop => hop.poolKey),
                                     name: getTestcaseName(`${extensionName}Extension`, tokenInNative ? "Native" : "Erc20"),
                                 } as const);
 
@@ -279,6 +289,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                 }
                             }
 
+                            // Wrapped tokens
                             {
                                 // sqrtRatioLimit is irrelevant when only a token wrap/unwrap happens
                                 if (withSqrtRatioLimit && asLastInMultiHop) {
@@ -286,16 +297,14 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                 }
 
                                 for (const tokenInUnderlying of [true, false]) {
-                                    const [specifiedToken, specifiedAmount, firstCalculatedToken]: [Address, bigint, Address] = tokenInUnderlying === isExactOut
+                                    const [specifiedToken, firstCalculatedToken]: [Address, Address] = tokenInUnderlying === isExactOut
                                         ? [
-                                            gEKUBO_26Q2_ADDRESS,
-                                            gEKUBO_26Q2_SPECIFIED,
-                                            EKUBO_ADDRESS,
+                                            TOKEN_WRAPPER_ADDRESS,
+                                            ERC20_FIRST_ADDRESS,
                                         ]
                                         : [
-                                            EKUBO_ADDRESS,
-                                            EKUBO_SPECIFIED,
-                                            gEKUBO_26Q2_ADDRESS,
+                                            ERC20_FIRST_ADDRESS,
+                                            TOKEN_WRAPPER_ADDRESS,
                                         ];
 
                                     let hops: Hop[], calculatedToken: Address;
@@ -305,32 +314,32 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                         hops = [
                                             {
                                                 type: "wrappedToken",
-                                                underlying: EKUBO_ADDRESS,
-                                                wrapped: gEKUBO_26Q2_ADDRESS,
+                                                underlying: ERC20_FIRST_ADDRESS,
+                                                wrapped: TOKEN_WRAPPER_ADDRESS,
                                             }
                                         ];
                                     } else {
                                         const secondCalculatedToken = tokenInUnderlying === isExactOut
-                                            ? gEKUBO_26Q2_ADDRESS
-                                            : EKUBO_ADDRESS;
+                                            ? TOKEN_WRAPPER_ADDRESS
+                                            : ERC20_FIRST_ADDRESS;
 
                                         calculatedToken = secondCalculatedToken;
 
                                         hops = [
                                             {
                                                 type: "wrappedToken",
-                                                underlying: EKUBO_ADDRESS,
-                                                wrapped: gEKUBO_26Q2_ADDRESS,
+                                                underlying: ERC20_FIRST_ADDRESS,
+                                                wrapped: TOKEN_WRAPPER_ADDRESS,
                                             },
                                             {
                                                 type: "swap",
                                                 poolKey: {
-                                                    token0: EKUBO_ADDRESS,
-                                                    token1: gEKUBO_26Q2_ADDRESS,
+                                                    token0: ERC20_FIRST_ADDRESS,
+                                                    token1: TOKEN_WRAPPER_ADDRESS,
                                                     config: compressed({
                                                         extension: MEV_CAPTURE_ADDRESS,
                                                         fee: 18446744073709552n,
-                                                        tickSpacing: 4988,
+                                                        poolTypeConfig: concentratedPoolTypeConfig(4988),
                                                     }),
                                                 },
                                                 sqrtRatioLimit: getSqrtRatioLimit(firstCalculatedToken, secondCalculatedToken),
@@ -338,12 +347,13 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                         ];
                                     }
 
-                                    const calldata = generateCalldataImpl({
+                                    const calldata = await generateCalldataImpl({
+                                        chainId: CHAIN_ID,
                                         specifiedToken,
                                         recipient,
                                         multiHops: [
                                             {
-                                                specifiedAmount: isExactOut ? -specifiedAmount : specifiedAmount,
+                                                specifiedAmount: isExactOut ? -SPECIFIED_AMOUNT : SPECIFIED_AMOUNT,
                                                 hops,
                                             }
                                         ],
@@ -359,11 +369,16 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                         calculatedToken,
                                         isExactOut,
                                         delegatecall,
-                                        totalSpecified: specifiedAmount,
+                                        totalSpecified: SPECIFIED_AMOUNT,
                                         recipient: recipient ?? zeroAddress,
                                         integrator: integrationFee?.integrator ?? zeroAddress,
-                                        overrideBlockNumber: 23276148n,
-                                        overrideTimestamp: gEKUBO_26Q2_UNLOCK_TIME,
+                                        pools: hops.flatMap(hop => {
+                                            if (hop.type === "swap") {
+                                                return [hop.poolKey];
+                                            } else {
+                                                return [];
+                                            }
+                                        }),
                                         name: getTestcaseName("wrappedToken", tokenInUnderlying ? "Underlying" : "Wrapped"),
                                     } as const);
 
@@ -378,14 +393,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                             }
                         }
                     }
-
-                    for (const asLastInMultiHop of [true, false]) {
-                        for (const asUnknownToken of [false, true]) {
-
-                        }
-                    }
                 }
-
             }
         }
     }
@@ -395,17 +403,18 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
     {
         calculatedAmountThreshold: maxUint256,
         isExactOut: false,
-        data: generateCalldata({
-            specifiedToken: ETH_ADDRESS,
+        data: await generateCalldata({
+            chainId: CHAIN_ID,
+            specifiedToken: NATIVE_TOKEN_ADDRESS,
             multiHops: [{
-                specifiedAmount: ETH_SPECIFIED,
+                specifiedAmount: SPECIFIED_AMOUNT,
                 hops: [
                     {
                         type: "swap",
                         poolKey: {
-                            token0: ETH_ADDRESS,
-                            token1: USDC_ADDRESS,
-                            config: ETH_USDC_2_BIPS,
+                            token0: NATIVE_TOKEN_ADDRESS,
+                            token1: ERC20_FIRST_ADDRESS,
+                            config: CONCENTRATED_CONFIG,
                         }
                     }
                 ]
@@ -416,17 +425,18 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
     {
         calculatedAmountThreshold: 1n,
         isExactOut: true,
-        data: generateCalldata({
-            specifiedToken: ETH_ADDRESS,
+        data: await generateCalldata({
+            chainId: CHAIN_ID,
+            specifiedToken: NATIVE_TOKEN_ADDRESS,
             multiHops: [{
-                specifiedAmount: -ETH_SPECIFIED,
+                specifiedAmount: -SPECIFIED_AMOUNT,
                 hops: [
                     {
                         type: "swap",
                         poolKey: {
-                            token0: ETH_ADDRESS,
-                            token1: USDC_ADDRESS,
-                            config: ETH_USDC_2_BIPS,
+                            token0: NATIVE_TOKEN_ADDRESS,
+                            token1: ERC20_FIRST_ADDRESS,
+                            config: CONCENTRATED_CONFIG,
                         }
                     }
                 ]
@@ -440,18 +450,19 @@ console.log(encodeAbiParameters(inputs, [{
     success: successCases,
     slippageCheckFailed: slippageCheckFailedCases,
     refundEthNonPayable: {
-        data: generateCalldata({
-            specifiedToken: USDC_ADDRESS,
+        data: await generateCalldata({
+            chainId: CHAIN_ID,
+            specifiedToken: ERC20_FIRST_ADDRESS,
             multiHops: [
                 {
-                    specifiedAmount: -USDC_SPECIFIED,
+                    specifiedAmount: -SPECIFIED_AMOUNT,
                     hops: [
                         {
                             type: "swap",
                             poolKey: {
-                                token0: ETH_ADDRESS,
-                                token1: USDC_ADDRESS,
-                                config: ETH_USDC_2_BIPS,
+                                token0: NATIVE_TOKEN_ADDRESS,
+                                token1: ERC20_FIRST_ADDRESS,
+                                config: CONCENTRATED_CONFIG,
                             }
                         },
                     ],

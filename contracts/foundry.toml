@@ -5,6 +5,7 @@ ffi = true # Necessary for the HuffNeoDeployer
 fs_permissions = [{ access = "read", path = "../tokens/"}]
 via-ir = true
 gas-limit = "4294967296" # MAX_UINT32, required for HyperRouterTest#executeSdkCases
+always_use_create_2_factory = true
 
 [fmt]
 sort_imports = true

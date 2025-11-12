@@ -1,18 +1,22 @@
-import { Hex, padHex, zeroAddress } from "viem";
-import { ORACLE_ADDRESS } from "../src/extensions";
-import { generateCalldata } from "../src";
+import { Address, Hex, padHex, zeroAddress } from "viem";
+import { ORACLE_ADDRESS } from "../src/extensions.js";
+import { generateCalldata } from "../src/index.js";
 
-export const ETH_ADDRESS = zeroAddress;
-export const USDC_ADDRESS = "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48";
-export const USDT_ADDRESS = "0xdAC17F958D2ee523a2206206994597C13D831ec7";
+export const CHAIN_ID = 31337n;
+
+export const NATIVE_TOKEN_ADDRESS: Address = zeroAddress;
+export const ERC20_FIRST_ADDRESS: Address = "0x1111111111111111111111111111111111111111";
+export const ERC20_SECOND_ADDRESS: Address = "0x2222222222222222222222222222222222222222";
+export const TOKEN_WRAPPER_ADDRESS: Address = "0x3333333333333333333333333333333333333333";
 
 export const ORACLE_CONFIG = padHex(ORACLE_ADDRESS, { dir: "right" });
 
 export const INTEGRATOR = "0x4a77e6131A6b8067042A0F9dDfaC9eB4cf18e219";
 
-export function minimalCalldata(): Hex {
+export function minimalCalldata(): Promise<Hex> {
     return generateCalldata({
-        specifiedToken: ETH_ADDRESS,
+        chainId: CHAIN_ID,
+        specifiedToken: NATIVE_TOKEN_ADDRESS,
         multiHops: [
             {
                 specifiedAmount: 0n,
@@ -20,8 +24,8 @@ export function minimalCalldata(): Hex {
                     {
                         type: "swap",
                         poolKey: {
-                            token0: ETH_ADDRESS,
-                            token1: USDC_ADDRESS,
+                            token0: NATIVE_TOKEN_ADDRESS,
+                            token1: ERC20_FIRST_ADDRESS,
                             config: ORACLE_CONFIG,
                         },
                     }

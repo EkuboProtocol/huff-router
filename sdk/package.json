@@ -2,6 +2,7 @@
   "name": "@ekubo/evm-hyper-router-sdk",
   "version": "0.1.0-alpha.1",
   "description": "Calldata generation for Ekubo's gas-efficient and highly configurable HyperRouter smart contract",
+  "type": "module",
   "main": "dist/index.js",
   "files": [
     "dist"
@@ -19,16 +20,16 @@
     "smart-contracts"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --dts --minify --tsconfig src/tsconfig.json",
+    "build": "tsup src/index.ts --dts --minify --tsconfig src/tsconfig.json && cp -r ../tokens/ dist/",
     "test": "vitest",
-    "generate-testdata": "wagmi generate 2>/dev/null && ts-node test/generate-testdata.ts",
+    "generate-testdata": "wagmi generate 2>/dev/null && tsx test/generate-testdata.ts",
     "prepublishOnly": "rm -rf dist/ && npm run build"
   },
   "devDependencies": {
     "@wagmi/cli": "^2.3.2",
     "ts-essentials": "^10.1.1",
-    "ts-node": "^10.9.2",
     "tsup": "^8.5.0",
+    "tsx": "^4.20.6",
     "typescript": "^5.8.3",
     "vitest": "^3.2.4"
   },

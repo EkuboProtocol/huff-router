@@ -2,3 +2,4 @@ ekubo/=lib/evm-contracts/src/
 forge-std/=lib/forge-std/src/
 foundry-huff-neo/=lib/foundry-huff-neo/src/
 solady/=lib/solady/src/
+ekubo-script/=lib/evm-contracts/script/

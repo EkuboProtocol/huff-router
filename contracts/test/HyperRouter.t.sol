@@ -2,32 +2,58 @@
 pragma solidity ^0.8.30;
 
 import {HyperRouterLib, IHyperRouter} from "../src/HyperRouter.sol";
-import {CORE_ADDRESS, POSITIONS_ADDRESS} from "../src/addresses.sol";
+import {CORE_ADDRESS, MEV_CAPTURE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS} from "../src/addresses.sol";
 
+import {findExtensionSalt} from "ekubo-script/DeployCore.s.sol";
+import {Core} from "ekubo/Core.sol";
+import {Positions} from "ekubo/Positions.sol";
+import {TokenWrapper} from "ekubo/TokenWrapper.sol";
+import {MEVCapture, mevCaptureCallPoints} from "ekubo/extensions/MEVCapture.sol";
+import {Oracle, oracleCallPoints} from "ekubo/extensions/Oracle.sol";
+import {TWAMM, twammCallPoints} from "ekubo/extensions/TWAMM.sol";
 import {ICore} from "ekubo/interfaces/ICore.sol";
+import {IPositions} from "ekubo/interfaces/IPositions.sol";
 import {CoreLib} from "ekubo/libraries/CoreLib.sol";
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/math/constants.sol";
+import {CallPoints} from "ekubo/types/callPoints.sol";
+import {PoolConfig, createFullRangePoolConfig} from "ekubo/types/poolConfig.sol";
+import {PoolKey} from "ekubo/types/poolKey.sol";
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
+import {IERC20} from "forge-std/interfaces/IERC20.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {LibBytes} from "solady/utils/LibBytes.sol";
 import {LibCall} from "solady/utils/LibCall.sol";
 import {SafeCastLib} from "solady/utils/SafeCastLib.sol";
 
+contract TestToken is ERC20 {
+    function name() public view virtual override returns (string memory) {
+        return "Test Token";
+    }
+
+    function symbol() public view virtual override returns (string memory) {
+        return "Test";
+    }
+}
+
 contract HyperRouterTest is Test {
-    using CoreLib for ICore;
+    using CoreLib for *;
 
     struct SuccessCase {
         bytes data;
+
         address specifiedToken;
         address calculatedToken;
+        uint256 totalSpecified;
+
         bool isExactOut;
         bool delegatecall;
-        uint256 totalSpecified;
+
         address recipient;
         address integrator;
-        uint256 overrideBlockNumber;
-        uint256 overrideTimestamp;
+
+        PoolKey[] poolKeys;
+
         string name;
     }
 
@@ -48,40 +74,65 @@ contract HyperRouterTest is Test {
     }
 
     error SuccessCaseError(SuccessCase c, bytes err);
-    error CoreOnly();
+
+    uint256 private constant _EXACT_OUT_APPROVE_AMOUNT = type(uint128).max / 2;
+    uint128 private constant _POSITION_AMOUNT = 100 ether;
+    address private immutable _PAYER = address(this);
 
     // cast keccak "HyperRouterTest#DISABLE_RECEIVE_SLOT"
     uint256 private constant _DISABLE_RECEIVE_SLOT = 0x27095381dc94d25f5c191482faa73780fd308183456a62f43e8833e46ea4a541;
-    uint256 private constant _EXACT_OUT_DEAL_AMOUNT = type(uint128).max / 2;
     uint256 private constant _MAX_CODE_SIZE = 24_576; // https://eips.ethereum.org/EIPS/eip-170
-    uint256 private constant _FOUNDRY_CHAIN_ID = 31337;
 
-    string private _rpcUrlOrAlias = vm.envString("RPC_URL_OR_ALIAS");
+    IHyperRouter private hyperRouter;
+    ICore private core;
+    IPositions private positions;
 
-    address private immutable _PAYER = address(this);
-    IHyperRouter private immutable _HYPER_ROUTER;
-    uint256 private immutable _forkBlockNumber;
+    address private oracle;
+    address private twamm;
+    address private mevCapture;
 
-    ICore private constant _CORE = ICore(CORE_ADDRESS);
+    // TODO Also sync with SDK
+    address private constant _ERC_20_FIRST_ADDRESS = 0x1111111111111111111111111111111111111111;
+    address private constant _ERC_20_SECOND_ADDRESS = 0x2222222222222222222222222222222222222222;
+    address private constant _TOKEN_WRAPPER_ADDRESS = 0x3333333333333333333333333333333333333333;
 
-    constructor() {
-        assertEq(block.chainid, _FOUNDRY_CHAIN_ID);
+    bytes32 private constant _CREATE2_SALT = 0;
 
-        // This deploys it using the tokens set for the development chainid
-        _HYPER_ROUTER = HyperRouterLib.deploy(vm);
-        vm.makePersistent(address(_HYPER_ROUTER));
+    function setUp() public {
+        hyperRouter = HyperRouterLib.deploy(vm);
 
-        vm.createSelectFork(_rpcUrlOrAlias, uint256(0));
+        core = new Core{salt: _CREATE2_SALT}();
+        positions = new Positions(core, address(this), 0, 1);
 
-        uint256 chainid = block.chainid;
+        oracle = address(new Oracle{salt: _findExtensionSalt(type(Oracle).creationCode, oracleCallPoints())}(core));
+        twamm = address(new TWAMM{salt: _findExtensionSalt(type(TWAMM).creationCode, twammCallPoints())}(core));
+        mevCapture = address(
+            new MEVCapture{salt: _findExtensionSalt(type(MEVCapture).creationCode, mevCaptureCallPoints())}(core)
+        );
 
-        if (chainid == 11155111) {
-            _forkBlockNumber = 9524989;
-        } else {
-            revert("unknown chainid");
-        }
+        bytes memory tokenCode = address(new TestToken()).code;
+        vm.etch(_ERC_20_FIRST_ADDRESS, tokenCode);
+        vm.etch(_ERC_20_SECOND_ADDRESS, tokenCode);
 
-        vm.rollFork(_forkBlockNumber);
+        vm.etch(
+            _TOKEN_WRAPPER_ADDRESS, address(new TokenWrapper(core, IERC20(_ERC_20_FIRST_ADDRESS), block.timestamp)).code
+        );
+    }
+
+    function test_DeploymentAddresses() external view {
+        assertEq(address(core), CORE_ADDRESS, "Core");
+        assertEq(oracle, ORACLE_ADDRESS, "Oracle");
+        assertEq(twamm, TWAMM_ADDRESS, "TWAMM");
+        assertEq(mevCapture, MEV_CAPTURE_ADDRESS, "MEVCapture");
+    }
+
+    function _findExtensionSalt(bytes memory creationCode, CallPoints memory callPoints)
+        private
+        view
+        returns (bytes32 salt)
+    {
+        bytes32 initCodeHash = keccak256(abi.encodePacked(creationCode, abi.encode(core)));
+        salt = findExtensionSalt(_CREATE2_SALT, initCodeHash, callPoints);
     }
 
     modifier disableReceive() {
@@ -96,12 +147,8 @@ contract HyperRouterTest is Test {
         }
     }
 
-    function selectFork(uint256 blockNumber) private {
-        //vm.createSelectFork(_rpcUrlOrAlias, blockNumber == 0 ? _DEFAULT_FORK_BLOCK_NUMBER : blockNumber);
-    }
-
     function test_ContractSize() external view {
-        address hyperRouterAddr = address(_HYPER_ROUTER);
+        address hyperRouterAddr = address(hyperRouter);
         uint256 codeSize;
         assembly ("memory-safe") {
             codeSize := extcodesize(hyperRouterAddr)
@@ -112,19 +159,41 @@ contract HyperRouterTest is Test {
         assertLe(codeSize, _MAX_CODE_SIZE);
     }
 
+    // TODO Make SDK case
     function test_MinimalCalldata() external {
-        (bool success, bytes memory data) = address(_HYPER_ROUTER).call(hex"00000000010000000001");
-        assertTrue(success);
+        core.initializePool(
+            PoolKey({
+                token0: NATIVE_TOKEN_ADDRESS,
+                token1: _ERC_20_FIRST_ADDRESS,
+                config: createFullRangePoolConfig({_fee: 0, _extension: ORACLE_ADDRESS})
+            }),
+            0
+        );
+
+        (bool success, bytes memory data) = address(hyperRouter)
+            .call(
+                hex"00" // withRecipient
+                hex"00" // specifiedAmountBytes
+                hex"00" // calculatedAmountThresholdBytes
+                hex"00" // specifiedTokenInfo
+                hex"01" // calculatedTokenInfo
+                hex"00" // additionalMultiHops
+                hex"00" // withIntegrationFee
+                hex"00" // withSqrtRatioLimit | isExactOut
+                hex"00" // additionalHops
+                hex"01" // hopType
+            );
+        assertTrue(success, "success");
 
         HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(data);
 
-        assertEq(returndata.calculatedAmount, 0);
-        assertEq(returndata.integrationFee, 0);
+        assertEq(returndata.calculatedAmount, 0, "calculatedAmount");
+        assertEq(returndata.integrationFee, 0, "integrationFee");
     }
 
     function testRevert_LockedCoreOnly() external {
         vm.expectRevert(IHyperRouter.CoreOnly.selector);
-        _HYPER_ROUTER.locked_6416899205(0);
+        hyperRouter.locked_6416899205(0);
     }
 
     function test_SdkCases() external {
@@ -141,49 +210,69 @@ contract HyperRouterTest is Test {
 
     // public because we need this function to exist in the ABI for the TS calldata generation
     function executeSdkCases(SdkCases memory sdkCases) public {
+        uint256 snapshotId = vm.snapshotState();
+
         for (uint256 i = 0; i < sdkCases.success.length; i++) {
             SuccessCase memory c = sdkCases.success[i];
 
             try this._testSuccess(c) {}
-            catch (bytes memory data) {
-                revert SuccessCaseError({c: c, err: data});
+            catch (bytes memory err) {
+                revert SuccessCaseError(c, err);
             }
+
+            vm.revertToState(snapshotId);
         }
 
         for (uint256 i = 0; i < sdkCases.slippageCheckFailed.length; i++) {
-            selectFork(0);
             _testRevertSlippageCheckFailed(sdkCases.slippageCheckFailed[i]);
+            vm.revertToState(snapshotId);
         }
 
-        selectFork(0);
         _testRevertRefundEthNonPayable(sdkCases.refundEthNonPayable);
     }
 
     function _testSuccess(SuccessCase memory t) external {
-        selectFork(t.overrideBlockNumber);
-
-        uint256 timestampBefore = vm.getBlockTimestamp();
-
-        if (t.overrideTimestamp != 0) {
-            vm.warp(t.overrideTimestamp);
-        }
-
         (address tokenIn, address tokenOut, address integratorToken) = t.isExactOut
             ? (t.calculatedToken, t.specifiedToken, t.specifiedToken)
             : (t.specifiedToken, t.calculatedToken, t.calculatedToken);
 
         uint256 value;
-        uint256 dealAmount = t.isExactOut ? _EXACT_OUT_DEAL_AMOUNT : t.totalSpecified;
+        uint256 dealAmount = t.isExactOut ? _EXACT_OUT_APPROVE_AMOUNT : t.totalSpecified;
 
         if (tokenIn == NATIVE_TOKEN_ADDRESS) {
-            vm.deal(_PAYER, dealAmount);
+            deal(_PAYER, dealAmount);
 
             if (!t.delegatecall) {
                 value = dealAmount;
             }
         } else {
             deal(tokenIn, _PAYER, dealAmount);
-            ERC20(tokenIn).approve(address(_HYPER_ROUTER), dealAmount);
+            ERC20(tokenIn).approve(address(hyperRouter), dealAmount);
+        }
+
+        for (uint256 i = 0; i < t.poolKeys.length; i++) {
+            PoolKey memory pk = t.poolKeys[i];
+
+            (bool initialized,) = positions.maybeInitializePool(pk, 0);
+
+            // Don't add a position twice if one pool appears multiple times in the route
+            if (initialized) {
+                PoolConfig config = pk.config;
+                int32 tickLower;
+                int32 tickUpper;
+
+                if (config.isConcentrated()) {
+                    int32 tickSpacing = int32(config.concentratedTickSpacing());
+                    (tickLower, tickUpper) = (-tickSpacing, tickSpacing);
+                } else {
+                    (tickLower, tickUpper) = config.stableswapActiveLiquidityTickRange();
+                }
+
+                _approvePositions(pk.token0);
+                _approvePositions(pk.token1);
+
+                positions.mintAndDeposit(pk, tickLower, tickUpper, _POSITION_AMOUNT, _POSITION_AMOUNT, 0);
+            }
         }
 
         address recipient = t.recipient == address(0) ? _PAYER : t.recipient;
@@ -195,8 +284,8 @@ contract HyperRouterTest is Test {
         );
 
         bytes memory result = t.delegatecall
-            ? LibCall.delegateCallContract(address(_HYPER_ROUTER), t.data)
-            : LibCall.callContract(address(_HYPER_ROUTER), value, t.data);
+            ? LibCall.delegateCallContract(address(hyperRouter), t.data)
+            : LibCall.callContract(address(hyperRouter), value, t.data);
         vm.snapshotGasLastCall(t.name);
 
         HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(result);
@@ -204,7 +293,7 @@ contract HyperRouterTest is Test {
         assertNotEq(returndata.calculatedAmount, 0);
 
         if (t.integrator != address(0)) {
-            assertNotEq(returndata.integrationFee, 0, "integration fee should be non-zero");
+            assertNotEq(returndata.integrationFee, 0);
         }
 
         (uint256 payerBalanceAfter, uint256 recipientBalanceAfter, uint128 integratorBalanceAfter) = (
@@ -240,30 +329,28 @@ contract HyperRouterTest is Test {
             integratorBalanceAfter - integratorBalanceBefore,
             "unexpected integration fee difference"
         );
-
-        vm.warp(timestampBefore);
     }
 
     function _testRevertSlippageCheckFailed(SlippageCheckFailedCase memory c) private {
-        (bool success, bytes memory result) = address(_HYPER_ROUTER).call(c.data);
-        assertFalse(success);
+        (bool success, bytes memory result) = address(hyperRouter).call(c.data);
+        assertFalse(success, "success");
 
-        assertEq(IHyperRouter.SlippageCheckFailed.selector, bytes4(result));
+        assertEq(IHyperRouter.SlippageCheckFailed.selector, bytes4(result), "error selector");
 
         uint256 calculatedAmount = abi.decode(LibBytes.slice(result, 4), (uint256));
 
         if (c.isExactOut) {
-            assertLt(c.calculatedAmountThreshold, calculatedAmount);
+            assertLt(c.calculatedAmountThreshold, calculatedAmount, "threshold");
         } else {
-            assertGt(c.calculatedAmountThreshold, calculatedAmount);
+            assertGt(c.calculatedAmountThreshold, calculatedAmount, "threshold");
         }
     }
 
     function _testRevertRefundEthNonPayable(RefundEthNonPayableCase memory c) private disableReceive {
-        vm.deal(_PAYER, _EXACT_OUT_DEAL_AMOUNT);
+        vm.deal(_PAYER, _EXACT_OUT_APPROVE_AMOUNT);
 
         vm.expectRevert(IHyperRouter.ETHTransferFailed.selector);
-        LibCall.callContract(address(_HYPER_ROUTER), _EXACT_OUT_DEAL_AMOUNT, c.data);
+        LibCall.callContract(address(hyperRouter), _EXACT_OUT_APPROVE_AMOUNT, c.data);
     }
 
     function _balanceOf(address owner, address token) private view returns (uint256 balance) {
@@ -275,9 +362,18 @@ contract HyperRouterTest is Test {
     }
 
     function _unclaimedIntegrationFees(address owner, address token) private view returns (uint128 balance) {
-        (balance,) = _CORE.savedBalances(
-            address(_HYPER_ROUTER), token, address(type(uint160).max), bytes32(uint256(uint160(owner)))
+        (balance,) = core.savedBalances(
+            address(hyperRouter), token, address(type(uint160).max), bytes32(uint256(uint160(owner)))
         );
+    }
+
+    function _approvePositions(address token) private {
+        if (token == NATIVE_TOKEN_ADDRESS) {
+            vm.deal(address(positions), _POSITION_AMOUNT);
+        } else {
+            deal(token, address(this), _POSITION_AMOUNT);
+            ERC20(token).approve(address(positions), _POSITION_AMOUNT);
+        }
     }
 
     receive() external payable {
@@ -292,9 +388,7 @@ contract HyperRouterTest is Test {
     }
 
     fallback() external {
-        require(msg.sender == CORE_ADDRESS, CoreOnly());
-
-        bytes memory result = LibCall.delegateCallContract(address(_HYPER_ROUTER), msg.data);
+        bytes memory result = LibCall.delegateCallContract(address(hyperRouter), msg.data);
         uint256 len = result.length;
 
         assembly ("memory-safe") {

@@ -2,7 +2,7 @@
     "extends": "..",
     "compilerOptions": {
         "target": "es2020",
-        "module": "node18",
+        "module": "nodenext",
         "moduleResolution": "node16",
     },
     "references": [

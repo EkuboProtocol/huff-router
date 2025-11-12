@@ -28,9 +28,10 @@ library HyperRouterLib {
     // TODO --relax-jumps
     function deploy(VmSafe vm) internal returns (IHyperRouter) {
         string memory jsonContents = vm.readFile(string.concat("../tokens/", vm.toString(block.chainid), ".json"));
-        address[] memory tokens = abi.decode(vm.parseJson(jsonContents, "$..address"), (address[]));
+        address[] memory tokens = abi.decode(vm.parseJson(jsonContents), (address[]));
 
-        require(tokens.length == _TOKEN_COUNT, string.concat("need exactly ", vm.toString(_TOKEN_COUNT), " tokens"));
+        // FIXME
+        // require(tokens.length == _TOKEN_COUNT, string.concat("need exactly ", vm.toString(_TOKEN_COUNT), " tokens"));
 
         // We don't use HuffNeoDeployer because of https://github.com/foundry-rs/foundry/issues/6215
         HuffNeoConfig config = new HuffNeoConfig().set_broadcast(true).with_addr_constant("CORE", CORE_ADDRESS)
@@ -38,7 +39,7 @@ library HyperRouterLib {
             .with_addr_constant("MEV_CAPTURE", MEV_CAPTURE_ADDRESS);
 
         // TODO Use numbers & allow variable amounts of tokens per deployment
-        for (uint8 i = 0; i < _TOKEN_COUNT; i++) {
+        for (uint8 i = 0; i < tokens.length; i++) {
             string memory name = string.concat(
                 "TOKEN_", _letterFromAsciiOffset(i / _ALPHABET_LENGTH), _letterFromAsciiOffset(i % _ALPHABET_LENGTH)
             );
