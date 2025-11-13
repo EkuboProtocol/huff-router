@@ -9,7 +9,7 @@ import {HuffNeoConfig} from "foundry-huff-neo/HuffNeoConfig.sol";
 // TODO Generate with hnc
 interface IHyperRouter is ILocker {
     error SlippageCheckFailed(uint256 calculatedAmount);
-    error ETHTransferFailed();
+    error NativeTransferFailed();
     error CoreOnly();
 
     function claimIntegrationFees(address[] calldata tokens) external returns (uint256[] calldata claimedAmounts);

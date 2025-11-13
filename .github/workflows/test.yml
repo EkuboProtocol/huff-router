@@ -23,7 +23,7 @@ jobs:
     steps:
       - uses: cakevm/huff-neo-toolchain@v1
         with:
-          version: 1.5.5
+          version: 1.5.7
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:

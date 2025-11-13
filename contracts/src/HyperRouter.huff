@@ -2,7 +2,7 @@
 /// @author Die Herdplatte <https://github.com/die-herdplatte>
 /// @notice A hyper gas-efficient, yet highly configurable, router for executing actions on Ekubo
 ///
-/// Compiled with hnc 1.5.5 (rev: 2e5bdaf0)
+/// Compiled with hnc 1.5.7 (rev: ca73d172)
 ///
 /// General comments:
 /// - Offsets suffixed with "_PACKED" indicate that the offset marks the first byte in the input containing the non-padded data
@@ -18,7 +18,7 @@
 #define function claimIntegrationFees(address[] tokens) nonpayable returns (uint256[] claimedAmounts)
 
 #define error SlippageCheckFailed(uint256 calculatedAmount)
-#define error ETHTransferFailed()
+#define error NativeTransferFailed()
 #define error CoreOnly()
 
 /* General constants */
@@ -42,22 +42,6 @@
 
 // cast sig "claimIntegrationFees(address[])"
 #define constant CLAIM_INTEGRATION_FEES_SELECTOR_FIRST_BYTE = 0xa3
-
-/* Constructor */
-#define macro CONSTRUCTOR() = {
-    // Copy runtime code into memory
-    __codesize(CONSTRUCTOR)                                                 // [constructorSize]
-    codesize sub                                                            // [runtimeSize]
-    address                                                                 // [address, runtimeSize]
-    [ROUTER_ADDRESS_CODE_OFFSET]                                         // [routerAddressOffset, address, runtimeSize]
-    dup3 __codesize(CONSTRUCTOR) 0x                                         // [memOffset, constructorSize, runtimeSize, routerAddressOffset, address, runtimeSize]
-    codecopy                                                                // [routerAddressOffset, address, runtimeSize]
-
-    // Write router address to runtime code
-    mstore                                                                  // [runtimeSize]
-
-    0x return
-}
 
 /* Entry Point */
 #define macro MAIN() = takes(0) returns(0) {

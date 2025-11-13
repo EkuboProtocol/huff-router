@@ -11,18 +11,18 @@
 
 #define macro LOCK_CLAIM() = takes(0) returns(0) {
     // Prepend `caller` to the passed calldata
-    [LOCK_SELECTOR_WITH_CLAIM_CALL_TYPE] [LOCK_CLAIM_SELECTOR_OFFSET] mstore      // []
-    caller [LOCK_CLAIM_CLAIMER_OFFSET] mstore                               // []
-    [SELECTOR_SIZE] calldatasize sub                                        // [tokensSize]
-    dup1 [SELECTOR_SIZE] [LOCK_CLAIM_TOKENS_OFFSET] calldatacopy            // [tokensSize]
+    [LOCK_SELECTOR_WITH_CLAIM_CALL_TYPE] [LOCK_CLAIM_SELECTOR_OFFSET] mstore    // []
+    caller [LOCK_CLAIM_CLAIMER_OFFSET] mstore                                   // []
+    [SELECTOR_SIZE] calldatasize sub                                            // [tokensSize]
+    dup1 [SELECTOR_SIZE] [LOCK_CLAIM_TOKENS_OFFSET] calldatacopy                // [tokensSize]
 
     // IFlashAccountant#lock()
-    dup1 add [LOCK_CLAIM_BASE_ARGS_SIZE]                                    // [argsSize, tokensSize]
-    [LOCK_CLAIM_RETURNDATA_OFFSET] swap1                                    // [argsSize, retOffset, tokensSize]
-    [LOCK_CLAIM_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call                  // [success]
+    dup1 add [LOCK_CLAIM_BASE_ARGS_SIZE]                                        // [argsSize, tokensSize]
+    [LOCK_CLAIM_RETURNDATA_OFFSET] swap1                                        // [argsSize, retOffset, tokensSize]
+    [LOCK_CLAIM_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call                      // [success]
 
-    successLbl jumpi                                                        // []
-        returndatasize 0x [LOCK_CLAIM_RETURNDATA_OFFSET] returndatacopy
+    successLbl jumpi                                                            // []
+        returndatasize 0x [LOCK_CLAIM_RETURNDATA_OFFSET] returndatacopy         // []
         returndatasize [LOCK_CLAIM_RETURNDATA_OFFSET] revert
     successLbl:
         returndatasize [LOCK_CLAIM_RETURNDATA_OFFSET] return

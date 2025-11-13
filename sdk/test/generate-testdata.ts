@@ -138,7 +138,7 @@ const successCases: SdkCases["success"] = [
         totalSpecified: parseEther("1.5"),
         recipient: RECIPIENT,
         integrator: INTEGRATION_FEE.integrator,
-        pools: [{
+        poolKeys: [{
             token0: NATIVE_TOKEN_ADDRESS,
             token1: ERC20_FIRST_ADDRESS,
             config: TWAMM_CONFIG,
@@ -280,7 +280,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     totalSpecified: SPECIFIED_AMOUNT,
                                     recipient: recipient ?? zeroAddress,
                                     integrator: integrationFee?.integrator ?? zeroAddress,
-                                    pools: hops.map(hop => hop.poolKey),
+                                    poolKeys: hops.map(hop => hop.poolKey),
                                     name: getTestcaseName(`${extensionName}Extension`, tokenInNative ? "Native" : "Erc20"),
                                 } as const);
 
@@ -372,7 +372,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                         totalSpecified: SPECIFIED_AMOUNT,
                                         recipient: recipient ?? zeroAddress,
                                         integrator: integrationFee?.integrator ?? zeroAddress,
-                                        pools: hops.flatMap(hop => {
+                                        poolKeys: hops.flatMap(hop => {
                                             if (hop.type === "swap") {
                                                 return [hop.poolKey];
                                             } else {

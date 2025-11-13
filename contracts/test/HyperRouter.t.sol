@@ -47,7 +47,6 @@ contract HyperRouterTest is Test {
         uint256 totalSpecified;
 
         bool isExactOut;
-        bool delegatecall;
 
         address recipient;
         address integrator;
@@ -241,10 +240,7 @@ contract HyperRouterTest is Test {
 
         if (tokenIn == NATIVE_TOKEN_ADDRESS) {
             deal(_PAYER, dealAmount);
-
-            if (!t.delegatecall) {
-                value = dealAmount;
-            }
+            value = dealAmount;
         } else {
             deal(tokenIn, _PAYER, dealAmount);
             ERC20(tokenIn).approve(address(hyperRouter), dealAmount);
@@ -283,9 +279,7 @@ contract HyperRouterTest is Test {
             _unclaimedIntegrationFees(t.integrator, integratorToken)
         );
 
-        bytes memory result = t.delegatecall
-            ? LibCall.delegateCallContract(address(hyperRouter), t.data)
-            : LibCall.callContract(address(hyperRouter), value, t.data);
+        bytes memory result = LibCall.callContract(address(hyperRouter), value, t.data);
         vm.snapshotGasLastCall(t.name);
 
         HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(result);
@@ -349,7 +343,7 @@ contract HyperRouterTest is Test {
     function _testRevertRefundEthNonPayable(RefundEthNonPayableCase memory c) private disableReceive {
         vm.deal(_PAYER, _EXACT_OUT_APPROVE_AMOUNT);
 
-        vm.expectRevert(IHyperRouter.ETHTransferFailed.selector);
+        vm.expectRevert(IHyperRouter.NativeTransferFailed.selector);
         LibCall.callContract(address(hyperRouter), _EXACT_OUT_APPROVE_AMOUNT, c.data);
     }
 

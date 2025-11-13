@@ -2,3 +2,4 @@
 #include "lock/claim.huff"
 
 #define constant LOCK_SELECTOR = __FUNC_SIG("lock()")
+#define constant LOCK_SELECTOR_PACKED = __RIGHTPAD([LOCK_SELECTOR])
