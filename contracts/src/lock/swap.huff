@@ -1,29 +1,30 @@
 #define constant LOCK_SWAP_SELECTOR_OFFSET_PACKED = 0x
 #define constant LOCK_SWAP_RETURNDATA_OFFSET = 0x
 
-#define constant WITH_RECIPIENT_SIZE = 0x1
-#define constant SPECIFIED_AMOUNT_BYTES_SIZE = 0x1
-#define constant CALCULATED_AMOUNT_THRESHOLD_BYTES_SIZE = 0x1
-#define constant SPECIFIED_TOKEN_INFO_SIZE = 0x1
-#define constant CALCULATED_TOKEN_INFO_SIZE = 0x1
-#define constant ADDITIONAL_MULTI_HOPS_SIZE = 0x1
-#define constant WITH_INTEGRATION_FEE_SIZE = 0x1
-#define constant WITH_SQRT_RATIO_LIMIT_IS_EXACT_OUT_SIZE = 0x1
+#define constant LOCK_SWAP_WITH_RECIPIENT_SIZE = 0x1
+#define constant LOCK_SWAP_SPECIFIED_AMOUNT_BYTES_SIZE = 0x1
+#define constant LOCK_SWAP_CALCULATED_AMOUNT_THRESHOLD_BYTES_SIZE = 0x1
+#define constant LOCK_SWAP_SPECIFIED_TOKEN_INFO_SIZE = 0x1
+#define constant LOCK_SWAP_CALCULATED_TOKEN_INFO_SIZE = 0x1
+#define constant LOCK_SWAP_ADDITIONAL_MULTI_HOPS_SIZE = 0x1
+#define constant LOCK_SWAP_WITH_INTEGRATION_FEE_SIZE = 0x1
+#define constant LOCK_SWAP_WITH_SQRT_RATIO_LIMIT_IS_EXACT_OUT_SIZE = 0x1
 #define constant LOCK_SWAP_ADDITIONAL_HOPS_SIZE = 0x1
 #define constant LOCK_SWAP_HOP_TYPE_SIZE = 0x1
 
-#define constant LOCK_SWAP_MINIMUM_CALLDATA_SIZE = [WITH_RECIPIENT_SIZE] + [SPECIFIED_AMOUNT_BYTES_SIZE]
-    + [CALCULATED_AMOUNT_THRESHOLD_BYTES_SIZE] + [WITH_INTEGRATION_FEE_SIZE]
-    + [SPECIFIED_TOKEN_INFO_SIZE] + [CALCULATED_TOKEN_INFO_SIZE]
-    + [ADDITIONAL_MULTI_HOPS_SIZE] + [WITH_SQRT_RATIO_LIMIT_IS_EXACT_OUT_SIZE]
+#define constant LOCK_SWAP_MINIMUM_CALLDATA_SIZE = [LOCK_SWAP_WITH_RECIPIENT_SIZE] + [LOCK_SWAP_SPECIFIED_AMOUNT_BYTES_SIZE]
+    + [LOCK_SWAP_CALCULATED_AMOUNT_THRESHOLD_BYTES_SIZE] + [LOCK_SWAP_WITH_INTEGRATION_FEE_SIZE]
+    + [LOCK_SWAP_SPECIFIED_TOKEN_INFO_SIZE] + [LOCK_SWAP_CALCULATED_TOKEN_INFO_SIZE]
+    + [LOCK_SWAP_ADDITIONAL_MULTI_HOPS_SIZE] + [LOCK_SWAP_WITH_SQRT_RATIO_LIMIT_IS_EXACT_OUT_SIZE]
     + [LOCK_SWAP_ADDITIONAL_HOPS_SIZE] + [LOCK_SWAP_HOP_TYPE_SIZE]
-#define constant PADDING = [PACKED_ADDRESS_OFFSET] - [LOCK_SWAP_MINIMUM_CALLDATA_SIZE] // Should be positive for smaller bytecode
-#define constant LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET = [SELECTOR_SIZE] + [PADDING]
+#define constant LOCK_SWAP_PADDING = [ADDRESS_SIZE] - [LOCK_SWAP_MINIMUM_CALLDATA_SIZE] // Should be positive for smaller bytecode
+#define constant LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET = [SELECTOR_SIZE] + [LOCK_SWAP_PADDING]
 
-/// Writing the packed recipient starts `PACKED_ADDRESS_OFFSET` bytes before its ABI word; subtracting
-/// `PACKED_ADDRESS_OFFSET - LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET` from `calldatasize` stores it right
-/// after the `LOCK_SWAP_MINIMUM_CALLDATA_SIZE` bytes of calldata copied beyond the selector and padding.
-#define constant LOCK_SWAP_RECIPIENT_PACKED_CALLDATASIZE_OFFSET = [PACKED_ADDRESS_OFFSET] - [LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET]
+/// A packed address starts `WORD_SIZE - PACKED_ADDRESS_OFFSET` bytes before the end of its word.
+/// To place it right after the selector, the padding, and the passed calldata, we need
+/// to back up by those bytes plus the selector-and-padding distance (`LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET`).
+/// Subtracting this constant from `calldatasize` achieves exactly that.
+#define constant LOCK_SWAP_RECIPIENT_CALLDATASIZE_OFFSET = [WORD_SIZE] - [PACKED_ADDRESS_OFFSET] - [LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET]
 
 #define constant LOCK_SWAP_TRANSFER_FROM_WITH_RECIPIENT_CALLDATASIZE_OFFSET = [LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET] - [LOCK_SWAP_SELECTOR_OFFSET_PACKED]
 #define constant LOCK_SWAP_TRANSFER_FROM_NO_RECIPIENT_CALLDATASIZE_OFFSET = [LOCK_SWAP_TRANSFER_FROM_WITH_RECIPIENT_CALLDATASIZE_OFFSET] + [ADDRESS_SIZE]
@@ -130,7 +131,7 @@
         caller                                                                  // [recipient]
 
         // Store the packed recipient right after the calldata
-        [LOCK_SWAP_RECIPIENT_PACKED_CALLDATASIZE_OFFSET] calldatasize sub       // [recipientOffset, recipient]
+        [LOCK_SWAP_RECIPIENT_CALLDATASIZE_OFFSET] calldatasize sub              // [recipientOffset, recipient]
         mstore                                                                  // []
 
         LOCK_SWAP_1(false)
