@@ -159,30 +159,29 @@ const successCases: SdkCases["success"] = [
 // the number of input combinations usually grows exponentially with the number of decisions.
 
 recipient: for (const recipient of [RECIPIENT, undefined] as const) {
-    delegatecall: for (const delegatecall of [true, false]) {
-        for (const isExactOut of [false, true]) {
-            integrationFee: for (const integrationFee of [INTEGRATION_FEE, undefined]) {
-                for (const withSqrtRatioLimit of [false, true]) {
 
-                    function getSqrtRatioLimit(specifiedToken: Address, calculatedToken: Address) {
-                        return withSqrtRatioLimit
-                            ? (hexToBigInt(specifiedToken) > hexToBigInt(calculatedToken) === isExactOut)
-                                ? MIN_SQRT_RATIO
-                                : MAX_SQRT_RATIO
-                            : undefined;
-                    }
+    for (const isExactOut of [false, true]) {
+        integrationFee: for (const integrationFee of [INTEGRATION_FEE, undefined]) {
+            for (const withSqrtRatioLimit of [false, true]) {
 
-                    for (const asLastInMultiHop of [true, false]) {
-                        for (const asUnknownToken of [false, true]) {
-                            // For the last hops the calculated tokens aren't encoded anyway
-                            if (asUnknownToken && asLastInMultiHop) {
-                                continue;
-                            }
+                function getSqrtRatioLimit(specifiedToken: Address, calculatedToken: Address) {
+                    return withSqrtRatioLimit
+                        ? (hexToBigInt(specifiedToken) > hexToBigInt(calculatedToken) === isExactOut)
+                            ? MIN_SQRT_RATIO
+                            : MAX_SQRT_RATIO
+                        : undefined;
+                }
 
-                            function getTestcaseName(hopType: string, tokenIn: string) {
-                                return `\
+                for (const asLastInMultiHop of [true, false]) {
+                    for (const asUnknownToken of [false, true]) {
+                        // For the last hops the calculated tokens aren't encoded anyway
+                        if (asUnknownToken && asLastInMultiHop) {
+                            continue;
+                        }
+
+                        function getTestcaseName(hopType: string, tokenIn: string) {
+                            return `\
 ${typeof recipient === "undefined" ? "default" : "custom"}Recipient_\
-${delegatecall ? "delegatecall" : "call"}_\
 exact${isExactOut ? "Out" : "In"}_\
 ${typeof integrationFee === "undefined" ? "without" : "with"}IntegrationFee_\
 ${withSqrtRatioLimit ? "with" : "without"}SqrtRatioLimit_\
@@ -190,66 +189,157 @@ ${hopType}_\
 ${asLastInMultiHop ? "last" : "notLast"}Swap_\
 tokenIn${tokenIn}_\
 ${asUnknownToken ? "unknown" : "known"}Tokens`;
+                        }
+
+                        // Pool swaps
+                        for (const { poolConfig, asUnknownExtension, extensionName } of NATIVE_ERC20_CONFIGS) {
+                            // TODO Not true anymore
+                            // Ideally we'd also have a loop over isToken1 here but ETH/USDC is currently the only pair
+                            // that has pools of every extension type
+
+                            // These two decisions don't depend on each other
+                            const tokenInNative = asLastInMultiHop;
+
+                            const [specifiedToken, firstCalculatedToken]: [Address, Address] = tokenInNative === isExactOut
+                                ? [
+                                    ERC20_FIRST_ADDRESS,
+                                    NATIVE_TOKEN_ADDRESS,
+                                ]
+                                : [
+                                    NATIVE_TOKEN_ADDRESS,
+                                    ERC20_FIRST_ADDRESS,
+                                ];
+
+                            let hops, calculatedToken: Address;
+
+                            if (asLastInMultiHop) {
+                                calculatedToken = firstCalculatedToken;
+                                hops = [
+                                    {
+                                        type: "swap" as const,
+                                        poolKey: {
+                                            token0: NATIVE_TOKEN_ADDRESS,
+                                            token1: ERC20_FIRST_ADDRESS,
+                                            config: poolConfig,
+                                        },
+                                        sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
+                                    }
+                                ];
+                            } else {
+                                const secondCalculatedToken = tokenInNative === isExactOut
+                                    ? ERC20_FIRST_ADDRESS
+                                    : NATIVE_TOKEN_ADDRESS;
+
+                                calculatedToken = secondCalculatedToken;
+
+                                hops = [
+                                    {
+                                        type: "swap" as const,
+                                        poolKey: {
+                                            token0: NATIVE_TOKEN_ADDRESS,
+                                            token1: ERC20_FIRST_ADDRESS,
+                                            config: poolConfig,
+                                        },
+                                        sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
+                                    },
+                                    {
+                                        type: "swap" as const,
+                                        poolKey: {
+                                            token0: NATIVE_TOKEN_ADDRESS,
+                                            token1: ERC20_FIRST_ADDRESS,
+                                            config: CONCENTRATED_CONFIG,
+                                        },
+                                    },
+                                ];
                             }
 
-                            // Pool swaps
-                            for (const { poolConfig, asUnknownExtension, extensionName } of NATIVE_ERC20_CONFIGS) {
-                                // TODO Not true anymore
-                                // Ideally we'd also have a loop over isToken1 here but ETH/USDC is currently the only pair
-                                // that has pools of every extension type
+                            const calldata = await generateCalldataImpl({
+                                chainId: CHAIN_ID,
+                                specifiedToken,
+                                recipient,
+                                multiHops: [
+                                    {
+                                        specifiedAmount: isExactOut ? -SPECIFIED_AMOUNT : SPECIFIED_AMOUNT,
+                                        hops,
+                                    }
+                                ],
+                                integrationFee,
+                            }, {
+                                forceUnknownExtension: asUnknownExtension,
+                                forceUnknownToken: asUnknownToken,
+                            });
 
-                                // These two decisions don't depend on each other
-                                const tokenInNative = asLastInMultiHop;
+                            successCases.push({
+                                data: calldata,
+                                specifiedToken,
+                                calculatedToken,
+                                isExactOut,
+                                totalSpecified: SPECIFIED_AMOUNT,
+                                recipient: recipient ?? zeroAddress,
+                                integrator: integrationFee?.integrator ?? zeroAddress,
+                                poolKeys: hops.map(hop => hop.poolKey),
+                                name: getTestcaseName(`${extensionName}Extension`, tokenInNative ? "Native" : "Erc20"),
+                            } as const);
 
-                                const [specifiedToken, firstCalculatedToken]: [Address, Address] = tokenInNative === isExactOut
+                            if (typeof integrationFee !== "undefined" || typeof recipient === "string") {
+                                break;
+                            }
+                        }
+
+                        // Wrapped tokens
+                        {
+                            // sqrtRatioLimit is irrelevant when only a token wrap/unwrap happens
+                            if (withSqrtRatioLimit && asLastInMultiHop) {
+                                continue;
+                            }
+
+                            for (const tokenInUnderlying of [true, false]) {
+                                const [specifiedToken, firstCalculatedToken]: [Address, Address] = tokenInUnderlying === isExactOut
                                     ? [
+                                        TOKEN_WRAPPER_ADDRESS,
                                         ERC20_FIRST_ADDRESS,
-                                        NATIVE_TOKEN_ADDRESS,
                                     ]
                                     : [
-                                        NATIVE_TOKEN_ADDRESS,
                                         ERC20_FIRST_ADDRESS,
+                                        TOKEN_WRAPPER_ADDRESS,
                                     ];
 
-                                let hops, calculatedToken: Address;
+                                let hops: Hop[], calculatedToken: Address;
 
                                 if (asLastInMultiHop) {
                                     calculatedToken = firstCalculatedToken;
                                     hops = [
                                         {
-                                            type: "swap" as const,
-                                            poolKey: {
-                                                token0: NATIVE_TOKEN_ADDRESS,
-                                                token1: ERC20_FIRST_ADDRESS,
-                                                config: poolConfig,
-                                            },
-                                            sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
+                                            type: "wrappedToken",
+                                            underlying: ERC20_FIRST_ADDRESS,
+                                            wrapped: TOKEN_WRAPPER_ADDRESS,
                                         }
                                     ];
                                 } else {
-                                    const secondCalculatedToken = tokenInNative === isExactOut
-                                        ? ERC20_FIRST_ADDRESS
-                                        : NATIVE_TOKEN_ADDRESS;
+                                    const secondCalculatedToken = tokenInUnderlying === isExactOut
+                                        ? TOKEN_WRAPPER_ADDRESS
+                                        : ERC20_FIRST_ADDRESS;
 
                                     calculatedToken = secondCalculatedToken;
 
                                     hops = [
                                         {
-                                            type: "swap" as const,
-                                            poolKey: {
-                                                token0: NATIVE_TOKEN_ADDRESS,
-                                                token1: ERC20_FIRST_ADDRESS,
-                                                config: poolConfig,
-                                            },
-                                            sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
+                                            type: "wrappedToken",
+                                            underlying: ERC20_FIRST_ADDRESS,
+                                            wrapped: TOKEN_WRAPPER_ADDRESS,
                                         },
                                         {
-                                            type: "swap" as const,
+                                            type: "swap",
                                             poolKey: {
-                                                token0: NATIVE_TOKEN_ADDRESS,
-                                                token1: ERC20_FIRST_ADDRESS,
-                                                config: CONCENTRATED_CONFIG,
+                                                token0: ERC20_FIRST_ADDRESS,
+                                                token1: TOKEN_WRAPPER_ADDRESS,
+                                                config: compressed({
+                                                    extension: MEV_CAPTURE_ADDRESS,
+                                                    fee: 18446744073709552n,
+                                                    poolTypeConfig: concentratedPoolTypeConfig(4988),
+                                                }),
                                             },
+                                            sqrtRatioLimit: getSqrtRatioLimit(firstCalculatedToken, secondCalculatedToken),
                                         },
                                     ];
                                 }
@@ -266,7 +356,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     ],
                                     integrationFee,
                                 }, {
-                                    forceUnknownExtension: asUnknownExtension,
+                                    forceUnknownExtension: false,
                                     forceUnknownToken: asUnknownToken,
                                 });
 
@@ -278,114 +368,20 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     totalSpecified: SPECIFIED_AMOUNT,
                                     recipient: recipient ?? zeroAddress,
                                     integrator: integrationFee?.integrator ?? zeroAddress,
-                                    poolKeys: hops.map(hop => hop.poolKey),
-                                    name: getTestcaseName(`${extensionName}Extension`, tokenInNative ? "Native" : "Erc20"),
+                                    poolKeys: hops.flatMap(hop => {
+                                        if (hop.type === "swap") {
+                                            return [hop.poolKey];
+                                        } else {
+                                            return [];
+                                        }
+                                    }),
+                                    name: getTestcaseName("wrappedToken", tokenInUnderlying ? "Underlying" : "Wrapped"),
                                 } as const);
 
-                                if (typeof integrationFee !== "undefined" || delegatecall || typeof recipient === "string") {
-                                    break;
-                                }
-                            }
-
-                            // Wrapped tokens
-                            {
-                                // sqrtRatioLimit is irrelevant when only a token wrap/unwrap happens
-                                if (withSqrtRatioLimit && asLastInMultiHop) {
-                                    continue;
-                                }
-
-                                for (const tokenInUnderlying of [true, false]) {
-                                    const [specifiedToken, firstCalculatedToken]: [Address, Address] = tokenInUnderlying === isExactOut
-                                        ? [
-                                            TOKEN_WRAPPER_ADDRESS,
-                                            ERC20_FIRST_ADDRESS,
-                                        ]
-                                        : [
-                                            ERC20_FIRST_ADDRESS,
-                                            TOKEN_WRAPPER_ADDRESS,
-                                        ];
-
-                                    let hops: Hop[], calculatedToken: Address;
-
-                                    if (asLastInMultiHop) {
-                                        calculatedToken = firstCalculatedToken;
-                                        hops = [
-                                            {
-                                                type: "wrappedToken",
-                                                underlying: ERC20_FIRST_ADDRESS,
-                                                wrapped: TOKEN_WRAPPER_ADDRESS,
-                                            }
-                                        ];
-                                    } else {
-                                        const secondCalculatedToken = tokenInUnderlying === isExactOut
-                                            ? TOKEN_WRAPPER_ADDRESS
-                                            : ERC20_FIRST_ADDRESS;
-
-                                        calculatedToken = secondCalculatedToken;
-
-                                        hops = [
-                                            {
-                                                type: "wrappedToken",
-                                                underlying: ERC20_FIRST_ADDRESS,
-                                                wrapped: TOKEN_WRAPPER_ADDRESS,
-                                            },
-                                            {
-                                                type: "swap",
-                                                poolKey: {
-                                                    token0: ERC20_FIRST_ADDRESS,
-                                                    token1: TOKEN_WRAPPER_ADDRESS,
-                                                    config: compressed({
-                                                        extension: MEV_CAPTURE_ADDRESS,
-                                                        fee: 18446744073709552n,
-                                                        poolTypeConfig: concentratedPoolTypeConfig(4988),
-                                                    }),
-                                                },
-                                                sqrtRatioLimit: getSqrtRatioLimit(firstCalculatedToken, secondCalculatedToken),
-                                            },
-                                        ];
-                                    }
-
-                                    const calldata = await generateCalldataImpl({
-                                        chainId: CHAIN_ID,
-                                        specifiedToken,
-                                        recipient,
-                                        multiHops: [
-                                            {
-                                                specifiedAmount: isExactOut ? -SPECIFIED_AMOUNT : SPECIFIED_AMOUNT,
-                                                hops,
-                                            }
-                                        ],
-                                        integrationFee,
-                                    }, {
-                                        forceUnknownExtension: false,
-                                        forceUnknownToken: asUnknownToken,
-                                    });
-
-                                    successCases.push({
-                                        data: calldata,
-                                        specifiedToken,
-                                        calculatedToken,
-                                        isExactOut,
-                                        totalSpecified: SPECIFIED_AMOUNT,
-                                        recipient: recipient ?? zeroAddress,
-                                        integrator: integrationFee?.integrator ?? zeroAddress,
-                                        poolKeys: hops.flatMap(hop => {
-                                            if (hop.type === "swap") {
-                                                return [hop.poolKey];
-                                            } else {
-                                                return [];
-                                            }
-                                        }),
-                                        name: getTestcaseName("wrappedToken", tokenInUnderlying ? "Underlying" : "Wrapped"),
-                                    } as const);
-
-                                    if (typeof integrationFee !== "undefined") {
-                                        continue integrationFee;
-                                    } else if (delegatecall) {
-                                        continue delegatecall;
-                                    } else if (typeof recipient === "string") {
-                                        continue recipient;
-                                    }
+                                if (typeof integrationFee !== "undefined") {
+                                    continue integrationFee;
+                                } else if (typeof recipient === "string") {
+                                    continue recipient;
                                 }
                             }
                         }

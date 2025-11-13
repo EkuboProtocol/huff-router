@@ -73,7 +73,7 @@
 
 /* IFlashAccountant#forward(address to) (for wrapped tokens) */
 #define constant WRAPPED_TOKEN_SELECTOR = __FUNC_SIG("forward(address)") // FIXME duplicate but hnc bug
-#define constant WRAPPED_TOKEN_SELECTOR_OFFSET = [SWAP_FORWARD_TOKEN0_OFFSET_PACKED] - [PACKED_ADDRESS_OFFSET] // Offset that doesn't override the upper bits of token0
+#define constant WRAPPED_TOKEN_SELECTOR_OFFSET = [SWAP_FORWARD_TOKEN0_OFFSET_PACKED] - [PACKED_ADDRESS_OFFSET] // Offset that doesn't set the upper bits of token0
 #define constant WRAPPED_TOKEN_SELECTOR_OFFSET_PACKED = [WRAPPED_TOKEN_SELECTOR_OFFSET] + [PACKED_SELECTOR_OFFSET]
 #define constant WRAPPED_TOKEN_TO_OFFSET = [WRAPPED_TOKEN_SELECTOR_OFFSET] + [WORD_SIZE]
 #define constant WRAPPED_TOKEN_AMOUNT_OFFSET = [WRAPPED_TOKEN_TO_OFFSET] + [WORD_SIZE]
@@ -654,7 +654,7 @@
 ) = takes(14) returns(0) {
     // takes: [hopWord, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-    STORE_WRAPPED_TOKEN_SELECTOR()                                                // [hopWord, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    STORE_WRAPPED_TOKEN_SELECTOR()                                          // [hopWord, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     0x1 byte                                                                // [callType, callType, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     unwrapLbl jumpi                                                         // [nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -818,7 +818,7 @@
     singleHopLbl jump
 }
 #define macro CALL_TOKEN_WRAPPER() = {
-    0x 0x [WRAPPED_TOKEN_ARGS_SIZE] 0x 0x [CORE] gas call
+    0x 0x [WRAPPED_TOKEN_ARGS_SIZE] [WRAPPED_TOKEN_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call
     pop
 }
 
