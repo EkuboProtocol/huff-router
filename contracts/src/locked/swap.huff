@@ -1240,9 +1240,8 @@
     [FORWARD_ARGS_SIZE] [FORWARD_SELECTOR_OFFSET_PACKED]                    // [argsOffset, argsSize, ...]
 }
 
-// TODO Replace with constant
 #define table SAVE_DATA {
-    __FUNC_SIG("updateSavedBalances(address,address,bytes32,int256,int256)")// selector
+    [UPDATE_SAVED_BALANCES_SELECTOR]                                        // selector
     __LEFTPAD(0x)                                                           // token0 (will be filled in)
     __LEFTPAD(0xffffffffffffffffffffffffffffffffffffffff)                   // token1 (the highest address possible, such that token0 will always be valid)
     0x000000000000000000000000                                              // salt (clears the unused upper 12 bytes, lower 20 bytes will be the integrator's address)
