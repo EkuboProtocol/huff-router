@@ -1,12 +1,16 @@
-import { assert, describe, expect, test } from "vitest";
+import { readdirSync, readFileSync } from "node:fs";
+import { describe, expect, test } from "vitest";
 import TOKENS from "../../tokens/31337.json" with {"type": "json"};
-import { concatHex, Hex, IntegerOutOfRangeError, isAddress, padHex, parseEther, size, SizeExceedsPaddingSizeError } from "viem";
+import { concatHex, Hex, IntegerOutOfRangeError, isAddress, padHex, parseEther, SizeExceedsPaddingSizeError } from "viem";
 import { generateCalldata, Parameters, Swap } from "../src/index.js";
-import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, minimalCalldata, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, CHAIN_ID, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
+import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, CHAIN_ID, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
 import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_HOP_CONNECTION, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_HOPS_LENGTH, ERROR_TOKEN0_TOKEN1_ORDER, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_INTEGRATION_FEE, MAX_MULTIHOP_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_HOP_LENGTH, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO, ERROR_UNDERLYING_EQ_WRAPPED } from "../src/impl.js";
 
 const VALID_ADDRESS = padHex("0x1", { size: 20 });
 const OVERSIZED_ADDRESS = concatHex([VALID_ADDRESS, "0xff"]);
+const MAX_CONTRACT_SIZE = 24_576n;
+const MAX_TOKEN_LIST_LENGTH = 256;
+const TOKENS_DIR = new URL("../../tokens/", import.meta.url);
 
 function simpleParams({
     exactOut, poolConfig: poolConfig
@@ -43,13 +47,25 @@ function simpleParams({
 
 test("test token list", async () => {
     expect(TOKENS).toStrictEqual([NATIVE_TOKEN_ADDRESS, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS]);
-    assert(TOKENS.every((token, i) => i === 0 || BigInt(TOKENS[i - 1]) < BigInt(token)));
-})
+    expect(TOKENS.every((token, i) => i === 0 || BigInt(TOKENS[i - 1]) < BigInt(token))).toBe(true);
+});
 
-// TODO Check for all JSONs & check that all are > MAX_CONTRACT_SIZE or zero and length is in bounds
-test("token address checksums", async () => {
-    for (const token of TOKENS) {
-        assert(isAddress(token), `${token} should be checksummed`);
+test("token json constraints", () => {
+    const tokenFiles = readdirSync(TOKENS_DIR);
+
+    for (const file of tokenFiles) {
+        const addresses: string[] = JSON.parse(readFileSync(new URL(file, TOKENS_DIR), "utf8"));
+
+        expect(addresses.length).toBeLessThanOrEqual(MAX_TOKEN_LIST_LENGTH);
+
+        for (const address of addresses) {
+            expect(isAddress(address)).toBe(true);
+
+            const numeric = BigInt(address);
+            if (numeric !== 0n) {
+                expect(numeric).toBeGreaterThanOrEqual(MAX_CONTRACT_SIZE);
+            }
+        }
     }
 });
 
