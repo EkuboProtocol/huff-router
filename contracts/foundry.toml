@@ -2,7 +2,10 @@
 optimizer = true
 solc = "0.8.30"
 ffi = true                                                      # Necessary for the HuffNeoDeployer
-fs_permissions = [{ access = "read", path = "../tokens/"}]
+fs_permissions = [
+    { access = "read", path = "../tokens/"},                    # Shared token lists
+    { access = "write", path = "src/locked/tokens.huff" },      # Processed token list for deployment
+]
 via-ir = true
 always_use_create_2_factory = true                              # To be able to reproduce the deployments of Ekubo contracts
 

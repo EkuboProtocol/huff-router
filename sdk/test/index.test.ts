@@ -50,7 +50,7 @@ test("test token list", async () => {
     assert(TOKENS.every((token, i) => i === 0 || BigInt(TOKENS[i - 1]) < BigInt(token)));
 })
 
-// TODO Check for all JSONs
+// TODO Check for all JSONs & check that all are > MAX_CONTRACT_SIZE or zero and length is in bounds
 test("token address checksums", async () => {
     for (const token of TOKENS) {
         assert(isAddress(token), `${token} should be checksummed`);
