@@ -8,7 +8,6 @@
 /// - Offsets suffixed with "_PACKED" indicate that the offset marks the first byte in the input containing the non-padded data
 /// - Constants aren't scoped, so we prefix them with appropriate identifiers where necessary to avoid mixing them up
 
-
 /* Imports */
 #include "lock.huff"
 #include "locked.huff"
@@ -45,6 +44,9 @@
 
 /* Entry Point */
 #define macro MAIN() = takes(0) returns(0) {
+    // We must ensure that the zero offset isn't a valid jump destination
+    __ASSERT_PC(0x)                                                         // []
+
     0x calldataload                                                         // [firstWord]
 
     // The selector of "locked_6416899205(uint256 id)" and the first 224 bits of the

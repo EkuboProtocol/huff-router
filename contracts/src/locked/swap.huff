@@ -1,3 +1,7 @@
+// IMPORTANT:
+// - The upper 12 bytes of WRAPPED_TOKEN_TO_OFFSET and SWAP_FORWARD_TOKEN0_OFFSET have to remain cleared at all times during swapping
+// - When computing jump destinations from user input, ensure that the valid jump destinations of the reachable memory area are only the foreseen jump destinations
+
 /* Size constants */
 #define constant FEE_SHARE_SIZE = 0x2
 #define constant INTEGRATION_FEE_SIZE = [FEE_SHARE_SIZE] + [ADDRESS_SIZE]
@@ -33,6 +37,9 @@
 /* ILocker#locked_6416899205(uint256 id) */
 #define constant LOCKER_ID_SIZE = [WORD_SIZE]
 #define constant LOCKED_SWAP_FIRST_WORD_OFFSET = [SELECTOR_SIZE] + [LOCKER_ID_SIZE] + [LOCK_SWAP_PADDING] + [LOCK_SWAP_WITH_RECIPIENT_SIZE] // `withRecipient` isn't used inside the lock
+
+#define constant LOCKED_SWAP_KNOWN_TOKEN_OFFSET = 0x
+#define constant LOCKED_SWAP_KNOWN_TOKEN_OFFSET_PACKED = [LOCKED_SWAP_KNOWN_TOKEN_OFFSET] + [PACKED_ADDRESS_OFFSET]
 
 // First dynamic data
 #define constant LOCKED_SWAP_CALCULATED_AMOUNT_THRESHOLD_OFFSET = [LOCKED_SWAP_FIRST_WORD_OFFSET] + [LOCK_SWAP_SPECIFIED_AMOUNT_BYTES_SIZE]
@@ -168,8 +175,8 @@
         add                                                                 // [offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         specifiedJoinLbl jump
     specifiedKnownLbl:                                                      // [specifiedTokenInfo, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
-        STORE_KNOWN_TOKEN(SWAP_FORWARD_TOKEN0_OFFSET_PACKED)                        // [totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
-        [SWAP_FORWARD_TOKEN0_OFFSET] mload                                          // [specifiedToken, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
+        STORE_KNOWN_TOKEN(LOCKED_SWAP_KNOWN_TOKEN_OFFSET_PACKED)            // [totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
+        [LOCKED_SWAP_KNOWN_TOKEN_OFFSET] mload                              // [specifiedToken, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         swap2                                                               // [offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
     specifiedJoinLbl:                                                       // [offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
 
@@ -178,14 +185,14 @@
     dup7 0x3 byte                                                           // [calculatedTokenInfo, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
     dup1 0xff gt calculatedKnownLbl jumpi                                   // [calculatedTokenInfo, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         pop                                                                 // [totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
-        [ADDRESS_SIZE]                                                    // [addressLength, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
+        [ADDRESS_SIZE]                                                      // [addressLength, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         dup3 calldataload 0x60 shr                                          // [calculatedToken, addressLength, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         swap3                                                               // [offset, addressLength, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         add                                                                 // [offset, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         calculatedJoinLbl jump
     calculatedKnownLbl:                                                     // [calculatedTokenInfo, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
-        STORE_KNOWN_TOKEN(SWAP_FORWARD_TOKEN0_OFFSET_PACKED)                        // [totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
-        [SWAP_FORWARD_TOKEN0_OFFSET] mload                                          // [calculatedToken, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
+        STORE_KNOWN_TOKEN(LOCKED_SWAP_KNOWN_TOKEN_OFFSET_PACKED)            // [totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
+        [LOCKED_SWAP_KNOWN_TOKEN_OFFSET] mload                              // [calculatedToken, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         swap2                                                               // [offset, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
     calculatedJoinLbl:                                                      // [offset, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
     swap7                                                                   // [firstWord, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
@@ -202,7 +209,11 @@
     // Parse `withSqrtRatioLimit | isExactOut`
     0x6 byte                                                                // [withSqrtRatioLimit | isExactOut, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
 
-    // Load jumptable into memory & take jump
+    // Load jumptable into memory & take jump.
+    // Previous code has to ensure that every word starting at an offset evenly
+    // divisible by the word size does not contain valid jump destinations.
+    // The token addresses that possibly are written to memory before are assumed
+    // to be invalid jump destinations.
     __tablesize(CONFIG_TABLE) __tablestart(CONFIG_TABLE)                    // [tableStart, tableSize, withSqrtRatioLimit | isExactOut, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
     0x codecopy                                                             // [withSqrtRatioLimit | isExactOut, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
     0x20 mul mload jump                                                     // [remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
@@ -423,6 +434,7 @@
     // takes: [tablestart, tablesize, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
 
     // Copy the packed jump table to a destination that we know we won't override.
+    // It's crucial that the memory after doesn't point to valid jump destinations.
     [MAX_ARGS_OFFSET] codecopy                                              // [remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
 
     dup6                                                                    // [nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
