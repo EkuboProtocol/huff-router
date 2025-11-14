@@ -75,6 +75,7 @@ contract HyperRouterTest is Test {
         SlippageCheckFailedCase[] slippageCheckFailed;
     }
 
+    uint128 private constant _INTEGRATION_FEE_AMOUNT = 1 ether;
     uint256 private constant _EXACT_OUT_APPROVE_AMOUNT = 10 ether;
     uint128 private constant _POSITION_AMOUNT = 100_000 ether;
     address private immutable _PAYER = address(this);
@@ -225,54 +226,54 @@ contract HyperRouterTest is Test {
         testRevert_RefundNativeNonPayable(sdkCases.refundNativeNonPayable);
     }
 
-    function test_Success(SuccessCase memory t) public {
-        _initializePools(t.poolKeys);
+    function test_Success(SuccessCase memory c) private {
+        _initializePools(c.poolKeys);
 
-        (address tokenIn, address tokenOut, address integratorToken) = t.isExactOut
-            ? (t.calculatedToken, t.specifiedToken, t.specifiedToken)
-            : (t.specifiedToken, t.calculatedToken, t.calculatedToken);
+        (address tokenIn, address tokenOut, address integratorToken) = c.isExactOut
+            ? (c.calculatedToken, c.specifiedToken, c.specifiedToken)
+            : (c.specifiedToken, c.calculatedToken, c.calculatedToken);
 
         // Double the total specified amount because the testdata contains some unprofitable arbitrage swaps
-        uint256 dealAmount = t.isExactOut ? _EXACT_OUT_APPROVE_AMOUNT : t.totalSpecified * 10;
+        uint256 dealAmount = c.isExactOut ? _EXACT_OUT_APPROVE_AMOUNT : c.totalSpecified * 10;
         uint256 value = _approve(tokenIn, address(hyperRouter), dealAmount);
 
-        address recipient = t.recipient == address(0) ? _PAYER : t.recipient;
+        address recipient = c.recipient == address(0) ? _PAYER : c.recipient;
 
         (uint256 payerBalanceBefore, uint256 recipientBalanceBefore, uint128 integratorBalanceBefore) = (
             _balanceOf(_PAYER, tokenIn),
             _balanceOf(recipient, tokenOut),
-            _unclaimedIntegrationFees(t.integrator, integratorToken)
+            _unclaimedIntegrationFees(c.integrator, integratorToken)
         );
 
-        bytes memory result = LibCall.callContract(address(hyperRouter), value, t.data);
-        vm.snapshotGasLastCall(t.name);
+        bytes memory result = LibCall.callContract(address(hyperRouter), value, c.data);
+        vm.snapshotGasLastCall(c.name);
 
         HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(result);
 
         assertNotEq(returndata.calculatedAmount, 0);
 
-        if (t.integrator != address(0)) {
+        if (c.integrator != address(0)) {
             assertNotEq(returndata.integrationFee, 0);
         }
 
         (uint256 payerBalanceAfter, uint256 recipientBalanceAfter, uint128 integratorBalanceAfter) = (
             _balanceOf(_PAYER, tokenIn),
             _balanceOf(recipient, tokenOut),
-            _unclaimedIntegrationFees(t.integrator, integratorToken)
+            _unclaimedIntegrationFees(c.integrator, integratorToken)
         );
 
-        (int256 expectedTokenInDiff, int256 expectedTokenOutDiff) = t.isExactOut
+        (int256 expectedTokenInDiff, int256 expectedTokenOutDiff) = c.isExactOut
             ? (
                 -SafeCastLib.toInt256(returndata.calculatedAmount),
-                SafeCastLib.toInt256(t.totalSpecified) - int256(uint256(returndata.integrationFee))
+                SafeCastLib.toInt256(c.totalSpecified) - int256(uint256(returndata.integrationFee))
             )
             : (
                 // Extra input won't be refunded if we're doing an exact-in swap
-                -SafeCastLib.toInt256(tokenIn == NATIVE_TOKEN_ADDRESS ? dealAmount : t.totalSpecified),
+                -SafeCastLib.toInt256(tokenIn == NATIVE_TOKEN_ADDRESS ? dealAmount : c.totalSpecified),
                 SafeCastLib.toInt256(returndata.calculatedAmount)
             );
 
-        if (t.specifiedToken == t.calculatedToken && _PAYER == recipient) {
+        if (c.specifiedToken == c.calculatedToken && _PAYER == recipient) {
             expectedTokenInDiff += expectedTokenOutDiff;
             expectedTokenOutDiff = expectedTokenInDiff;
         }
@@ -319,6 +320,78 @@ contract HyperRouterTest is Test {
 
         vm.expectRevert(IHyperRouter.NativeTransferFailed.selector);
         LibCall.callContract(address(hyperRouter), _EXACT_OUT_APPROVE_AMOUNT, c.data);
+    }
+
+    function test_claimIntegrationFeesNative() external {
+        _accrueIntegrationFees(NATIVE_TOKEN_ADDRESS);
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = NATIVE_TOKEN_ADDRESS;
+
+        uint256 balanceBefore = address(this).balance;
+        uint256[] memory res = hyperRouter.claimIntegrationFees(tokens);
+        uint256 balanceAfter = address(this).balance;
+
+        assertEq(res.length, 1);
+        assertEq(res[0], _INTEGRATION_FEE_AMOUNT);
+        assertEq(balanceAfter - balanceBefore, _INTEGRATION_FEE_AMOUNT);
+    }
+
+    function test_claimIntegrationFeesERC20() external {
+        _accrueIntegrationFees(_ERC_20_FIRST_ADDRESS);
+
+        address[] memory tokens = new address[](1);
+        tokens[0] = _ERC_20_FIRST_ADDRESS;
+
+        uint256 balanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(this));
+        uint256[] memory res = hyperRouter.claimIntegrationFees(tokens);
+        uint256 balanceAfter = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(this));
+
+        assertEq(res.length, 1);
+        assertEq(res[0], _INTEGRATION_FEE_AMOUNT);
+        assertEq(balanceAfter - balanceBefore, _INTEGRATION_FEE_AMOUNT);
+    }
+
+    function test_claimIntegrationFeesMultiple() external {
+        _accrueIntegrationFees(NATIVE_TOKEN_ADDRESS);
+        _accrueIntegrationFees(_ERC_20_FIRST_ADDRESS);
+
+        address[] memory tokens = new address[](2);
+        tokens[0] = NATIVE_TOKEN_ADDRESS;
+        tokens[1] = _ERC_20_FIRST_ADDRESS;
+
+        (uint256 balanceBeforeNative, uint256 balanceBeforeErc20) =
+            (address(this).balance, IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(this)));
+
+        uint256[] memory res = hyperRouter.claimIntegrationFees(tokens);
+
+        (uint256 balanceAfterNative, uint256 balanceAfterErc20) =
+            (address(this).balance, IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(this)));
+
+        assertEq(res.length, 2);
+        assertEq(res[0], _INTEGRATION_FEE_AMOUNT);
+        assertEq(res[1], _INTEGRATION_FEE_AMOUNT);
+
+        assertEq(balanceAfterNative - balanceBeforeNative, _INTEGRATION_FEE_AMOUNT);
+        assertEq(balanceAfterErc20 - balanceBeforeErc20, _INTEGRATION_FEE_AMOUNT);
+    }
+
+    function _accrueIntegrationFees(address token) private {
+        if (token == NATIVE_TOKEN_ADDRESS) {
+            deal(address(core), _INTEGRATION_FEE_AMOUNT);
+        } else {
+            deal(token, address(core), _INTEGRATION_FEE_AMOUNT);
+        }
+
+        vm.store(
+            address(core),
+            StorageSlot.unwrap(
+                CoreStorageLayout.savedBalancesSlot(
+                    address(hyperRouter), token, address(type(uint160).max), bytes32(uint256(uint160(address(this))))
+                )
+            ),
+            bytes32(bytes16(_INTEGRATION_FEE_AMOUNT))
+        );
     }
 
     function _initializePools(PoolKey[] memory keys) private {

@@ -442,7 +442,7 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
 console.log(encodeAbiParameters(inputs, [{
     success: successCases,
     slippageCheckFailed: slippageCheckFailedCases,
-    refundEthNonPayable: {
+    refundNativeNonPayable: {
         data: await generateCalldata({
             chainId: CHAIN_ID,
             specifiedToken: ERC20_FIRST_ADDRESS,

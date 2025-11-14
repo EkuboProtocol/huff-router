@@ -1,5 +1,6 @@
 #define constant LOCKED_CLAIM_INPUT_INTEGRATOR_OFFSET = [SELECTOR_SIZE] + [LOCKER_ID_SIZE] + [CALL_TYPE_SIZE]
-#define constant LOCKED_CLAIM_INPUT_TOKENS_LENGTH_OFFSET = [LOCKED_CLAIM_INPUT_INTEGRATOR_OFFSET] + [WORD_SIZE]
+#define constant LOCKED_CLAIM_INPUT_SIZE_OFFSET = [LOCKED_CLAIM_INPUT_INTEGRATOR_OFFSET] + [WORD_SIZE]
+#define constant LOCKED_CLAIM_INPUT_TOKENS_LENGTH_OFFSET = [LOCKED_CLAIM_INPUT_SIZE_OFFSET] + [WORD_SIZE]
 #define constant LOCKED_CLAIM_INPUT_FIRST_TOKEN_OFFSET = [LOCKED_CLAIM_INPUT_TOKENS_LENGTH_OFFSET] + [WORD_SIZE]
 #define constant LOCKED_CLAIM_INPUT_NON_TOKENS_SIZE = [LOCKED_CLAIM_INPUT_INTEGRATOR_OFFSET]
 
@@ -28,14 +29,15 @@
 // IFlashAccountant#withdraw()
 #define constant LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET = [LOCKED_CLAIM_SLOAD_SLOT_OFFSET]
 #define constant LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET_PACKED = [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET] + [PACKED_SELECTOR_OFFSET]
-#define constant LOCKED_CLAIM_WITHDRAW_TOKEN_OFFSET = [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET] + [SELECTOR_SIZE]
+#define constant LOCKED_CLAIM_WITHDRAW_TOKEN_OFFSET = [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET] + [ADDRESS_SIZE]
 #define constant LOCKED_CLAIM_WITHDRAW_RECIPIENT_OFFSET = [LOCKED_CLAIM_WITHDRAW_TOKEN_OFFSET] + [ADDRESS_SIZE]
-#define constant LOCKED_CLAIM_WITHDRAW_AMOUNT_OFFSET = [LOCKED_CLAIM_WITHDRAW_RECIPIENT_OFFSET] + [ADDRESS_SIZE]
+#define constant LOCKED_CLAIM_WITHDRAW_AMOUNT_OFFSET = [LOCKED_CLAIM_WITHDRAW_RECIPIENT_OFFSET] + [HALFWORD_SIZE]
 #define constant LOCKED_CLAIM_WITHDRAW_AMOUNT_OFFSET_PACKED = [LOCKED_CLAIM_WITHDRAW_AMOUNT_OFFSET] + [HALFWORD_SIZE]
 #define constant LOCKED_CLAIM_WITHDRAW_ARGS_SIZE = [LOCKED_CLAIM_WITHDRAW_AMOUNT_OFFSET] + [WORD_SIZE] - [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET_PACKED]
 
-#define constant LOCKED_CLAIM_OUTPUT_AMOUNTS_LENGTH = [LOCKED_CLAIM_WITHDRAW_AMOUNT_OFFSET] + [WORD_SIZE]
-#define constant LOCKED_CLAIM_OUTPUT_FIRST_TOKEN_OFFSET = [LOCKED_CLAIM_OUTPUT_AMOUNTS_LENGTH] + [WORD_SIZE]
+#define constant LOCKED_CLAIM_OUTPUT_SIZE_OFFSET = [LOCKED_CLAIM_WITHDRAW_AMOUNT_OFFSET] + [WORD_SIZE]
+#define constant LOCKED_CLAIM_OUTPUT_AMOUNTS_LENGTH_OFFSET = [LOCKED_CLAIM_OUTPUT_SIZE_OFFSET] + [WORD_SIZE]
+#define constant LOCKED_CLAIM_OUTPUT_FIRST_TOKEN_OFFSET = [LOCKED_CLAIM_OUTPUT_AMOUNTS_LENGTH_OFFSET] + [WORD_SIZE]
 #define constant LOCKED_CLAIM_OUTPUT_INPUT_TOKEN_OFFSET_DIFF = [LOCKED_CLAIM_OUTPUT_FIRST_TOKEN_OFFSET] - [LOCKED_CLAIM_INPUT_FIRST_TOKEN_OFFSET]
 
 #define macro LOCKED_CLAIM() = takes(0) returns(0) {
@@ -48,17 +50,17 @@
 
     [LOCKED_CLAIM_WITHDRAW_RECIPIENT_OFFSET] mstore                                                                     // []
 
+    0x40 [LOCKED_CLAIM_INPUT_SIZE_OFFSET] [LOCKED_CLAIM_OUTPUT_SIZE_OFFSET] calldatacopy                                // []
+
     [LOCKED_CLAIM_INPUT_TOKENS_LENGTH_OFFSET]                                                                           // [tokenOffset]
     dup1 calldataload                                                                                                   // [remainingTokens, tokenOffset]
 
-    dup1 [LOCKED_CLAIM_OUTPUT_AMOUNTS_LENGTH] mstore                                                                    // [remainingTokens, tokenOffset]
-
     dup1 iszero tokensProcessedLbl jumpi                                                                                // [remainingTokens, tokenOffset]
-        tokensRemainingLbl:
+        tokensRemainingLbl:                                                                                             // [remainingTokens, tokenOffset]
 
         // Update the loop variables
         [MINUS_ONE] add                                                                                                 // [remainingTokens, tokenOffset]
-        swap1 add [WORD_SIZE] swap1                                                                                     // [remainingTokens, tokenOffset]
+        swap1 [WORD_SIZE] add swap1                                                                                     // [remainingTokens, tokenOffset]
 
         dup2 calldataload                                                                                               // [token, remainingTokens, tokenOffset]
 
@@ -99,14 +101,14 @@
 
         // Withdraw the saved balance to the integrator
         [LOCKED_CLAIM_WITHDRAW_TOKEN_OFFSET] mstore                                                                     // [remainingTokens, tokenOffset]
-        [WITHDRAW_SELECTOR] [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET] mstore                                                     // [remainingTokens, tokenOffset]
+        [WITHDRAW_SELECTOR] [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET] mstore                                              // [remainingTokens, tokenOffset]
         0x 0x [LOCKED_CLAIM_WITHDRAW_ARGS_SIZE] [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call       // [success, remainingTokens, tokenOffset]
 
         // Would be caught by Core's flash accounting
         pop                                                                                                             // [remainingTokens, tokenOffset]
 
-        dup1 jumpi tokensRemainingLbl                                                                                   // [remainingTokens, tokenOffset]
+        dup1 tokensRemainingLbl jumpi                                                                                   // [remainingTokens, tokenOffset]
     tokensProcessedLbl:                                                                                                 // [remainingTokens, tokenOffset]
 
-    [LOCKED_CLAIM_INPUT_NON_TOKENS_SIZE] calldatasize sub [LOCKED_CLAIM_OUTPUT_AMOUNTS_LENGTH] return
+    [LOCKED_CLAIM_INPUT_SIZE_OFFSET] calldatasize sub [LOCKED_CLAIM_OUTPUT_SIZE_OFFSET] return
 }

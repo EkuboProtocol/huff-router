@@ -45,7 +45,7 @@
 /* Entry Point */
 #define macro MAIN() = takes(0) returns(0) {
     // We must ensure that the zero offset isn't a valid jump destination
-    __ASSERT_PC(0x)                                                         // []
+    __ASSERT_PC(0x0)                                                        // []
 
     0x calldataload                                                         // [firstWord]
 
