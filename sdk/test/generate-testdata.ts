@@ -392,6 +392,12 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
     }
 }
 
+const poolKey = {
+    token0: NATIVE_TOKEN_ADDRESS,
+    token1: ERC20_FIRST_ADDRESS,
+    config: CONCENTRATED_CONFIG,
+};
+
 const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
     {
         calculatedAmountThreshold: maxUint256,
@@ -404,16 +410,13 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
                 hops: [
                     {
                         type: "swap",
-                        poolKey: {
-                            token0: NATIVE_TOKEN_ADDRESS,
-                            token1: ERC20_FIRST_ADDRESS,
-                            config: CONCENTRATED_CONFIG,
-                        }
+                        poolKey,
                     }
                 ]
             }],
             calculatedAmountThreshold: maxUint256,
         }),
+        poolKeys: [poolKey],
     },
     {
         calculatedAmountThreshold: 1n,
@@ -426,16 +429,13 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
                 hops: [
                     {
                         type: "swap",
-                        poolKey: {
-                            token0: NATIVE_TOKEN_ADDRESS,
-                            token1: ERC20_FIRST_ADDRESS,
-                            config: CONCENTRATED_CONFIG,
-                        }
+                        poolKey,
                     }
                 ]
             }],
             calculatedAmountThreshold: -1n,
         }),
+        poolKeys: [poolKey],
     },
 ];
 
@@ -452,15 +452,12 @@ console.log(encodeAbiParameters(inputs, [{
                     hops: [
                         {
                             type: "swap",
-                            poolKey: {
-                                token0: NATIVE_TOKEN_ADDRESS,
-                                token1: ERC20_FIRST_ADDRESS,
-                                config: CONCENTRATED_CONFIG,
-                            }
+                            poolKey,
                         },
                     ],
                 },
             ],
         }),
+        poolKeys: [poolKey],
     },
 }]));

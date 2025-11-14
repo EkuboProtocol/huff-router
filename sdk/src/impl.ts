@@ -1,6 +1,6 @@
 import { ByteArray, bytesToHex, concatBytes, getAddress, Hex, hexToBigInt, hexToBytes, maxInt128, maxUint16, maxUint256, maxUint8, minInt128, numberToBytes, numberToHex, padBytes, padHex, size, sliceHex, toBytes, zeroAddress } from "viem";
 import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_CAPTURE_ADDRESS } from "./extensions";
-import { Parameters, Swap } from ".";
+import { Parameters } from ".";
 import { Tokens } from "./tokens";
 
 const TWO_POW_62 = 2n ** 62n;

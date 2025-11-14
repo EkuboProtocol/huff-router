@@ -14,10 +14,12 @@ import {TWAMM, twammCallPoints} from "ekubo/extensions/TWAMM.sol";
 import {ICore} from "ekubo/interfaces/ICore.sol";
 import {IPositions} from "ekubo/interfaces/IPositions.sol";
 import {CoreLib} from "ekubo/libraries/CoreLib.sol";
+import {CoreStorageLayout} from "ekubo/libraries/CoreStorageLayout.sol";
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/math/constants.sol";
 import {CallPoints} from "ekubo/types/callPoints.sol";
 import {PoolConfig, createFullRangePoolConfig} from "ekubo/types/poolConfig.sol";
 import {PoolKey} from "ekubo/types/poolKey.sol";
+import {StorageSlot} from "ekubo/types/storageSlot.sol";
 import {Test} from "forge-std/Test.sol";
 import {console} from "forge-std/console.sol";
 import {IERC20} from "forge-std/interfaces/IERC20.sol";
@@ -41,6 +43,7 @@ contract HyperRouterTest is Test {
 
     struct SuccessCase {
         bytes data;
+        PoolKey[] poolKeys;
 
         address specifiedToken;
         address calculatedToken;
@@ -51,31 +54,29 @@ contract HyperRouterTest is Test {
         address recipient;
         address integrator;
 
-        PoolKey[] poolKeys;
-
         string name;
     }
 
-    struct RefundEthNonPayableCase {
+    struct RefundNativeNonPayableCase {
         bytes data;
+        PoolKey[] poolKeys;
     }
 
     struct SlippageCheckFailedCase {
         bytes data;
+        PoolKey[] poolKeys;
         bool isExactOut;
         uint256 calculatedAmountThreshold;
     }
 
     struct SdkCases {
         SuccessCase[] success;
-        RefundEthNonPayableCase refundEthNonPayable;
+        RefundNativeNonPayableCase refundNativeNonPayable;
         SlippageCheckFailedCase[] slippageCheckFailed;
     }
 
-    error SuccessCaseError(SuccessCase c, bytes err);
-
-    uint256 private constant _EXACT_OUT_APPROVE_AMOUNT = type(uint128).max / 2;
-    uint128 private constant _POSITION_AMOUNT = 100 ether;
+    uint256 private constant _EXACT_OUT_APPROVE_AMOUNT = 10 ether;
+    uint128 private constant _POSITION_AMOUNT = 100_000 ether;
     address private immutable _PAYER = address(this);
 
     // cast keccak "HyperRouterTest#DISABLE_RECEIVE_SLOT"
@@ -212,64 +213,28 @@ contract HyperRouterTest is Test {
         uint256 snapshotId = vm.snapshotState();
 
         for (uint256 i = 0; i < sdkCases.success.length; i++) {
-            SuccessCase memory c = sdkCases.success[i];
-
-            try this._testSuccess(c) {}
-            catch (bytes memory err) {
-                revert SuccessCaseError(c, err);
-            }
-
+            test_Success(sdkCases.success[i]);
             vm.revertToState(snapshotId);
         }
 
         for (uint256 i = 0; i < sdkCases.slippageCheckFailed.length; i++) {
-            _testRevertSlippageCheckFailed(sdkCases.slippageCheckFailed[i]);
+            testRevert_SlippageCheckFailed(sdkCases.slippageCheckFailed[i]);
             vm.revertToState(snapshotId);
         }
 
-        _testRevertRefundEthNonPayable(sdkCases.refundEthNonPayable);
+        testRevert_RefundNativeNonPayable(sdkCases.refundNativeNonPayable);
     }
 
-    function _testSuccess(SuccessCase memory t) external {
+    function test_Success(SuccessCase memory t) public {
+        _initializePools(t.poolKeys);
+
         (address tokenIn, address tokenOut, address integratorToken) = t.isExactOut
             ? (t.calculatedToken, t.specifiedToken, t.specifiedToken)
             : (t.specifiedToken, t.calculatedToken, t.calculatedToken);
 
-        uint256 value;
-        uint256 dealAmount = t.isExactOut ? _EXACT_OUT_APPROVE_AMOUNT : t.totalSpecified;
-
-        if (tokenIn == NATIVE_TOKEN_ADDRESS) {
-            deal(_PAYER, dealAmount);
-            value = dealAmount;
-        } else {
-            deal(tokenIn, _PAYER, dealAmount);
-            ERC20(tokenIn).approve(address(hyperRouter), dealAmount);
-        }
-
-        for (uint256 i = 0; i < t.poolKeys.length; i++) {
-            PoolKey memory pk = t.poolKeys[i];
-
-            (bool initialized,) = positions.maybeInitializePool(pk, 0);
-
-            // Don't add a position twice if one pool appears multiple times in the route
-            if (initialized) {
-                PoolConfig config = pk.config;
-                int32 tickLower;
-                int32 tickUpper;
-
-                if (config.isConcentrated()) {
-                    int32 tickSpacing = int32(config.concentratedTickSpacing());
-                    (tickLower, tickUpper) = (-tickSpacing, tickSpacing);
-                } else {
-                    (tickLower, tickUpper) = config.stableswapActiveLiquidityTickRange();
-                }
-
-                _approvePositions(pk.token0);
-                _approvePositions(pk.token1);
-
-                positions.mintAndDeposit(pk, tickLower, tickUpper, _POSITION_AMOUNT, _POSITION_AMOUNT, 0);
-            }
-        }
+        // Double the total specified amount because the testdata contains some unprofitable arbitrage swaps
+        uint256 dealAmount = t.isExactOut ? _EXACT_OUT_APPROVE_AMOUNT : t.totalSpecified * 10;
+        uint256 value = _approve(tokenIn, address(hyperRouter), dealAmount);
 
         address recipient = t.recipient == address(0) ? _PAYER : t.recipient;
 
@@ -301,7 +266,11 @@ contract HyperRouterTest is Test {
                 -SafeCastLib.toInt256(returndata.calculatedAmount),
                 SafeCastLib.toInt256(t.totalSpecified) - int256(uint256(returndata.integrationFee))
             )
-            : (-SafeCastLib.toInt256(t.totalSpecified), SafeCastLib.toInt256(returndata.calculatedAmount));
+            : (
+                // Extra input won't be refunded if we're doing an exact-in swap
+                -SafeCastLib.toInt256(tokenIn == NATIVE_TOKEN_ADDRESS ? dealAmount : t.totalSpecified),
+                SafeCastLib.toInt256(returndata.calculatedAmount)
+            );
 
         if (t.specifiedToken == t.calculatedToken && _PAYER == recipient) {
             expectedTokenInDiff += expectedTokenOutDiff;
@@ -325,10 +294,13 @@ contract HyperRouterTest is Test {
         );
     }
 
-    function _testRevertSlippageCheckFailed(SlippageCheckFailedCase memory c) private {
+    function testRevert_SlippageCheckFailed(SlippageCheckFailedCase memory c) private {
+        _initializePools(c.poolKeys);
+
         (bool success, bytes memory result) = address(hyperRouter).call(c.data);
         assertFalse(success, "success");
 
+        // forge-lint: disable-next-line(unsafe-typecast)
         assertEq(IHyperRouter.SlippageCheckFailed.selector, bytes4(result), "error selector");
 
         uint256 calculatedAmount = abi.decode(LibBytes.slice(result, 4), (uint256));
@@ -340,18 +312,48 @@ contract HyperRouterTest is Test {
         }
     }
 
-    function _testRevertRefundEthNonPayable(RefundEthNonPayableCase memory c) private disableReceive {
+    function testRevert_RefundNativeNonPayable(RefundNativeNonPayableCase memory c) private disableReceive {
+        _initializePools(c.poolKeys);
+
         vm.deal(_PAYER, _EXACT_OUT_APPROVE_AMOUNT);
 
         vm.expectRevert(IHyperRouter.NativeTransferFailed.selector);
         LibCall.callContract(address(hyperRouter), _EXACT_OUT_APPROVE_AMOUNT, c.data);
     }
 
+    function _initializePools(PoolKey[] memory keys) private {
+        for (uint256 i = 0; i < keys.length; i++) {
+            PoolKey memory pk = keys[i];
+
+            (bool initialized,) = positions.maybeInitializePool(pk, 0);
+
+            // Don't add a position twice if one pool appears multiple times in the route
+            if (initialized) {
+                PoolConfig config = pk.config;
+                int32 tickLower;
+                int32 tickUpper;
+
+                if (config.isConcentrated()) {
+                    int32 tickSpacing = int32(config.concentratedTickSpacing());
+                    (tickLower, tickUpper) = (-tickSpacing, tickSpacing);
+                } else {
+                    (tickLower, tickUpper) = config.stableswapActiveLiquidityTickRange();
+                }
+
+                _approvePositions(pk.token1);
+
+                positions.mintAndDeposit{value: _approvePositions(pk.token0)}(
+                    pk, tickLower, tickUpper, _POSITION_AMOUNT, _POSITION_AMOUNT, 0
+                );
+            }
+        }
+    }
+
     function _balanceOf(address owner, address token) private view returns (uint256 balance) {
         if (token == NATIVE_TOKEN_ADDRESS) {
             return owner.balance;
         } else {
-            return ERC20(token).balanceOf(owner);
+            return IERC20(token).balanceOf(owner);
         }
     }
 
@@ -361,13 +363,40 @@ contract HyperRouterTest is Test {
         );
     }
 
-    function _approvePositions(address token) private {
+    function _approve(address token, address spender, uint256 amount) private returns (uint256 value) {
         if (token == NATIVE_TOKEN_ADDRESS) {
-            vm.deal(address(positions), _POSITION_AMOUNT);
+            deal(address(this), amount);
+            value = amount;
         } else {
-            deal(token, address(this), _POSITION_AMOUNT);
-            ERC20(token).approve(address(positions), _POSITION_AMOUNT);
+            deal(token, address(this), amount);
+            IERC20(token).approve(spender, amount);
+
+            // Such that the equivalent amount of the underlying token is redeemable
+            if (token == _TOKEN_WRAPPER_ADDRESS) {
+                deal(
+                    _ERC_20_FIRST_ADDRESS,
+                    address(core),
+                    IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(core)) + amount
+                );
+
+                (uint128 balance,) =
+                    core.savedBalances(_TOKEN_WRAPPER_ADDRESS, _ERC_20_FIRST_ADDRESS, address(type(uint160).max), 0);
+
+                vm.store(
+                    address(core),
+                    StorageSlot.unwrap(
+                        CoreStorageLayout.savedBalancesSlot(
+                            _TOKEN_WRAPPER_ADDRESS, _ERC_20_FIRST_ADDRESS, address(type(uint160).max), 0
+                        )
+                    ),
+                    bytes32(bytes16(balance + SafeCastLib.toUint128(amount)))
+                );
+            }
         }
+    }
+
+    function _approvePositions(address token) private returns (uint256 value) {
+        value = _approve(token, address(positions), _POSITION_AMOUNT);
     }
 
     receive() external payable {
