@@ -1,6 +1,5 @@
-import { Address, Hex, padHex, zeroAddress } from "viem";
+import { Address, padHex, zeroAddress } from "viem";
 import { ORACLE_ADDRESS } from "../src/extensions.js";
-import { generateCalldata } from "../src/index.js";
 
 export const CHAIN_ID = 31337n;
 
@@ -12,25 +11,3 @@ export const TOKEN_WRAPPER_ADDRESS: Address = "0x3333333333333333333333333333333
 export const ORACLE_CONFIG = padHex(ORACLE_ADDRESS, { dir: "right" });
 
 export const INTEGRATOR = "0x4a77e6131A6b8067042A0F9dDfaC9eB4cf18e219";
-
-export function minimalCalldata(): Promise<Hex> {
-    return generateCalldata({
-        chainId: CHAIN_ID,
-        specifiedToken: NATIVE_TOKEN_ADDRESS,
-        multiHops: [
-            {
-                specifiedAmount: 0n,
-                hops: [
-                    {
-                        type: "swap",
-                        poolKey: {
-                            token0: NATIVE_TOKEN_ADDRESS,
-                            token1: ERC20_FIRST_ADDRESS,
-                            config: ORACLE_CONFIG,
-                        },
-                    }
-                ]
-            }
-        ]
-    });
-}

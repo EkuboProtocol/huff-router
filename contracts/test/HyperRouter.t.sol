@@ -69,10 +69,16 @@ contract HyperRouterTest is Test {
         uint256 calculatedAmountThreshold;
     }
 
+    struct MinimalCalldataCase {
+        bytes data;
+        PoolKey poolKey;
+    }
+
     struct SdkCases {
         SuccessCase[] success;
         RefundNativeNonPayableCase refundNativeNonPayable;
         SlippageCheckFailedCase[] slippageCheckFailed;
+        MinimalCalldataCase minimalCalldata;
     }
 
     uint128 private constant _INTEGRATION_FEE_AMOUNT = 1 ether;
@@ -83,6 +89,7 @@ contract HyperRouterTest is Test {
     // cast keccak "HyperRouterTest#DISABLE_RECEIVE_SLOT"
     uint256 private constant _DISABLE_RECEIVE_SLOT = 0x27095381dc94d25f5c191482faa73780fd308183456a62f43e8833e46ea4a541;
     uint256 private constant _MAX_CODE_SIZE = 24_576; // https://eips.ethereum.org/EIPS/eip-170
+    uint256 private constant _MINIMAL_CALLDATA_LENGTH = 10;
 
     IHyperRouter private hyperRouter;
     ICore private core;
@@ -160,38 +167,6 @@ contract HyperRouterTest is Test {
         assertLe(codeSize, _MAX_CODE_SIZE);
     }
 
-    // TODO Make SDK case
-    function test_MinimalCalldata() external {
-        core.initializePool(
-            PoolKey({
-                token0: NATIVE_TOKEN_ADDRESS,
-                token1: _ERC_20_FIRST_ADDRESS,
-                config: createFullRangePoolConfig({_fee: 0, _extension: ORACLE_ADDRESS})
-            }),
-            0
-        );
-
-        (bool success, bytes memory data) = address(hyperRouter)
-            .call(
-                hex"00" // withRecipient
-                hex"00" // specifiedAmountBytes
-                hex"00" // calculatedAmountThresholdBytes
-                hex"00" // specifiedTokenInfo
-                hex"01" // calculatedTokenInfo
-                hex"00" // additionalMultiHops
-                hex"00" // withIntegrationFee
-                hex"00" // withSqrtRatioLimit | isExactOut
-                hex"00" // additionalHops
-                hex"01" // hopType
-            );
-        assertTrue(success, "success");
-
-        HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(data);
-
-        assertEq(returndata.calculatedAmount, 0, "calculatedAmount");
-        assertEq(returndata.integrationFee, 0, "integrationFee");
-    }
-
     function testRevert_LockedCoreOnly() external {
         vm.expectRevert(IHyperRouter.CoreOnly.selector);
         hyperRouter.locked_6416899205(0);
@@ -224,6 +199,9 @@ contract HyperRouterTest is Test {
         }
 
         testRevert_RefundNativeNonPayable(sdkCases.refundNativeNonPayable);
+        vm.revertToState(snapshotId);
+
+        test_MinimalCalldata(sdkCases.minimalCalldata);
     }
 
     function test_Success(SuccessCase memory c) private {
@@ -320,6 +298,22 @@ contract HyperRouterTest is Test {
 
         vm.expectRevert(IHyperRouter.NativeTransferFailed.selector);
         LibCall.callContract(address(hyperRouter), _EXACT_OUT_APPROVE_AMOUNT, c.data);
+    }
+
+    function test_MinimalCalldata(MinimalCalldataCase memory c) private {
+        assertEq(c.data.length, _MINIMAL_CALLDATA_LENGTH);
+
+        PoolKey[] memory pks = new PoolKey[](1);
+        pks[0] = c.poolKey;
+        _initializePools(pks);
+
+        (bool success, bytes memory data) = address(hyperRouter).call(c.data);
+        assertTrue(success, "success");
+
+        HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(data);
+
+        assertEq(returndata.calculatedAmount, 0, "calculatedAmount");
+        assertEq(returndata.integrationFee, 0, "integrationFee");
     }
 
     function test_claimIntegrationFeesNative() external {

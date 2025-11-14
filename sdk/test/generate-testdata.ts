@@ -392,7 +392,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
     }
 }
 
-const poolKey = {
+const DUMMY_POOL_KEY = {
     token0: NATIVE_TOKEN_ADDRESS,
     token1: ERC20_FIRST_ADDRESS,
     config: CONCENTRATED_CONFIG,
@@ -410,13 +410,13 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
                 hops: [
                     {
                         type: "swap",
-                        poolKey,
+                        poolKey: DUMMY_POOL_KEY,
                     }
                 ]
             }],
             calculatedAmountThreshold: maxUint256,
         }),
-        poolKeys: [poolKey],
+        poolKeys: [DUMMY_POOL_KEY],
     },
     {
         calculatedAmountThreshold: 1n,
@@ -429,15 +429,21 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
                 hops: [
                     {
                         type: "swap",
-                        poolKey,
+                        poolKey: DUMMY_POOL_KEY,
                     }
                 ]
             }],
             calculatedAmountThreshold: -1n,
         }),
-        poolKeys: [poolKey],
+        poolKeys: [DUMMY_POOL_KEY],
     },
 ];
+
+const KNOWN_TOKENS_ORACLE_POOL_KEY = {
+    token0: NATIVE_TOKEN_ADDRESS,
+    token1: ERC20_FIRST_ADDRESS,
+    config: ORACLE_CONFIG,
+};
 
 console.log(encodeAbiParameters(inputs, [{
     success: successCases,
@@ -452,12 +458,30 @@ console.log(encodeAbiParameters(inputs, [{
                     hops: [
                         {
                             type: "swap",
-                            poolKey,
+                            poolKey: DUMMY_POOL_KEY,
                         },
                     ],
                 },
             ],
         }),
-        poolKeys: [poolKey],
+        poolKeys: [DUMMY_POOL_KEY],
     },
+    minimalCalldata: {
+        data: await generateCalldata({
+            chainId: CHAIN_ID,
+            specifiedToken: NATIVE_TOKEN_ADDRESS,
+            multiHops: [
+                {
+                    specifiedAmount: 0n,
+                    hops: [
+                        {
+                            type: "swap",
+                            poolKey: KNOWN_TOKENS_ORACLE_POOL_KEY,
+                        }
+                    ]
+                }
+            ]
+        }),
+        poolKey: KNOWN_TOKENS_ORACLE_POOL_KEY,
+    }
 }]));

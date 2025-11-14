@@ -41,10 +41,6 @@ function simpleParams({
     });
 }
 
-test("minimal calldata size", async () => {
-    expect(size(await minimalCalldata())).toBe(10);
-});
-
 test("test token list", async () => {
     expect(TOKENS).toStrictEqual([NATIVE_TOKEN_ADDRESS, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS]);
     assert(TOKENS.every((token, i) => i === 0 || BigInt(TOKENS[i - 1]) < BigInt(token)));
