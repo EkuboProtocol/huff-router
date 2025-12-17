@@ -1,6 +1,13 @@
 [profile.default]
+solc = "0.8.31"
+evm_version = "osaka"
+
 optimizer = true
-solc = "0.8.30"
+optimizer_runs = 9999999
+
+bytecode_hash = "none"
+cbor_metadata = false
+
 ffi = true                                                      # Necessary for the HuffNeoDeployer
 fs_permissions = [
     { access = "read", path = "../tokens/"},                    # Shared token lists
