@@ -86,7 +86,7 @@ type SdkCases = DeepWritable<ElementOf<Parameters<typeof encodeAbiParameters<typ
 
 const successCases: SdkCases["success"] = [
     {
-        data: await generateCalldata({
+        data: generateCalldata({
             chainId: CHAIN_ID,
             specifiedToken: NATIVE_TOKEN_ADDRESS,
             recipient: RECIPIENT,
@@ -253,7 +253,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                 ];
                             }
 
-                            const calldata = await generateCalldataImpl({
+                            const calldata = generateCalldataImpl({
                                 chainId: CHAIN_ID,
                                 specifiedToken,
                                 recipient,
@@ -344,7 +344,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     ];
                                 }
 
-                                const calldata = await generateCalldataImpl({
+                                const calldata = generateCalldataImpl({
                                     chainId: CHAIN_ID,
                                     specifiedToken,
                                     recipient,
@@ -402,7 +402,7 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
     {
         calculatedAmountThreshold: maxUint256,
         isExactOut: false,
-        data: await generateCalldata({
+        data: generateCalldata({
             chainId: CHAIN_ID,
             specifiedToken: NATIVE_TOKEN_ADDRESS,
             multiHops: [{
@@ -421,7 +421,7 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
     {
         calculatedAmountThreshold: 1n,
         isExactOut: true,
-        data: await generateCalldata({
+        data: generateCalldata({
             chainId: CHAIN_ID,
             specifiedToken: NATIVE_TOKEN_ADDRESS,
             multiHops: [{
@@ -449,7 +449,7 @@ console.log(encodeAbiParameters(inputs, [{
     success: successCases,
     slippageCheckFailed: slippageCheckFailedCases,
     refundNativeNonPayable: {
-        data: await generateCalldata({
+        data: generateCalldata({
             chainId: CHAIN_ID,
             specifiedToken: ERC20_FIRST_ADDRESS,
             multiHops: [
@@ -467,7 +467,7 @@ console.log(encodeAbiParameters(inputs, [{
         poolKeys: [DUMMY_POOL_KEY],
     },
     minimalCalldata: {
-        data: await generateCalldata({
+        data: generateCalldata({
             chainId: CHAIN_ID,
             specifiedToken: NATIVE_TOKEN_ADDRESS,
             multiHops: [

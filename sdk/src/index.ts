@@ -192,6 +192,6 @@ export interface Parameters {
  * @param params - The parameters determining the generated calldata
  * @returns A hex-encoded calldata string
  */
-export async function generateCalldata(params: Parameters): Promise<Hex> {
+export function generateCalldata(params: Parameters): Hex {
   return generateCalldataImpl(params);
 }

@@ -45,7 +45,7 @@ function simpleParams({
     });
 }
 
-test("test token list", async () => {
+test("test token list", () => {
     expect(TOKENS).toStrictEqual([NATIVE_TOKEN_ADDRESS, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS]);
     expect(TOKENS.every((token, i) => i === 0 || BigInt(TOKENS[i - 1]) < BigInt(token))).toBe(true);
 });
@@ -69,56 +69,56 @@ test("token json constraints", () => {
     }
 });
 
-test("simple parameters", async () => {
-    await expect(generateCalldata(simpleParams())).resolves.toBeDefined();
+test("simple parameters", () => {
+    expect(generateCalldata(simpleParams())).toBeDefined();
 });
 
 describe("specifiedToken", () => {
     describe("length", () => {
-        test("valid", async () => {
-            await expect(generateCalldata(simpleParams())).resolves.toBeDefined();
+        test("valid", () => {
+            expect(generateCalldata(simpleParams())).toBeDefined();
         });
 
-        test("too long", async () => {
+        test("too long", () => {
             const params: Parameters = simpleParams();
             params.specifiedToken = OVERSIZED_ADDRESS;
 
-            await expect(generateCalldata(params)).rejects.toThrow(SizeExceedsPaddingSizeError);
+            expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
         });
     });
 });
 
 describe("multiHopSwaps length", () => {
-    test("zero", async () => {
+    test("zero", () => {
         const params = simpleParams();
         params.multiHops = [];
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_MULTIHOP_SWAPS_LENGTH);
+        expect(() => generateCalldata(params)).toThrow(ERROR_MULTIHOP_SWAPS_LENGTH);
     });
 
-    test("one", async () => {
-        await expect(generateCalldata(simpleParams())).resolves.toBeDefined();
+    test("one", () => {
+        expect(generateCalldata(simpleParams())).toBeDefined();
     });
 
-    test("valid", async () => {
+    test("valid", () => {
         const params = simpleParams();
         params.multiHops = Array(10).fill(params.multiHops[0]);
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("max", async () => {
+    test("max", () => {
         const params = simpleParams();
         params.multiHops = Array(MAX_MULTIHOP_LENGTH).fill(params.multiHops[0]);
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("too large", async () => {
+    test("too large", () => {
         const params = simpleParams();
         params.multiHops = Array(MAX_MULTIHOP_LENGTH + 1).fill(params.multiHops[0]);
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_MULTIHOP_SWAPS_LENGTH);
+        expect(() => generateCalldata(params)).toThrow(ERROR_MULTIHOP_SWAPS_LENGTH);
     });
 });
 
@@ -135,87 +135,87 @@ describe("hops", () => {
             });
         }
 
-        test("zero", async () => {
+        test("zero", () => {
             const params = simpleParams();
             params.multiHops[0].hops = [];
 
-            await expect(generateCalldata(params)).rejects.toThrow(ERROR_HOPS_LENGTH);
+            expect(() => generateCalldata(params)).toThrow(ERROR_HOPS_LENGTH);
         });
 
-        test("one", async () => {
-            await expect(generateCalldata(simpleParams())).resolves.toBeDefined();
+        test("one", () => {
+            expect(generateCalldata(simpleParams())).toBeDefined();
         });
 
-        test("valid", async () => {
+        test("valid", () => {
             const params = simpleParams();
             params.multiHops[0].hops = swaps(5);
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("max", async () => {
+        test("max", () => {
             const params = simpleParams();
             params.multiHops[0].hops = swaps(MAX_HOP_LENGTH);
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("too large", async () => {
+        test("too large", () => {
             const params = simpleParams();
             params.multiHops[0].hops = swaps(MAX_HOP_LENGTH + 1);
 
-            await expect(generateCalldata(params)).rejects.toThrow(ERROR_HOPS_LENGTH);
+            expect(() => generateCalldata(params)).toThrow(ERROR_HOPS_LENGTH);
         });
     });
 
     describe("pool key", () => {
         describe("config", () => {
             describe("length", () => {
-                test("valid", async () => {
+                test("valid", () => {
                     const params = simpleParams();
                     params.multiHops[0].hops[0].poolKey.config = padHex("0x", { size: 32 });
 
-                    await expect(generateCalldata(params)).resolves.toBeDefined();
+                    expect(generateCalldata(params)).toBeDefined();
                 });
 
-                test("length too long", async () => {
+                test("length too long", () => {
                     const params = simpleParams();
                     params.multiHops[0].hops[0].poolKey.config = padHex("0x", { size: 33 });
 
-                    await expect(generateCalldata(params)).rejects.toThrow(SizeExceedsPaddingSizeError);
+                    expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
                 });
             });
         });
 
         describe("tokens", () => {
-            test("token0 == token1", async () => {
+            test("token0 == token1", () => {
                 const params = simpleParams();
                 params.multiHops[0].hops[0].poolKey.token1 = NATIVE_TOKEN_ADDRESS;
 
-                await expect(generateCalldata(params)).rejects.toThrow(ERROR_TOKEN0_TOKEN1_ORDER);
+                expect(() => generateCalldata(params)).toThrow(ERROR_TOKEN0_TOKEN1_ORDER);
             });
 
-            test("token0 > token1", async () => {
+            test("token0 > token1", () => {
                 const params = simpleParams();
 
                 const poolKey = params.multiHops[0].hops[0].poolKey;
                 [poolKey.token0, poolKey.token1] = [poolKey.token1, poolKey.token0];
 
-                await expect(generateCalldata(params)).rejects.toThrow(ERROR_TOKEN0_TOKEN1_ORDER);
+                expect(() => generateCalldata(params)).toThrow(ERROR_TOKEN0_TOKEN1_ORDER);
             });
 
-            test("not connected", async () => {
+            test("not connected", () => {
                 const params = simpleParams();
                 params.multiHops[0].hops[0].poolKey.token0 = VALID_ADDRESS;
 
-                await expect(generateCalldata(params)).rejects.toThrow(ERROR_HOP_CONNECTION);
+                expect(() => generateCalldata(params)).toThrow(ERROR_HOP_CONNECTION);
             });
         });
     });
 
     describe("wrappedToken", () => {
         describe("tokens", () => {
-            test("wrapped == underlying", async () => {
+            test("wrapped == underlying", () => {
                 const params: Parameters = simpleParams();
                 params.multiHops[0].hops.push({
                     type: "wrappedToken",
@@ -223,10 +223,10 @@ describe("hops", () => {
                     wrapped: ERC20_FIRST_ADDRESS,
                 });
 
-                await expect(generateCalldata(params)).rejects.toThrow(ERROR_UNDERLYING_EQ_WRAPPED);
+                expect(() => generateCalldata(params)).toThrow(ERROR_UNDERLYING_EQ_WRAPPED);
             });
 
-            test("not connected", async () => {
+            test("not connected", () => {
                 const params: Parameters = simpleParams();
                 params.multiHops[0].hops.push({
                     type: "wrappedToken",
@@ -234,99 +234,99 @@ describe("hops", () => {
                     wrapped: VALID_ADDRESS,
                 });
 
-                await expect(generateCalldata(params)).rejects.toThrow(ERROR_HOP_CONNECTION);
+                expect(() => generateCalldata(params)).toThrow(ERROR_HOP_CONNECTION);
             });
         })
     });
 });
 
 describe("specifiedAmount", () => {
-    test("too small", async () => {
+    test("too small", () => {
         const params = simpleParams();
         params.multiHops[0].specifiedAmount = MIN_SPECIFIED_AMOUNT - 1n;
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_SPECIFIED_AMOUNT_RANGE);
+        expect(() => generateCalldata(params)).toThrow(ERROR_SPECIFIED_AMOUNT_RANGE);
     });
 
-    test("min", async () => {
+    test("min", () => {
         const params = simpleParams();
         params.multiHops[0].specifiedAmount = MIN_SPECIFIED_AMOUNT;
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("zero", async () => {
+    test("zero", () => {
         const params = simpleParams();
         params.multiHops[0].specifiedAmount = 0n;
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("valid", async () => {
-        await expect(generateCalldata(simpleParams())).resolves.toBeDefined();
+    test("valid", () => {
+        expect(generateCalldata(simpleParams())).toBeDefined();
     });
 
-    test("max", async () => {
+    test("max", () => {
         const params = simpleParams();
         params.multiHops[0].specifiedAmount = MAX_SPECIFIED_AMOUNT;
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("too large", async () => {
+    test("too large", () => {
         const params = simpleParams();
         params.multiHops[0].specifiedAmount = MAX_SPECIFIED_AMOUNT + 1n;
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_SPECIFIED_AMOUNT_RANGE);
+        expect(() => generateCalldata(params)).toThrow(ERROR_SPECIFIED_AMOUNT_RANGE);
     });
 
-    test("mixed sign", async () => {
+    test("mixed sign", () => {
         const params = simpleParams();
 
         params.multiHops.push(structuredClone(params.multiHops[0]));
         params.multiHops[1].specifiedAmount = -params.multiHops[1].specifiedAmount;
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_SPECIFIED_AMOUNT_MIXED_SIGN);
+        expect(() => generateCalldata(params)).toThrow(ERROR_SPECIFIED_AMOUNT_MIXED_SIGN);
     });
 });
 
 describe("sqrtRatioLimit", () => {
-    test("too small", async () => {
+    test("too small", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].sqrtRatioLimit = MIN_SQRT_RATIO - 1n;
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_INVALID_SQRT_RATIO_LIMIT);
+        expect(() => generateCalldata(params)).toThrow(ERROR_INVALID_SQRT_RATIO_LIMIT);
     });
 
-    test("min", async () => {
+    test("min", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].sqrtRatioLimit = MIN_SQRT_RATIO;
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("valid", async () => {
+    test("valid", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].sqrtRatioLimit = 19807884935885858851817748830n;
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("max", async () => {
+    test("max", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].sqrtRatioLimit = MAX_SQRT_RATIO;
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("too large", async () => {
+    test("too large", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].sqrtRatioLimit = MAX_SQRT_RATIO + 1n;
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_INVALID_SQRT_RATIO_LIMIT);
+        expect(() => generateCalldata(params)).toThrow(ERROR_INVALID_SQRT_RATIO_LIMIT);
     });
 
-    test("whole number portion zero", async () => {
+    test("whole number portion zero", () => {
         const sqrtRatioLimit = 0xc00000000000000000000000n;
 
         expect(sqrtRatioLimit).toBeGreaterThanOrEqual(MIN_SQRT_RATIO);
@@ -335,200 +335,200 @@ describe("sqrtRatioLimit", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].sqrtRatioLimit = sqrtRatioLimit;
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_INVALID_SQRT_RATIO_LIMIT);
+        expect(() => generateCalldata(params)).toThrow(ERROR_INVALID_SQRT_RATIO_LIMIT);
     });
 });
 
 describe("skipAhead", () => {
-    test("negative", async () => {
+    test("negative", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].skipAhead = -1;
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_SKIP_AHEAD_RANGE);
+        expect(() => generateCalldata(params)).toThrow(ERROR_SKIP_AHEAD_RANGE);
     });
 
-    test("min / zero", async () => {
+    test("min / zero", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].skipAhead = 0;
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("valid", async () => {
+    test("valid", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].skipAhead = 10;
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("max", async () => {
+    test("max", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].skipAhead = MAX_SKIP_AHEAD;
 
-        await expect(generateCalldata(params)).resolves.toBeDefined();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
-    test("too large", async () => {
+    test("too large", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].skipAhead = MAX_SKIP_AHEAD + 1;
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_SKIP_AHEAD_RANGE);
+        expect(() => generateCalldata(params)).toThrow(ERROR_SKIP_AHEAD_RANGE);
     });
 });
 
 describe("calculatedToken", () => {
-    test("mismatch", async () => {
+    test("mismatch", () => {
         const params = simpleParams();
 
         params.multiHops.push(structuredClone(params.multiHops[0]));
         params.multiHops[1].hops[0].poolKey.token1 = ERC20_SECOND_ADDRESS;
 
-        await expect(generateCalldata(params)).rejects.toThrow(ERROR_CALCULATED_TOKEN_MISMATCH);
+        expect(() => generateCalldata(params)).toThrow(ERROR_CALCULATED_TOKEN_MISMATCH);
     });
 });
 
 describe("calculatedAmountThreshold", () => {
     describe("exact in", () => {
-        test("too small / sign mismatch", async () => {
+        test("too small / sign mismatch", () => {
             const params: Parameters = simpleParams();
             params.calculatedAmountThreshold = -1n;
 
-            await expect(generateCalldata(params)).rejects.toThrow(ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN);
+            expect(() => generateCalldata(params)).toThrow(ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN);
         });
 
-        test("zero / min", async () => {
+        test("zero / min", () => {
             const params: Parameters = simpleParams();
             params.calculatedAmountThreshold = 0n;
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("valid", async () => {
+        test("valid", () => {
             const params: Parameters = simpleParams();
             params.calculatedAmountThreshold = 10n;
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("max", async () => {
+        test("max", () => {
             const params: Parameters = simpleParams();
             params.calculatedAmountThreshold = MAX_CALCULATED_AMOUNT_THRESHOLD;
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("too large", async () => {
+        test("too large", () => {
             const params: Parameters = simpleParams();
             params.calculatedAmountThreshold = MAX_CALCULATED_AMOUNT_THRESHOLD + 1n;
 
-            await expect(generateCalldata(params)).rejects.toThrow(ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE);
+            expect(() => generateCalldata(params)).toThrow(ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE);
         });
     });
 
     describe("exact out", () => {
-        test("too small", async () => {
+        test("too small", () => {
             const params: Parameters = simpleParams({ exactOut: true });
             params.calculatedAmountThreshold = MIN_CALCULATED_AMOUNT_THRESHOLD - 1n;
 
-            await expect(generateCalldata(params)).rejects.toThrow(ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE);
+            expect(() => generateCalldata(params)).toThrow(ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE);
         });
 
-        test("min", async () => {
+        test("min", () => {
             const params: Parameters = simpleParams({ exactOut: true });
             params.calculatedAmountThreshold = MIN_CALCULATED_AMOUNT_THRESHOLD;
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("valid", async () => {
+        test("valid", () => {
             const params: Parameters = simpleParams({ exactOut: true });
             params.calculatedAmountThreshold = -10n;
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("zero / too large / sign mismatch", async () => {
+        test("zero / too large / sign mismatch", () => {
             const params: Parameters = simpleParams({ exactOut: true });
             params.calculatedAmountThreshold = 0n;
 
-            await expect(generateCalldata(params)).rejects.toThrow(ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN);
+            expect(() => generateCalldata(params)).toThrow(ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN);
         });
     });
 });
 
 describe("integrationFee", () => {
     describe("fee", () => {
-        test("negative", async () => {
+        test("negative", () => {
             const params: Parameters = simpleParams();
             params.integrationFee = {
                 fee: -1,
                 integrator: INTEGRATOR,
             };
 
-            await expect(generateCalldata(params)).rejects.toThrow(IntegerOutOfRangeError);
+            expect(() => generateCalldata(params)).toThrow(IntegerOutOfRangeError);
         });
 
-        test("zero", async () => {
+        test("zero", () => {
             const params: Parameters = simpleParams();
             params.integrationFee = {
                 fee: 0,
                 integrator: INTEGRATOR,
             };
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("valid", async () => {
+        test("valid", () => {
             const params: Parameters = simpleParams();
             params.integrationFee = {
                 fee: 10,
                 integrator: INTEGRATOR,
             };
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("max", async () => {
+        test("max", () => {
             const params: Parameters = simpleParams();
             params.integrationFee = {
                 fee: MAX_INTEGRATION_FEE,
                 integrator: INTEGRATOR,
             };
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("too large", async () => {
+        test("too large", () => {
             const params: Parameters = simpleParams();
             params.integrationFee = {
                 fee: MAX_INTEGRATION_FEE + 1,
                 integrator: INTEGRATOR,
             };
 
-            await expect(generateCalldata(params)).rejects.toThrow(IntegerOutOfRangeError);
+            expect(() => generateCalldata(params)).toThrow(IntegerOutOfRangeError);
         });
     });
 
     describe("integrator", () => {
         describe("length", () => {
-            test("valid", async () => {
+            test("valid", () => {
                 const params: Parameters = simpleParams();
                 params.integrationFee = {
                     fee: 10,
                     integrator: VALID_ADDRESS,
                 };
 
-                await expect(generateCalldata(simpleParams())).resolves.toBeDefined();
+                expect(generateCalldata(simpleParams())).toBeDefined();
             });
 
-            test("too long", async () => {
+            test("too long", () => {
                 const params: Parameters = simpleParams();
                 params.integrationFee = {
                     fee: 10,
                     integrator: OVERSIZED_ADDRESS,
                 };
 
-                await expect(generateCalldata(params)).rejects.toThrow(SizeExceedsPaddingSizeError);
+                expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
             });
         });
     });
@@ -536,18 +536,18 @@ describe("integrationFee", () => {
 
 describe("recipient", () => {
     describe("length", () => {
-        test("valid", async () => {
+        test("valid", () => {
             const params: Parameters = simpleParams();
             params.recipient = VALID_ADDRESS;
 
-            await expect(generateCalldata(params)).resolves.toBeDefined();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
-        test("too long", async () => {
+        test("too long", () => {
             const params: Parameters = simpleParams();
             params.recipient = OVERSIZED_ADDRESS;
 
-            await expect(generateCalldata(params)).rejects.toThrow(SizeExceedsPaddingSizeError);
+            expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
         });
     });
 });

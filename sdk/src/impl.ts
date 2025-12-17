@@ -42,11 +42,11 @@ interface TestParameters {
     forceUnknownToken: boolean;
 }
 
-export async function generateCalldataImpl(
+export function generateCalldataImpl(
     params: Parameters,
     { forceUnknownExtension, forceUnknownToken }: TestParameters = { forceUnknownExtension: false, forceUnknownToken: false },
-): Promise<Hex> {
-    const tokens = await Tokens.load(params.chainId);
+): Hex {
+    const tokens = Tokens.load(params.chainId);
     const asUnknownToken = forceUnknownToken || tokens === null;
 
     const { multiHops, recipient, calculatedAmountThreshold, integrationFee } = params;
