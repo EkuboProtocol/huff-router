@@ -2,7 +2,10 @@ import { Address, Hex } from "viem";
 import { generateCalldataImpl } from "./impl";
 
 // TODO
-export const DEPLOYMENTS: Map<bigint, Address> = new Map();
+export const DEPLOYMENTS: Map<bigint, Address> = new Map([
+  [1115511n, "0xc5cB4a12f0521A55F95c4C594f49b626A2C385f6"],
+  [42161n, "0xC93C4Ad185CA48d66FEfe80f906a67ef859fc47d"],
+]);
 
 /**
  * The unique identifier of a pool
@@ -132,7 +135,7 @@ export interface Parameters {
   /**
    * The chain ID of the chain that the *HyperRouter* instance for which the calldata is generated is deployed on
    */
-  chainId: bigint,
+  chainId: bigint;
   /**
    * The address of the token in which the {@link MultiHop.specifiedAmount | specified amounts} of the {@link multiHops} are denominated
    */
