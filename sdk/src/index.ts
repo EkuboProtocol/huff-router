@@ -4,7 +4,7 @@ import { generateCalldataImpl } from "./impl";
 // TODO
 export const DEPLOYMENTS: Map<bigint, Address> = new Map([
   [1115511n, "0xc5cB4a12f0521A55F95c4C594f49b626A2C385f6"],
-  [42161n, "0xC93C4Ad185CA48d66FEfe80f906a67ef859fc47d"],
+  [421614n, "0xC93C4Ad185CA48d66FEfe80f906a67ef859fc47d"],
 ]);
 
 /**
