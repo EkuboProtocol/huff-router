@@ -1,6 +1,6 @@
 {
   "name": "@ekubo/evm-hyper-router-sdk",
-  "version": "0.2.0-alpha.2",
+  "version": "0.2.0-alpha.3",
   "description": "Calldata generation for Ekubo's gas-efficient and highly configurable HyperRouter smart contract",
   "type": "module",
   "main": "dist/index.cjs",
