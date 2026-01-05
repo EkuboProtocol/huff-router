@@ -1,5 +1,11 @@
 {
     "compilerOptions": {
-        "strict": true
+        "strict": true,
+        "target": "es2020",
+        "module": "nodenext",
+        "moduleResolution": "node16",
+        "types": [
+            "node"
+        ]
     }
 }

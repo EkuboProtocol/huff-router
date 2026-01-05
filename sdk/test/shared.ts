@@ -1,8 +1,6 @@
 import { Address, padHex, zeroAddress } from "viem";
 import { ORACLE_ADDRESS } from "../src/extensions.js";
 
-export const CHAIN_ID = 31337n;
-
 export const NATIVE_TOKEN_ADDRESS: Address = zeroAddress;
 export const ERC20_FIRST_ADDRESS: Address = "0x1111111111111111111111111111111111111111";
 export const ERC20_SECOND_ADDRESS: Address = "0x2222222222222222222222222222222222222222";

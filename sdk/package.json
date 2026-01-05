@@ -23,9 +23,11 @@
     "build": "tsup src/index.ts --dts --minify --tsconfig src/tsconfig.json",
     "test": "vitest",
     "generate-testdata": "wagmi generate 2>/dev/null && tsx test/generate-testdata.ts",
-    "prepublishOnly": "rm -rf dist/ && npm run build"
+    "prepublishOnly": "rm -rf dist/ && npm run build",
+    "update-token-lists": "tsx scripts/update-token-lists.ts"
   },
   "devDependencies": {
+    "@types/node": "^25.0.3",
     "@wagmi/cli": "^2.3.2",
     "ts-essentials": "^10.1.1",
     "tsup": "^8.5.0",

@@ -1,10 +1,5 @@
 {
     "extends": "..",
-    "compilerOptions": {
-        "target": "es2020",
-        "module": "nodenext",
-        "moduleResolution": "node16",
-    },
     "references": [
         {
             "path": "../src",

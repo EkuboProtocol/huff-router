@@ -3,13 +3,13 @@ import { describe, expect, test } from "vitest";
 import TOKENS from "../../tokens/31337.json" with {"type": "json"};
 import { concatHex, Hex, IntegerOutOfRangeError, isAddress, padHex, parseEther, SizeExceedsPaddingSizeError } from "viem";
 import { generateCalldata, Parameters, Swap } from "../src/index.js";
-import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, CHAIN_ID, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
+import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
 import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_HOP_CONNECTION, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_HOPS_LENGTH, ERROR_TOKEN0_TOKEN1_ORDER, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_INTEGRATION_FEE, MAX_MULTIHOP_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_HOP_LENGTH, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO, ERROR_UNDERLYING_EQ_WRAPPED } from "../src/impl.js";
+import { MAX_CONTRACT_SIZE, TEST_CHAIN_ID } from "../shared.js";
 
 const VALID_ADDRESS = padHex("0x1", { size: 20 });
 const OVERSIZED_ADDRESS = concatHex([VALID_ADDRESS, "0xff"]);
-const MAX_CONTRACT_SIZE = 24_576n;
-const MAX_TOKEN_LIST_LENGTH = 256;
+const MAX_TOKEN_LIST_LENGTH = 255;
 const TOKENS_DIR = new URL("../../tokens/", import.meta.url);
 
 function simpleParams({
@@ -25,7 +25,7 @@ function simpleParams({
     }
 
     return structuredClone({
-        chainId: CHAIN_ID,
+        chainId: BigInt(TEST_CHAIN_ID),
         specifiedToken: NATIVE_TOKEN_ADDRESS,
         multiHops: [
             {
@@ -63,6 +63,7 @@ test("token json constraints", () => {
 
             const numeric = BigInt(address);
             if (numeric !== 0n) {
+                // A security invariant to make sure addresses can't be valid jump destinations
                 expect(numeric).toBeGreaterThanOrEqual(MAX_CONTRACT_SIZE);
             }
         }
