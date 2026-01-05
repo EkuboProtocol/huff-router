@@ -8,13 +8,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const tokensDir = path.resolve(__dirname, "../../tokens");
 const apiBaseUrl = "https://prod-api.ekubo.org";
 
-const PAGE_SIZE = MAX_TOKEN_LIST_LENGTH + 1;
-const [MIN_PRIORITY_START, MIN_PRIORITY_END] = [-1, 2];
+const PAGE_SIZE = 1000;
+const MIN_VISIBILITY_PRIORITY = -100;
+const HIGH_VISIBILITY_PRIORITY = 1000000000;
 const MIN_REQUEST_INTERVAL_MS = 1000 / 3;
 const NATIVE_TOKEN_ADDRESS_BI = 0n;
 
 type TokenResponse = {
     address: string;
+    visibility_priority: number;
 };
 
 let lastRequestTimeMs = 0;
@@ -29,57 +31,45 @@ const chainIds = readdirSync(tokensDir)
     .map(file => Number(file.split(".")[0]))
     .filter(chainId => chainId !== TEST_CHAIN_ID);
 
-const fetchTokens = async (chainId: number, minVisibilityPriority: number): Promise<Set<bigint>> => {
+const fetchTokens = async (chainId: number): Promise<TokenResponse[]> => {
     await rateLimit();
     const params = new URLSearchParams({
         chainId: String(chainId),
         pageSize: String(PAGE_SIZE),
-        minVisibilityPriority: String(minVisibilityPriority),
+        minVisibilityPriority: String(MIN_VISIBILITY_PRIORITY),
     });
 
     const res = await fetch(`${apiBaseUrl}/tokens?${params.toString()}`);
     if (!res.ok) {
         throw new Error(
-            `Failed to fetch tokens for chain ${chainId} (minVisibilityPriority ${minVisibilityPriority}): ${res.status} ${res.statusText}`,
+            `Failed to fetch tokens for chain ${chainId}: ${res.status} ${res.statusText}`,
         );
     }
 
-    const data = (await res.json()) as TokenResponse[];
-    return new Set(data
-        .map(token => BigInt(token.address))
-        // A security invariant to make sure addresses can't be valid jump destinations
-        .filter(token => token >= MAX_CONTRACT_SIZE));
+    return (await res.json()) as TokenResponse[];
 };
 
 for (const chainId of chainIds) {
-    let previousSet = new Set<bigint>();
-    let selected = new Set([NATIVE_TOKEN_ADDRESS_BI]);
+    const tokens = (await fetchTokens(chainId)).map(token => ({
+        address: BigInt(token.address),
+        visibilityPriority: token.visibility_priority,
+    }));
 
-    for (let priority = MIN_PRIORITY_START; priority <= MIN_PRIORITY_END; priority += 1) {
-        const addresses = await fetchTokens(chainId, priority);
-        addresses.add(NATIVE_TOKEN_ADDRESS_BI);
+    // A security invariant to make sure addresses can't be valid jump destinations
+    const filteredTokens = tokens.filter(token => token.address >= MAX_CONTRACT_SIZE)
 
-        if (addresses.size <= MAX_TOKEN_LIST_LENGTH) {
-            selected = addresses;
-            break;
-        }
+    filteredTokens.push({
+        address: NATIVE_TOKEN_ADDRESS_BI,
+        visibilityPriority: Number.POSITIVE_INFINITY,
+    });
 
-        previousSet = addresses;
-    }
+    const tokenAddresses = filteredTokens
+        .sort((a, b) => b.visibilityPriority - a.visibilityPriority)
+        .slice(0, MAX_TOKEN_LIST_LENGTH)
+        .sort((a, b) => a.address < b.address ? -1 : 1)
+        .map(token => getAddress(toHex(token.address, { size: 20 })));
 
-    for (const address of previousSet) {
-        if (selected.size >= MAX_TOKEN_LIST_LENGTH) {
-            break;
-        }
-        selected.add(address);
-    }
+    writeFileSync(path.join(tokensDir, `${chainId}.json`), JSON.stringify(tokenAddresses, null, 4));
 
-    const selectedArr = Array.from(selected);
-    selectedArr.sort((a, b) => (a < b) ? -1 : ((a > b) ? 1 : 0));
-
-    const selectedAddresses = selectedArr.map(num => getAddress(toHex(num, { size: 20 })));
-
-    writeFileSync(path.join(tokensDir, `${chainId}.json`), JSON.stringify(selectedAddresses, null, 4));
-
-    console.log(`Updated token list for chain ${chainId} (${selectedArr.length} tokens).`);
+    console.log(`Updated token list for chain ${chainId} (${tokenAddresses.length} tokens).`);
 }
