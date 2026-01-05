@@ -20,7 +20,7 @@
     "smart-contracts"
   ],
   "scripts": {
-    "build": "tsup src/index.ts --dts --minify --tsconfig src/tsconfig.json",
+    "build": "tsup src/index.ts --dts --minify --tsconfig src/tsconfig.build.json",
     "test": "vitest",
     "generate-testdata": "wagmi generate 2>/dev/null && tsx test/generate-testdata.ts",
     "prepublishOnly": "rm -rf dist/ && npm run build",
