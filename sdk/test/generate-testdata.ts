@@ -4,8 +4,10 @@ import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions.js";
 import { generateCalldata, IntegrationFee, Hop } from "../src/index.js";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl.js";
 import type { DeepWritable, ElementOf } from "ts-essentials";
-import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, CHAIN_ID, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
+import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
+import { TEST_CHAIN_ID } from "../shared.js";
 
+const CHAIN_ID = BigInt(TEST_CHAIN_ID);
 const SPECIFIED_AMOUNT = parseEther("1");
 const RECIPIENT: Address = "0xffffffffffffffffffffffffffffffffffffffff";
 const INTEGRATION_FEE: IntegrationFee = {
