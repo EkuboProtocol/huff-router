@@ -40,7 +40,7 @@
 #define constant LOCKER_ID_SIZE = [WORD_SIZE]
 #define constant LOCKED_SWAP_FIRST_WORD_OFFSET = [SELECTOR_SIZE] + [LOCKER_ID_SIZE] + [LOCK_SWAP_PADDING] + [LOCK_SWAP_WITH_RECIPIENT_SIZE] // `withRecipient` isn't used inside the lock
 
-#define constant LOCKED_SWAP_KNOWN_TOKEN_OFFSET = 0x
+#define constant LOCKED_SWAP_KNOWN_TOKEN_OFFSET = 0x0
 #define constant LOCKED_SWAP_KNOWN_TOKEN_OFFSET_PACKED = [LOCKED_SWAP_KNOWN_TOKEN_OFFSET] + [PACKED_ADDRESS_OFFSET]
 
 // First dynamic data
@@ -53,13 +53,13 @@
 #define constant FORWARD_SELECTOR_PACKED = __RIGHTPAD([FORWARD_SELECTOR])
 
 /* IFlashAccountant#forward(address to) (for MEV-capture) */
-#define constant FORWARD_SELECTOR_OFFSET_PACKED = 0x
+#define constant FORWARD_SELECTOR_OFFSET_PACKED = 0x0
 #define constant FORWARD_TO_OFFSET = [FORWARD_SELECTOR_OFFSET_PACKED] + [SELECTOR_SIZE]
 #define constant FORWARD_TO_OFFSET_PACKED = [FORWARD_TO_OFFSET] + [PACKED_ADDRESS_OFFSET]
 #define constant FORWARD_ARGS_SIZE = [SWAP_FORWARD_PARAMS_OFFSET] + [WORD_SIZE] - [FORWARD_SELECTOR_OFFSET_PACKED]
 
 /* ICore#swap_6269342730() */
-#define constant SWAP_SELECTOR = 0x // cast sig "swap_6269342730()" is zero
+#define constant SWAP_SELECTOR = 0x0 // cast sig "swap_6269342730()" is zero
 #define constant SWAP_SELECTOR_OFFSET = [SWAP_FORWARD_ARGS_OFFSET] - [WORD_SIZE]
 #define constant SWAP_SELECTOR_OFFSET_PACKED = [SWAP_SELECTOR_OFFSET] + [PACKED_SELECTOR_OFFSET]
 #define constant SWAP_ARGS_SIZE = [SWAP_FORWARD_PARAMS_OFFSET] + [WORD_SIZE] - [SWAP_SELECTOR_OFFSET_PACKED]
@@ -93,7 +93,7 @@
 #define constant MAX_ARGS_OFFSET = [SWAP_FORWARD_PARAMS_OFFSET] + [WORD_SIZE]
 
 /* ICore#updateSavedBalances(address token0, address token1, bytes32 salt, int256 delta0, int256 delta1) */
-#define constant SAVE_SELECTOR_OFFSET_PACKED = 0x
+#define constant SAVE_SELECTOR_OFFSET_PACKED = 0x0
 #define constant SAVE_TOKEN0_OFFSET = [SAVE_SELECTOR_OFFSET_PACKED] + [SELECTOR_SIZE]
 #define constant SAVE_TOKEN1_OFFSET = [SAVE_TOKEN0_OFFSET] + [WORD_SIZE]
 #define constant SAVE_SALT_OFFSET = [SAVE_TOKEN1_OFFSET] + [WORD_SIZE]
@@ -103,7 +103,7 @@
 #define constant SAVE_ARGS_SIZE = [SAVE_AMOUNT1_OFFSET] + [WORD_SIZE] - [SAVE_SELECTOR_OFFSET_PACKED]
 
 /* IFlashAccountant#withdraw() */
-#define constant WITHDRAW_SELECTOR_OFFSET = 0x
+#define constant WITHDRAW_SELECTOR_OFFSET = 0x0
 #define constant WITHDRAW_SELECTOR_OFFSET_PACKED = [WITHDRAW_SELECTOR_OFFSET] + [WORD_SIZE] - [SELECTOR_SIZE]
 #define constant WITHDRAW_ARGS_OFFSET = [WITHDRAW_SELECTOR_OFFSET] + [WORD_SIZE]
 #define constant WITHDRAW_TOKEN_OFFSET = [WITHDRAW_ARGS_OFFSET] - [PACKED_ADDRESS_OFFSET]
@@ -113,7 +113,7 @@
 #define constant WITHDRAW_ARGS_SIZE = [WITHDRAW_AMOUNT_OFFSET] + [WORD_SIZE] - [WITHDRAW_SELECTOR_OFFSET_PACKED]
 
 // IFlashAccountant#startPayments() and // IFlashAccountant#completePayments() input offsets
-#define constant START_COMPLETE_PAYMENTS_SELECTOR_OFFSET = 0x
+#define constant START_COMPLETE_PAYMENTS_SELECTOR_OFFSET = 0x0
 #define constant START_COMPLETE_PAYMENTS_SELECTOR_OFFSET_PACKED = [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET] + [WORD_SIZE] - [SELECTOR_SIZE]
 #define constant START_COMPLETE_PAYMENTS_TOKEN_OFFSET = [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET] + [WORD_SIZE]
 #define constant START_COMPLETE_PAYMENTS_ARGS_SIZE = [START_COMPLETE_PAYMENTS_TOKEN_OFFSET] + [WORD_SIZE] - [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET_PACKED]
@@ -141,7 +141,7 @@
 #define constant RETURN_DATA_INTEGRATION_FEE_OFFSET = 0xe4
 #define constant LOCKED_SWAP_RETURNDATA_SIZE = 0x40
 
-#define constant SLIPPAGE_CHECK_FAILED_SELECTOR_OFFSET = 0x
+#define constant SLIPPAGE_CHECK_FAILED_SELECTOR_OFFSET = 0x0
 #define constant SLIPPAGE_CHECK_FAILED_CALCULATED_AMOUNT_OFFSET = [SLIPPAGE_CHECK_FAILED_SELECTOR_OFFSET] + [SELECTOR_SIZE]
 #define constant SLIPPAGE_CHECK_FAILED_ARGS_SIZE = [SLIPPAGE_CHECK_FAILED_CALCULATED_AMOUNT_OFFSET] + [WORD_SIZE] - [SLIPPAGE_CHECK_FAILED_SELECTOR_OFFSET]
 
@@ -155,7 +155,7 @@
     [LOCKED_SWAP_FIRST_WORD_OFFSET] calldataload                            // [firstWord]
 
     // Parse `specifiedAmountBytes`
-    dup1 0x byte                                                            // [specifiedAmountBytes, firstWord]
+    dup1 0x0 byte                                                           // [specifiedAmountBytes, firstWord]
 
     // Parse `calculatedAmountThresholdBytes` and compute `calculatedAmountThreshold`
     [LOCKED_SWAP_CALCULATED_AMOUNT_THRESHOLD_OFFSET]                        // [offset, specifiedAmountBytes, firstWord]
@@ -167,7 +167,7 @@
     add                                                                     // [offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
 
     // Parse `specifiedTokenInfo` and recover `specifiedToken`
-    0x                                                                      // [totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
+    0x0                                                                     // [totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
     dup5 0x2 byte                                                           // [specifiedTokenInfo, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
     dup1 0xff gt specifiedKnownLbl jumpi                                    // [specifiedTokenInfo, totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         pop                                                                 // [totalSpecified, offset, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
@@ -183,7 +183,7 @@
     specifiedJoinLbl:                                                       // [offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
 
     // Parse `calculatedTokenInfo` and recover `calculatedToken`
-    0x                                                                      // [totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
+    0x0                                                                     // [totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
     dup7 0x3 byte                                                           // [calculatedTokenInfo, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
     dup1 0xff gt calculatedKnownLbl jumpi                                   // [calculatedTokenInfo, totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
         pop                                                                 // [totalCalculated, offset, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, firstWord]
@@ -217,7 +217,7 @@
     // The token addresses that possibly are written to memory before are assumed
     // to be invalid jump destinations.
     __tablesize(CONFIG_TABLE) __tablestart(CONFIG_TABLE)                    // [tableStart, tableSize, withSqrtRatioLimit | isExactOut, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
-    0x codecopy                                                             // [withSqrtRatioLimit | isExactOut, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
+    0x0 codecopy                                                            // [withSqrtRatioLimit | isExactOut, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
     0x20 mul mload jump                                                     // [remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
 
     noSqrtRatioExactInLbl:                                                  // [remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, offset]
@@ -456,7 +456,7 @@
         dup11 add                                                           // [offset, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
         // Read `additionalHops`
-        dup1 calldataload 0x byte                                           // [additionalHops, offset, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        dup1 calldataload 0x0 byte                                          // [additionalHops, offset, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
         swap1                                                               // [offset, additionalHops, totalSpecified, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, nextSpecifiedAmount, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
@@ -468,7 +468,7 @@
 
         singleHopLbl:                                                       // [nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
             dup3 calldataload                                               // [hopWord, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            dup1 0x byte                                                    // [hopType, hopWord, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            dup1 0x0 byte                                                   // [hopType, hopWord, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
             // Lookup in packed jump table & jump based on `hopType`
             0x2 mul [MAX_ARGS_OFFSET] add                                   // [jumpPackedOffset, hopWord, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -777,7 +777,7 @@
     [SWAP_FORWARD_RETURN_SIZE] [SWAP_FORWARD_RETURN_OFFSET] <callArgs>      // [argsOffset, argsSize, retOffset, retSize]
 
     // ICore#swap_6269342730() or IFlashAccountant#forward(address to)
-    0x [CORE] gas call                                                      // [success]
+    0x0 [CORE] gas call                                                     // [success]
     pop                                                                     // []
 }
 #define macro SWAP_JUMP_TO_NEXT_HOP(deltaOffset) = takes(12) returns(0) {
@@ -788,7 +788,7 @@
     // Negate the delta
     <deltaOffset> mload                                                     // [packedDelta, additionalHops, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     0xf signextend                                                          // [delta, additionalHops, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    0x sub                                                                  // [nextSpecifiedAmount, additionalHops, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    0x0 sub                                                                 // [nextSpecifiedAmount, additionalHops, offset, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     singleHopLbl jump
 }
@@ -799,7 +799,7 @@
     dup8 swap2                                                              // [nextSpecifiedToken, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     <replaceWithWrapper>                                                    // [wrapper, offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    [WRAPPED_TOKEN_TO_OFFSET] mstore                                              // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    [WRAPPED_TOKEN_TO_OFFSET] mstore                                        // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     CALL_TOKEN_WRAPPER()                                                    // [offset, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     swap4                                                                   // [totalCalculated, specifiedToken, remainingMultiHopSwaps, withIntegrationFee, offset, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -819,7 +819,7 @@
 #define macro EXECUTE_WRAPPED_TOKEN_NOT_LAST_WRAPPER_NOT_STORED(replaceWithWrapper) = takes(13) returns(12) {
     // takes: [nextSpecifiedToken, offset, additionalHops, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
     <replaceWithWrapper>                                                    // [wrapper, offset, additionalHops, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    [WRAPPED_TOKEN_TO_OFFSET] mstore                                              // [offset, additionalHops, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    [WRAPPED_TOKEN_TO_OFFSET] mstore                                        // [offset, additionalHops, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 }
 #define macro EXECUTE_WRAPPED_TOKEN_NOT_LAST(storeTo, amountOp) = takes(13) returns(0) {
     // takes: [nextSpecifiedToken, offset, additionalHops, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -835,7 +835,7 @@
     singleHopLbl jump
 }
 #define macro CALL_TOKEN_WRAPPER() = {
-    0x 0x [WRAPPED_TOKEN_ARGS_SIZE] [WRAPPED_TOKEN_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call
+    0x0 0x0 [WRAPPED_TOKEN_ARGS_SIZE] [WRAPPED_TOKEN_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call
     pop
 }
 
@@ -864,14 +864,14 @@
         swap1                                                               // [offset, additionalHops, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
         <hopLength> add                                                     // [offset, additionalHops, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
-        dup1 calldataload 0x byte                                           // [tokenInfo, offset, additionalHops, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        dup1 calldataload 0x0 byte                                          // [tokenInfo, offset, additionalHops, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
         dup1 0xff gt notLastSwapKnownTokenLbl jumpi                         // [tokenInfo, offset, additionalHops, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
             pop                                                             // [offset, additionalHops, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
             // Move the offset to after the token address and load the address
             0x15 add                                                        // [offset, additionalHops, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-            [ADDRESS_SIZE] dup2 sub calldataload 0x60 shr                 // [nextCalculatedToken, offset, additionalHops, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+            [ADDRESS_SIZE] dup2 sub calldataload 0x60 shr                   // [nextCalculatedToken, offset, additionalHops, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
             // Swap specified and calculated token such that they are in the right place for the next iteration
             swap3                                                           // [nextSpecifiedToken, offset, additionalHops, nextCalculatedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
@@ -950,7 +950,7 @@
 
     dup2 <erc20Lbl> jumpi                                                   // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         // Transfer native token to Core
-        0x 0x 0x 0x swap4 [CORE] gas call                                   // [success, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        0x0 0x0 0x0 0x0 swap4 [CORE] gas call                               // [success, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         LOCKED_RETURN()
 }
 #define macro WITHDRAW_EXACT_OUT(afterDup) = takes(5) returns(0) {
@@ -970,7 +970,7 @@
     calldatacopy                                                            // [...]
 
     // IFlashAccountant#withdraw()
-    0x 0x [WITHDRAW_ARGS_SIZE] [WITHDRAW_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call     // [success, ...]
+    0x0 0x0 [WITHDRAW_ARGS_SIZE] [WITHDRAW_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call     // [success, ...]
 }
 
 #define macro PAY_ERC20_EXACT_IN(summand) = takes(5) returns(0) {
@@ -994,8 +994,8 @@
     [START_COMPLETE_PAYMENTS_TOKEN_OFFSET] mstore                           // [...]
 
     // IFlashAccountant#startPayments()
-    0x 0x [START_COMPLETE_PAYMENTS_ARGS_SIZE]                               // [argsSize, retOffset, retSize, ...]
-    [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call     // [success, ...]
+    0x0 0x0 [START_COMPLETE_PAYMENTS_ARGS_SIZE]                             // [argsSize, retOffset, retSize, ...]
+    [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call    // [success, ...]
     pop                                                                     // [...]
 
     <pushOffset>                                                            // [offset, ...]
@@ -1008,7 +1008,7 @@
         [TRANSFER_SELECTOR_OFFSET] mstore                                   // [...]
         [CORE] [TRANSFER_TO_OFFSET] mstore                                  // [...]
 
-        0x 0x [TRANSFER_ARGS_SIZE] [TRANSFER_SELECTOR_OFFSET_PACKED]                   // [argsOffset, argsSize, retOffset, retSize, ...]
+        0x0 0x0 [TRANSFER_ARGS_SIZE] [TRANSFER_SELECTOR_OFFSET_PACKED]      // [argsOffset, argsSize, retOffset, retSize, ...]
 
         transferFromJoinLbl jump
     transferFromLbl:                                                        // [from, ...]
@@ -1018,26 +1018,26 @@
         [TRANSFER_FROM_SELECTOR_OFFSET] mstore                              // [...]
         [CORE] [TRANSFER_FROM_TO_OFFSET] mstore                             // [...]
 
-        0x 0x [TRANSFER_FROM_ARGS_SIZE] [TRANSFER_FROM_SELECTOR_OFFSET_PACKED]         // [argsOffset, argsSize, retOffset, retSize, ...]
+        0x0 0x0 [TRANSFER_FROM_ARGS_SIZE] [TRANSFER_FROM_SELECTOR_OFFSET_PACKED]         // [argsOffset, argsSize, retOffset, retSize, ...]
     transferFromJoinLbl:                                                    // [argsOffset, argsSize, retOffset, retSize, ...]
 
     // IERC20#transfer(address to, uint256 amount) or IERC20#transferFrom(address from, address to, uint256 amount)
-    0x [START_COMPLETE_PAYMENTS_TOKEN_OFFSET] mload gas call                // [success, ...]
+    0x0 [START_COMPLETE_PAYMENTS_TOKEN_OFFSET] mload gas call               // [success, ...]
     pop                                                                     // [...]
 
     __FUNC_SIG("completePayments()")                                        // [selector, ...]
     [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET] mstore                        // [...]
 
     // IFlashAccountant#completePayments()
-    0x 0x [START_COMPLETE_PAYMENTS_ARGS_SIZE]                               // [argsSize, retOffset, retSize, ...]
-    [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call     // [success, ...]
+    0x0 0x0 [START_COMPLETE_PAYMENTS_ARGS_SIZE]                             // [argsSize, retOffset, retSize, ...]
+    [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call    // [success, ...]
 }
 #define macro PAY_EXACT_OUT(erc20Lbl, transferFromOffset, refundDoneLbl) = takes(7) returns(0) {
     // takes: [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     dup2 <erc20Lbl> jumpi                                                   // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         // Transfer native token to Core
-        0x 0x 0x 0x swap4 [CORE] gas call                                   // [success, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+        0x0 0x0 0x0 0x0 swap4 [CORE] gas call                               // [success, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         pop pop                                                             // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
         // Refund potential remaining balance to the caller
@@ -1046,13 +1046,13 @@
 
         <refundDoneLbl> jumpi                                               // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
             // Transfer remaining balance
-            0x 0x 0x 0x selfbalance                                         // [value, argsOffset, argsSize, retOffset, retSize, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            0x0 0x0 0x0 0x0 selfbalance                                     // [value, argsOffset, argsSize, retOffset, retSize, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
             dup8 <transferFromOffset> add calldataload                      // [refundee, value, argsOffset, argsSize, retOffset, retSize, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
             gas call                                                        // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
             <refundDoneLbl> jumpi                                           // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-                __ERROR(NativeTransferFailed) 0x mstore                     // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-                0x4 0x revert
+                __ERROR(NativeTransferFailed) 0x0 mstore                    // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+                0x4 0x0 revert
 }
 
 #define macro ADD_CALCULATED_EXACT_IN() = {
@@ -1081,7 +1081,7 @@
 #define macro STORE_RETURN_DATA_NO_INTEGRATION_FEE() = {
     // takes: [totalCalculated, ...]
     STORE_CALCULATED_AMOUNT()                                               // [...]
-    0x [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                          // [...]
+    0x0 [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                         // [...]
 }
 #define macro STORE_CALCULATED_AMOUNT() = {
     // takes: [amount, ...]
@@ -1106,11 +1106,11 @@
     dup1 [RETURN_DATA_INTEGRATION_FEE_OFFSET] mstore                        // [integratorShare, total, token, ...]
 
     dup1 [SAVE_AMOUNT0_OFFSET] mstore                                       // [integratorShare, total, token, ...]
-    0x [SAVE_AMOUNT1_OFFSET] mstore                                         // [integratorShare, total, token, ...]
+    0x0 [SAVE_AMOUNT1_OFFSET] mstore                                        // [integratorShare, total, token, ...]
     swap1 sub                                                               // [remaining, token, ...]
 
     // ICore#updateSavedBalances(address token0, address token1, bytes32 salt, int256 delta0, int256 delta1)
-    0x 0x [SAVE_ARGS_SIZE] [SAVE_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call // [success, remaining, token, ...]
+    0x0 0x0 [SAVE_ARGS_SIZE] [SAVE_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call // [success, remaining, token, ...]
     pop                                                                     // [remaining, token, ...]
 }
 
@@ -1130,13 +1130,13 @@
 
 #define macro TOKEN0_NOT_IN_MEMORY() = {
     // takes: [offset, additionalHops, nextCalculatedToken, ...]
-    dup3 [SWAP_FORWARD_TOKEN0_OFFSET] mstore                                        // [offset, additionalHops, nextCalculatedToken, ...]
+    dup3 [SWAP_FORWARD_TOKEN0_OFFSET] mstore                                // [offset, additionalHops, nextCalculatedToken, ...]
 }
 
 #define macro STORE_KNOWN_TOKEN(offset) = {
     // takes: [tokenId]
-    [ADDRESS_SIZE] mul                                                    // [tokenOffset, ...]
-    [ADDRESS_SIZE] swap1                                                  // [tokenOffset, addressLength, ...]
+    [ADDRESS_SIZE] mul                                                      // [tokenOffset, ...]
+    [ADDRESS_SIZE] swap1                                                    // [tokenOffset, addressLength, ...]
     __tablestart(TOKENS) add                                                // [tokenLocation, addressLength, ...]
 
     <offset> codecopy                                                       // [...]
@@ -1145,14 +1145,14 @@
 
 #define macro NEG() = {
     // takes: [number, ...]
-    0x sub                                                                  // [negated, ...]
+    0x0 sub                                                                 // [negated, ...]
 }
 
 #define macro STORE_SWAP_SELECTOR() = takes(0) returns(0) {
-    [SWAP_SELECTOR] [SWAP_SELECTOR_OFFSET] mstore                                                           // [...]
+    [SWAP_SELECTOR] [SWAP_SELECTOR_OFFSET] mstore                           // [...]
 }
 #define macro STORE_FORWARD_SELECTOR() = takes(0) returns(0) {
-    [FORWARD_SELECTOR_PACKED] [FORWARD_SELECTOR_OFFSET_PACKED] mstore                    // [...]
+    [FORWARD_SELECTOR_PACKED] [FORWARD_SELECTOR_OFFSET_PACKED] mstore       // [...]
 }
 #define macro STORE_WRAPPED_TOKEN_SELECTOR() = takes(0) returns(0) {
     [WRAPPED_TOKEN_SELECTOR] [WRAPPED_TOKEN_SELECTOR_OFFSET] mstore
@@ -1161,7 +1161,7 @@
 #define macro WITH_SQRT_RATIO_LIMIT_IS_TOKEN0() = takes(1) returns (1) {
     // takes: [offset, ...]
     [SQRT_RATIO_SIZE] dup2 [SWAP_FORWARD_SQRT_RATIO_LIMIT_OFFSET_PACKED] calldatacopy             // [offset, ...]
-    [SQRT_RATIO_SIZE] add                                                                 // [offset, ...]
+    [SQRT_RATIO_SIZE] add                                                   // [offset, ...]
 
     // `isToken1` already written by write of `amount` and/or `skipAhead`
 }
@@ -1170,7 +1170,7 @@
     WITH_SQRT_RATIO_LIMIT_IS_TOKEN0()                                       // [offset, ...]
 
     __tablesize(IS_TOKEN1_TRUE) __tablestart(IS_TOKEN1_TRUE)                // [tablestart, tablesize, offset, ...]
-    [SWAP_FORWARD_IS_TOKEN1_OFFSET_PACKED] codecopy                                        // [offset, ...]
+    [SWAP_FORWARD_IS_TOKEN1_OFFSET_PACKED] codecopy                         // [offset, ...]
 }
 
 #define macro WITHOUT_SQRT_RATIO_LIMIT_IS_TOKEN1_EXACT_IN() = takes(0) returns(0) {
@@ -1199,8 +1199,8 @@
 }
 #define macro WITHOUT_SQRT_RATIO_LIMIT_IS_TOKEN0(tablestart) = takes(0) returns(0) {
     [SQRT_RATIO_SIZE]
-    <tablestart>                                          // [tablestart, size]
-    [SWAP_FORWARD_SQRT_RATIO_LIMIT_OFFSET_PACKED] codecopy                          // []
+    <tablestart>                                                            // [tablestart, size]
+    [SWAP_FORWARD_SQRT_RATIO_LIMIT_OFFSET_PACKED] codecopy                  // []
 
     // `isToken1` is alreay 0 due to writing `amount` and/or `skipAhead` before
 }
@@ -1220,7 +1220,7 @@
     0x1 byte                                                                // [skipAhead, nextSpecifiedAmountShifted, hopWord, ...]
 
     or                                                                      // [partialSwapParams, hopWord, ...]
-    [SWAP_FORWARD_PARAMS_OFFSET] mstore                                             // [hopWord, ...]
+    [SWAP_FORWARD_PARAMS_OFFSET] mstore                                     // [hopWord, ...]
 }
 #define macro STORE_AMOUNT_AND_SKIP_AHEAD_DONT_PRESERVE_WORD() = takes(2) returns(0) {
     // takes: [hopWord, nextSpecifiedAmount, ...]
@@ -1230,7 +1230,7 @@
     SHIFT_SWAP_PARAMS_AMOUNT()                                              // [nextSpecifiedAmountShifted, skipAhead, ...]
 
     or                                                                      // [partialSwapParams, ...]
-    [SWAP_FORWARD_PARAMS_OFFSET] mstore                                             // [...]
+    [SWAP_FORWARD_PARAMS_OFFSET] mstore                                     // [...]
 }
 
 #define macro PUSH_SWAP_CALL_OFFSET_AND_LENGTH() = {
@@ -1242,7 +1242,7 @@
 
 #define table SAVE_DATA {
     [UPDATE_SAVED_BALANCES_SELECTOR]                                        // selector
-    __LEFTPAD(0x)                                                           // token0 (will be filled in)
+    __LEFTPAD(0x0)                                                          // token0 (will be filled in)
     __LEFTPAD(0xffffffffffffffffffffffffffffffffffffffff)                   // token1 (the highest address possible, such that token0 will always be valid)
     0x000000000000000000000000                                              // salt (clears the unused upper 12 bytes, lower 20 bytes will be the integrator's address)
 }

@@ -2,7 +2,7 @@
 /// @author Die Herdplatte <https://github.com/die-herdplatte>
 /// @notice A hyper gas-efficient, yet highly configurable, router for executing actions on Ekubo
 ///
-/// Compiled with hnc 1.5.7 (rev: ca73d172)
+/// Compiled with hnc 1.5.12 (rev: 37f8ea83)
 ///
 /// General comments:
 /// - Offsets suffixed with "_PACKED" indicate that the offset marks the first byte in the input containing the non-padded data
@@ -47,7 +47,7 @@
     // We must ensure that the zero offset isn't a valid jump destination
     __ASSERT_PC(0x0)                                                        // []
 
-    0x calldataload                                                         // [firstWord]
+    0x0 calldataload                                                        // [firstWord]
 
     // The selector of "locked_6416899205(uint256 id)" and the first 224 bits of the
     // arguments are (in any practical case) 0, hence simplifying this check.
@@ -55,17 +55,17 @@
     // mean that a swap on a pool with token0 == token1 should happen.
     iszero lockedLbl jumpi                                                  // []
 
-    0x calldataload                                                         // [firstWord]
+    0x0 calldataload                                                        // [firstWord]
 
     // Also won't collide with any generated calldata from the SDK due to the
     // first byte being either 0 or 1.
-    0x byte                                                                 // [firstByte]
+    0x0 byte                                                                // [firstByte]
     [CLAIM_INTEGRATION_FEES_SELECTOR_FIRST_BYTE] eq lockClaimLbl jumpi      // []
         LOCK_SWAP()
     lockedLbl:                                                              // []
         CORE_CHECK()                                                        // []
 
-        [LOCKED_CALL_TYPE_OFFSET] calldataload 0x byte                      // [callType]
+        [LOCKED_CALL_TYPE_OFFSET] calldataload 0x0 byte                     // [callType]
         lockedClaimLbl jumpi                                                // []
             LOCKED_SWAP()
         lockedClaimLbl:                                                     // []
@@ -76,7 +76,7 @@
 
 #define macro CORE_CHECK() = takes(0) returns(0) {
     caller [CORE] eq coreCallerLbl jumpi                                    // []
-        __ERROR(CoreOnly) 0x mstore                                         // []
-        [SELECTOR_SIZE] 0x revert
+        __ERROR(CoreOnly) 0x0 mstore                                        // []
+        [SELECTOR_SIZE] 0x0 revert
     coreCallerLbl:                                                          // []
 }

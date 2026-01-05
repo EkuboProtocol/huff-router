@@ -1,20 +1,14 @@
 [profile.default]
-solc = "0.8.31"
+solc = "0.8.33"
 evm_version = "osaka"
-
-optimizer = true
-optimizer_runs = 9999999
-
-bytecode_hash = "none"
-cbor_metadata = false
 
 ffi = true                                                      # Necessary for the HuffNeoDeployer
 fs_permissions = [
     { access = "read", path = "../tokens/"},                    # Shared token lists
     { access = "write", path = "src/locked/tokens.huff" },      # Processed token list for deployment
+    { access = "read", path = "v3-artifacts/" }                 # Deployment artifacts for the Ekubo v3 contracts
 ]
-via-ir = true
-always_use_create_2_factory = true                              # To be able to reproduce the deployments of Ekubo contracts
+via_ir = true
 
 [fmt]
 sort_imports = true

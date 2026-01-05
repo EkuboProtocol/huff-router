@@ -4,20 +4,13 @@ pragma solidity ^0.8.30;
 import {HyperRouterLib, IHyperRouter} from "../src/HyperRouter.sol";
 import {CORE_ADDRESS, MEV_CAPTURE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS} from "../src/addresses.sol";
 
-import {findExtensionSalt} from "ekubo-script/DeployCore.s.sol";
-import {Core} from "ekubo/Core.sol";
 import {Positions} from "ekubo/Positions.sol";
-import {TokenWrapper} from "ekubo/TokenWrapper.sol";
-import {MEVCapture, mevCaptureCallPoints} from "ekubo/extensions/MEVCapture.sol";
-import {Oracle, oracleCallPoints} from "ekubo/extensions/Oracle.sol";
-import {TWAMM, twammCallPoints} from "ekubo/extensions/TWAMM.sol";
 import {ICore} from "ekubo/interfaces/ICore.sol";
 import {IPositions} from "ekubo/interfaces/IPositions.sol";
 import {CoreLib} from "ekubo/libraries/CoreLib.sol";
 import {CoreStorageLayout} from "ekubo/libraries/CoreStorageLayout.sol";
 import {NATIVE_TOKEN_ADDRESS} from "ekubo/math/constants.sol";
-import {CallPoints} from "ekubo/types/callPoints.sol";
-import {PoolConfig, createFullRangePoolConfig} from "ekubo/types/poolConfig.sol";
+import {PoolConfig} from "ekubo/types/poolConfig.sol";
 import {PoolKey} from "ekubo/types/poolKey.sol";
 import {StorageSlot} from "ekubo/types/storageSlot.sol";
 import {Test} from "forge-std/Test.sol";
@@ -92,55 +85,32 @@ contract HyperRouterTest is Test {
     uint256 private constant _MINIMAL_CALLDATA_LENGTH = 10;
 
     IHyperRouter private hyperRouter;
-    ICore private core;
+    ICore private constant CORE = ICore(CORE_ADDRESS);
     IPositions private positions;
-
-    address private oracle;
-    address private twamm;
-    address private mevCapture;
 
     // TODO Also sync with SDK
     address private constant _ERC_20_FIRST_ADDRESS = 0x1111111111111111111111111111111111111111;
     address private constant _ERC_20_SECOND_ADDRESS = 0x2222222222222222222222222222222222222222;
     address private constant _TOKEN_WRAPPER_ADDRESS = 0x3333333333333333333333333333333333333333;
 
-    bytes32 private constant _CREATE2_SALT = 0;
-
     function setUp() public {
         hyperRouter = HyperRouterLib.deploy(vm);
 
-        core = new Core{salt: _CREATE2_SALT}();
-        positions = new Positions(core, address(this), 0, 1);
+        deployCodeTo("v3-artifacts/Core.json", CORE_ADDRESS);
+        deployCodeTo("v3-artifacts/MEVCapture.json", abi.encode(CORE_ADDRESS), MEV_CAPTURE_ADDRESS);
+        deployCodeTo("v3-artifacts/Oracle.json", abi.encode(CORE_ADDRESS), ORACLE_ADDRESS);
+        deployCodeTo("v3-artifacts/TWAMM.json", abi.encode(CORE_ADDRESS), TWAMM_ADDRESS);
 
-        oracle = address(new Oracle{salt: _findExtensionSalt(type(Oracle).creationCode, oracleCallPoints())}(core));
-        twamm = address(new TWAMM{salt: _findExtensionSalt(type(TWAMM).creationCode, twammCallPoints())}(core));
-        mevCapture = address(
-            new MEVCapture{salt: _findExtensionSalt(type(MEVCapture).creationCode, mevCaptureCallPoints())}(core)
+        positions = new Positions(CORE, address(this), 0, 1);
+
+        deployCodeTo("HyperRouter.t.sol:TestToken", _ERC_20_FIRST_ADDRESS);
+        deployCodeTo("HyperRouter.t.sol:TestToken", _ERC_20_SECOND_ADDRESS);
+
+        deployCodeTo(
+            "v3-artifacts/TokenWrapper.json",
+            abi.encode(CORE, _ERC_20_FIRST_ADDRESS, block.timestamp),
+            _TOKEN_WRAPPER_ADDRESS
         );
-
-        bytes memory tokenCode = address(new TestToken()).code;
-        vm.etch(_ERC_20_FIRST_ADDRESS, tokenCode);
-        vm.etch(_ERC_20_SECOND_ADDRESS, tokenCode);
-
-        vm.etch(
-            _TOKEN_WRAPPER_ADDRESS, address(new TokenWrapper(core, IERC20(_ERC_20_FIRST_ADDRESS), block.timestamp)).code
-        );
-    }
-
-    function test_DeploymentAddresses() external view {
-        assertEq(address(core), CORE_ADDRESS, "Core");
-        assertEq(oracle, ORACLE_ADDRESS, "Oracle");
-        assertEq(twamm, TWAMM_ADDRESS, "TWAMM");
-        assertEq(mevCapture, MEV_CAPTURE_ADDRESS, "MEVCapture");
-    }
-
-    function _findExtensionSalt(bytes memory creationCode, CallPoints memory callPoints)
-        private
-        view
-        returns (bytes32 salt)
-    {
-        bytes32 initCodeHash = keccak256(abi.encodePacked(creationCode, abi.encode(core)));
-        salt = findExtensionSalt(_CREATE2_SALT, initCodeHash, callPoints);
     }
 
     modifier disableReceive() {
@@ -372,13 +342,13 @@ contract HyperRouterTest is Test {
 
     function _accrueIntegrationFees(address token) private {
         if (token == NATIVE_TOKEN_ADDRESS) {
-            deal(address(core), _INTEGRATION_FEE_AMOUNT);
+            deal(address(CORE), _INTEGRATION_FEE_AMOUNT);
         } else {
-            deal(token, address(core), _INTEGRATION_FEE_AMOUNT);
+            deal(token, address(CORE), _INTEGRATION_FEE_AMOUNT);
         }
 
         vm.store(
-            address(core),
+            address(CORE),
             StorageSlot.unwrap(
                 CoreStorageLayout.savedBalancesSlot(
                     address(hyperRouter), token, address(type(uint160).max), bytes32(uint256(uint160(address(this))))
@@ -425,7 +395,7 @@ contract HyperRouterTest is Test {
     }
 
     function _unclaimedIntegrationFees(address owner, address token) private view returns (uint128 balance) {
-        (balance,) = core.savedBalances(
+        (balance,) = CORE.savedBalances(
             address(hyperRouter), token, address(type(uint160).max), bytes32(uint256(uint160(owner)))
         );
     }
@@ -442,15 +412,15 @@ contract HyperRouterTest is Test {
             if (token == _TOKEN_WRAPPER_ADDRESS) {
                 deal(
                     _ERC_20_FIRST_ADDRESS,
-                    address(core),
-                    IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(core)) + amount
+                    address(CORE),
+                    IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(CORE)) + amount
                 );
 
                 (uint128 balance,) =
-                    core.savedBalances(_TOKEN_WRAPPER_ADDRESS, _ERC_20_FIRST_ADDRESS, address(type(uint160).max), 0);
+                    CORE.savedBalances(_TOKEN_WRAPPER_ADDRESS, _ERC_20_FIRST_ADDRESS, address(type(uint160).max), 0);
 
                 vm.store(
-                    address(core),
+                    address(CORE),
                     StorageSlot.unwrap(
                         CoreStorageLayout.savedBalancesSlot(
                             _TOKEN_WRAPPER_ADDRESS, _ERC_20_FIRST_ADDRESS, address(type(uint160).max), 0

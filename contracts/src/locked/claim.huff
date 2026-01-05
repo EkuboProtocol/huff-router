@@ -5,7 +5,7 @@
 #define constant LOCKED_CLAIM_INPUT_NON_TOKENS_SIZE = [LOCKED_CLAIM_INPUT_INTEGRATOR_OFFSET]
 
 // `keccak256` offsets for saved balance slot calculation & ICore#updateSavedBalances(address token0, address token1, bytes32 salt, int256 delta0, int256 delta1)
-#define constant LOCKED_CLAIM_KECCAK_OWNER_UPDATE_SAVED_BALANCES_SELECTOR_OFFSET = 0x
+#define constant LOCKED_CLAIM_KECCAK_OWNER_UPDATE_SAVED_BALANCES_SELECTOR_OFFSET = 0x0
 #define constant LOCKED_CLAIM_KECCAK_UPDATE_SAVED_BALANCES_TOKEN0_OFFSET = [LOCKED_CLAIM_KECCAK_OWNER_UPDATE_SAVED_BALANCES_SELECTOR_OFFSET] + [WORD_SIZE]
 #define constant LOCKED_CLAIM_KECCAK_UPDATE_SAVED_BALANCES_TOKEN1_OFFSET = [LOCKED_CLAIM_KECCAK_UPDATE_SAVED_BALANCES_TOKEN0_OFFSET] + [WORD_SIZE]
 #define constant LOCKED_CLAIM_KECCAK_UPDATE_SAVED_BALANCES_SALT_OFFSET = [LOCKED_CLAIM_KECCAK_UPDATE_SAVED_BALANCES_TOKEN1_OFFSET] + [WORD_SIZE]
@@ -87,13 +87,13 @@
         dup1 dup5 [LOCKED_CLAIM_OUTPUT_INPUT_TOKEN_OFFSET_DIFF] add mstore                                              // [savedBalance, token, remainingTokens, tokenOffset]
 
         // ICore#updateSavedBalances expects the loads of saved balances to have a negative sign
-        0x sub                                                                                                          // [delta0, token, remainingTokens, tokenOffset]
+        0x0 sub                                                                                                         // [delta0, token, remainingTokens, tokenOffset]
 
         // Load the saved balance
         [UPDATE_SAVED_BALANCES_SELECTOR] [LOCKED_CLAIM_KECCAK_OWNER_UPDATE_SAVED_BALANCES_SELECTOR_OFFSET] mstore       // [delta0, token, remainingTokens, tokenOffset]
         [LOCKED_CLAIM_UPDATE_SAVED_BALANCES_DELTA0_OFFSET] mstore                                                       // [token, remainingTokens, tokenOffset]
-        0x 0x [LOCKED_CLAIM_UPDATE_SAVED_BALANCES_ARGS_SIZE]                                                            // [argsSize, retOffset, retSize, token, remainingTokens, tokenOffset]
-        [LOCKED_CLAIM_UPDATE_SAVED_BALANCES_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call                                  // [success, token, remainingTokens, tokenOffset]
+        0x0 0x0 [LOCKED_CLAIM_UPDATE_SAVED_BALANCES_ARGS_SIZE]                                                          // [argsSize, retOffset, retSize, token, remainingTokens, tokenOffset]
+        [LOCKED_CLAIM_UPDATE_SAVED_BALANCES_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call                                 // [success, token, remainingTokens, tokenOffset]
 
         // If this fails and we still withdraw the amount, Core's flash accounting will revert
         // after returning from this lock
@@ -102,7 +102,7 @@
         // Withdraw the saved balance to the integrator
         [LOCKED_CLAIM_WITHDRAW_TOKEN_OFFSET] mstore                                                                     // [remainingTokens, tokenOffset]
         [WITHDRAW_SELECTOR] [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET] mstore                                              // [remainingTokens, tokenOffset]
-        0x 0x [LOCKED_CLAIM_WITHDRAW_ARGS_SIZE] [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET_PACKED] 0x [CORE] gas call       // [success, remainingTokens, tokenOffset]
+        0x0 0x0 [LOCKED_CLAIM_WITHDRAW_ARGS_SIZE] [LOCKED_CLAIM_WITHDRAW_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call    // [success, remainingTokens, tokenOffset]
 
         // Would be caught by Core's flash accounting
         pop                                                                                                             // [remainingTokens, tokenOffset]
