@@ -22,37 +22,44 @@ library HyperRouterLib {
     }
 
     string private constant _TOKENS_FILE_NAME = "src/locked/tokens.huff";
+    string private constant _ENTRY_POINT_FILE_NAME = "src/HyperRouter.huff";
+
+    function initcodeSize(VmSafe vm) internal returns (uint256) {
+        return _config(vm).creation_code_with_args(_ENTRY_POINT_FILE_NAME).length;
+    }
 
     // TODO --relax-jumps
     function deploy(VmSafe vm) internal returns (IHyperRouter) {
-        // We don't use HuffNeoDeployer because of https://github.com/foundry-rs/foundry/issues/6215
-        HuffNeoConfig config = new HuffNeoConfig().set_broadcast(true).with_addr_constant("CORE", CORE_ADDRESS)
-            .with_addr_constant("ORACLE", ORACLE_ADDRESS).with_addr_constant("TWAMM", TWAMM_ADDRESS)
-            .with_addr_constant("MEV_CAPTURE", MEV_CAPTURE_ADDRESS);
-
-        string memory jsonContents = vm.readFile(string.concat("../tokens/", vm.toString(block.chainid), ".json"));
-
-        config = _setTokens(vm, abi.decode(vm.parseJson(jsonContents), (address[])), config);
-
-        return IHyperRouter(config.deploy("src/HyperRouter.huff"));
+        return IHyperRouter(_config(vm).deploy(_ENTRY_POINT_FILE_NAME));
     }
 
     function decodeSwapReturndata(bytes memory data) internal pure returns (SwapReturndata memory returndata) {
         returndata = abi.decode(data, (SwapReturndata));
     }
 
-    function _setTokens(VmSafe vm, address[] memory tokens, HuffNeoConfig config) private returns (HuffNeoConfig) {
+    function _config(VmSafe vm) private returns (HuffNeoConfig) {
+        // We don't use HuffNeoDeployer because of https://github.com/foundry-rs/foundry/issues/6215
+        HuffNeoConfig cfg = new HuffNeoConfig().set_broadcast(true).with_addr_constant("CORE", CORE_ADDRESS)
+            .with_addr_constant("ORACLE", ORACLE_ADDRESS).with_addr_constant("TWAMM", TWAMM_ADDRESS)
+            .with_addr_constant("MEV_CAPTURE", MEV_CAPTURE_ADDRESS);
+
+        string memory jsonContents = vm.readFile(string.concat("../tokens/", vm.toString(block.chainid), ".json"));
+
+        return _setTokens(vm, abi.decode(vm.parseJson(jsonContents), (address[])), cfg);
+    }
+
+    function _setTokens(VmSafe vm, address[] memory tokens, HuffNeoConfig cfg) private returns (HuffNeoConfig) {
         string memory data = "#define table TOKENS {";
         for (uint256 i = 0; i < tokens.length; i++) {
             string memory constantName = string.concat("TOKEN_", vm.toString(i));
 
             data = string.concat(data, "    [", constantName, "]");
-            config = config.with_addr_constant(constantName, tokens[i]);
+            cfg = cfg.with_addr_constant(constantName, tokens[i]);
         }
         data = string.concat(data, "}");
 
         vm.writeFile(_TOKENS_FILE_NAME, string.concat(data));
 
-        return config;
+        return cfg;
     }
 }

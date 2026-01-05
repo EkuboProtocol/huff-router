@@ -125,13 +125,8 @@ contract HyperRouterTest is Test {
         }
     }
 
-    function test_ContractSize() external view {
-        address hyperRouterAddr = address(hyperRouter);
-        uint256 codeSize;
-        assembly ("memory-safe") {
-            codeSize := extcodesize(hyperRouterAddr)
-        }
-
+    function test_ContractSize() external {
+        uint256 codeSize = HyperRouterLib.initcodeSize(vm);
         console.log(codeSize);
 
         assertLe(codeSize, _MAX_CODE_SIZE);
