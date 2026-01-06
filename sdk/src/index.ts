@@ -2,7 +2,7 @@ import { Address, Hex } from "viem";
 import { generateCalldataImpl } from "./impl";
 
 export const DEPLOYMENTS: Map<bigint, Address> = new Map([
-  [1n, "0xd906C89cFc36aa668a9cABD2e7387EeF1Ea999Ff"],
+  [1n, "0x4F168f17923435c999f5C8565ACAb52C2218EdF2"],
 ]);
 
 /**
