@@ -3,6 +3,7 @@ import { generateCalldataImpl } from "./impl";
 
 export const DEPLOYMENTS: Map<bigint, Address> = new Map([
   [1n, "0x4F168f17923435c999f5C8565ACAb52C2218EdF2"],
+  [42161n, "0xC93C4Ad185CA48d66FEfe80f906a67ef859fc47d"],
 ]);
 
 /**
