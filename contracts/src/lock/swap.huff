@@ -1,0 +1,171 @@
+#define constant LOCK_SWAP_SELECTOR_OFFSET_PACKED = 0x0
+#define constant LOCK_SWAP_RETURNDATA_OFFSET = 0x0
+
+#define constant LOCK_SWAP_WITH_RECIPIENT_SIZE = 0x1
+#define constant LOCK_SWAP_SPECIFIED_AMOUNT_BYTES_SIZE = 0x1
+#define constant LOCK_SWAP_CALCULATED_AMOUNT_THRESHOLD_BYTES_SIZE = 0x1
+#define constant LOCK_SWAP_SPECIFIED_TOKEN_INFO_SIZE = 0x1
+#define constant LOCK_SWAP_CALCULATED_TOKEN_INFO_SIZE = 0x1
+#define constant LOCK_SWAP_ADDITIONAL_MULTI_HOPS_SIZE = 0x1
+#define constant LOCK_SWAP_WITH_INTEGRATION_FEE_SIZE = 0x1
+#define constant LOCK_SWAP_WITH_SQRT_RATIO_LIMIT_IS_EXACT_OUT_SIZE = 0x1
+#define constant LOCK_SWAP_ADDITIONAL_HOPS_SIZE = 0x1
+#define constant LOCK_SWAP_HOP_TYPE_SIZE = 0x1
+#define constant LOCK_SWAP_TRANSFER_FROM_SIZE = [WORD_SIZE]
+
+#define constant LOCK_SWAP_MINIMUM_CALLDATA_SIZE = [LOCK_SWAP_WITH_RECIPIENT_SIZE] + [LOCK_SWAP_SPECIFIED_AMOUNT_BYTES_SIZE]
+    + [LOCK_SWAP_CALCULATED_AMOUNT_THRESHOLD_BYTES_SIZE] + [LOCK_SWAP_WITH_INTEGRATION_FEE_SIZE]
+    + [LOCK_SWAP_SPECIFIED_TOKEN_INFO_SIZE] + [LOCK_SWAP_CALCULATED_TOKEN_INFO_SIZE]
+    + [LOCK_SWAP_ADDITIONAL_MULTI_HOPS_SIZE] + [LOCK_SWAP_WITH_SQRT_RATIO_LIMIT_IS_EXACT_OUT_SIZE]
+    + [LOCK_SWAP_ADDITIONAL_HOPS_SIZE] + [LOCK_SWAP_HOP_TYPE_SIZE]
+
+// Padding to avoid overriding the selector with the recipient (must be positive)
+#define constant LOCK_SWAP_PADDING = [ADDRESS_SIZE] - ([LOCK_SWAP_MINIMUM_CALLDATA_SIZE] + [SELECTOR_SIZE])
+#define constant LOCK_SWAP_CALLDATA_PREFIX = [SELECTOR_SIZE] + [LOCK_SWAP_PADDING]
+#define constant LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET = [LOCK_SWAP_SELECTOR_OFFSET_PACKED] + [LOCK_SWAP_CALLDATA_PREFIX]
+
+// Offset is subtracted from `calldatasize` and should be positive
+#define constant LOCK_SWAP_RECIPIENT_CALLDATASIZE_OFFSET = [PACKED_ADDRESS_OFFSET] - [LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET]
+
+#define constant LOCK_SWAP_TRANSFER_FROM_WITH_RECIPIENT_CALLDATASIZE_OFFSET = [LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET]
+#define constant LOCK_SWAP_TRANSFER_FROM_NO_RECIPIENT_CALLDATASIZE_OFFSET = [LOCK_SWAP_TRANSFER_FROM_WITH_RECIPIENT_CALLDATASIZE_OFFSET] + [ADDRESS_SIZE]
+
+#define constant LOCK_SWAP_ADDITIONAL_ARGS_WITH_RECIPIENT_SIZE = [LOCK_SWAP_CALLDATA_PREFIX] + [LOCK_SWAP_TRANSFER_FROM_SIZE]
+#define constant LOCK_SWAP_ADDITIONAL_ARGS_NO_RECIPIENT_SIZE = [LOCK_SWAP_ADDITIONAL_ARGS_WITH_RECIPIENT_SIZE] + [ADDRESS_SIZE]
+
+/// @notice Entrypoint of the swap routine which prepares and executes the call to IFlashAccountant#lock.
+///
+/// `withRecipient` (1 byte `bool`)
+/// Whether the output (after possibly deducting integration fees) should be sent
+/// to an address different from the caller.
+///
+/// `specifiedAmountBytes` (1 byte unsigned integer, <= 16)
+/// The length of the `specifiedAmount`s of each multi-hop in bytes.
+///
+/// `calculatedAmountThresholdBytes` (1 byte `uint8`, <= 32)
+/// The length of `calculatedAmountThreshold` in bytes.
+///
+/// `specifiedTokenInfo` (1 byte)
+/// Describes the input token of the multihops:
+/// 0x00 - 0xfe := Token address stored at the given index in the `TOKENS` table
+/// 0xff := Token address is passed in the calldata
+///
+/// `calculatedTokenInfo` (1 byte)
+/// Analogous to `specifiedTokenInfo`.
+///
+/// `additionalMultiHops` (1 byte `uint8`)
+/// How many more multihops are encoded besides the mandotary one.
+///
+/// `withIntegrationFee` (1 byte `bool`)
+/// Whether a share of the output will be distributed to a given integrator.
+///
+/// `withSqrtRatioLimit` | `isExactOut` (1 bit `bool` | 1 bit `bool`, left-padded)
+/// Whether swaps are encoded with a custom sqrt ratio limit and
+/// whether the route is exact-out.
+///
+/// `calculatedAmountThreshold` (variable length unsigned integer, up to 32 bytes)
+/// How much the last hops of each multi-hop need to return in total at minimum for the call to succeed.
+///
+/// `specifiedTokenAddress` (20 bytes `address`, optional as per `specifiedTokenInfo`)
+/// The address of the input token of the multihops.
+///
+/// `calculatedTokenAddress` (20 bytes `address`, optional as per `calculatedTokenInfo`)
+/// Analogous to `specifiedTokenAddress`.
+///
+/// Per multi-hop:
+///
+/// `specifiedAmount` (variable length unsigned integer up to 16 bytes, determined by `specifiedAmountBytes`)
+/// The specified amount of the first hop.
+///
+/// `additionalHops` (1 byte unsigned integer)
+/// How many more hops are encoded in this multi-hop besides the mandatory one.
+///
+/// Per hop:
+///
+/// `hopType` (1 byte)
+/// Describes the extension of this hop's pool:
+/// 0x00 := Base extension
+/// 0x01 := Oracle extension
+/// 0x02 := TWAMM extension
+/// 0x03 := MEV-capture extension
+/// 0x04 := Pool config is passed in the calldata
+/// 0x05 := Wrapped token
+///
+/// `hopInfo` (variable)
+/// Depending on `hopType`:
+/// Base => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | poolTypeConfig (4 bytes `bytes4`)
+/// Oracle => empty (0 bytes)
+/// TWAMM => fee (8 bytes `uint64`)
+/// MEV-capture => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | poolTypeConfig (4 bytes `bytes4`)
+/// Unknown extension => skipAhead (1 byte `uint8`) | extension (20 bytes `address`) | fee (8 bytes `uint64`) | poolTypeConfig (4 bytes `bytes4`)
+/// Wrapped token => call type (1 byte)
+///
+/// `tokenInfo` (1 byte, for all but the last hop in a multi-hop)
+/// Describes the output token of this hop:
+/// [0x00, 0xfe] := Token address stored at the given index in the `TOKENS` table
+/// 0xff := Token address is passed in the calldata
+///
+/// `tokenAddress` (20 bytes `address`, optional as per `tokenInfo` and only for hops that are not the last hop of a multi-hop)
+/// The address of the output token of this hop.
+///
+/// `sqrtRatioLimit` (12 bytes `uint96`, optional as per `withSqrtRatioLimit` and only for swaps)
+/// The price limit of the swap.
+///
+/// After the hop data:
+///
+/// `feeShare` | `feeRecipient` (2 bytes 0.16 fixed point number | 20 bytes `address`, optional as per `withIntegrationFee`)
+/// The integrator address as well as the share that the integrator receives from the output.
+/// Fees are `save`d for the `feeRecipient` in Core.
+///
+/// `recipient` (20 bytes `address`, optional as per `withRecipient`)
+/// Adress of the account that receives the output (after possibly deducting integration fees).
+/// If `withRecipient == false`, this will be filled in here.
+#define macro LOCK_SWAP() = takes(0) returns(0) {
+    [LOCK_SELECTOR_PACKED] [LOCK_SWAP_SELECTOR_OFFSET_PACKED] mstore            // []
+
+    // Load `withRecipient`
+    0x0 calldataload 0x0 byte                                                   // [withRecipient]
+
+    // If `withRecipient == true`, the recipient is already stored in the calldata
+    withRecipientLbl jumpi                                                      // []
+        caller                                                                  // [recipient]
+
+        // Store the packed recipient right after the calldata
+        [LOCK_SWAP_RECIPIENT_CALLDATASIZE_OFFSET] calldatasize sub              // [recipientOffset, recipient]
+        mstore                                                                  // []
+
+        LOCK_SWAP_1(false)
+    withRecipientLbl:                                                           // []
+        LOCK_SWAP_1(true)
+}
+
+#define macro LOCK_SWAP_1(withRecipient) = takes(0) returns(0) {
+    // Store ABI-encoded caller address after the end of the calldata
+    caller                                                                      // [transferFrom]
+    if (<withRecipient>) {
+        [LOCK_SWAP_TRANSFER_FROM_WITH_RECIPIENT_CALLDATASIZE_OFFSET]            // [calldatasizeOffset, transferFrom]
+    } else {
+        [LOCK_SWAP_TRANSFER_FROM_NO_RECIPIENT_CALLDATASIZE_OFFSET]              // [calldatasizeOffset, transferFrom]
+    }
+    calldatasize add                                                            // [transferFromOffset, transferFrom]
+    mstore                                                                      // []
+
+    // Copy calldata unchanged after the selector and the padding
+    calldatasize 0x0 [LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET] calldatacopy         // []
+
+    // IFlashAccountant#lock()
+    [LOCKED_SWAP_RETURNDATA_SIZE] 0x0                                           // [retOffset, retSize]
+    if (<withRecipient>) {
+        [LOCK_SWAP_ADDITIONAL_ARGS_WITH_RECIPIENT_SIZE]                         // [additionalArgsSize, retOffset, retSize]
+    } else {
+        [LOCK_SWAP_ADDITIONAL_ARGS_NO_RECIPIENT_SIZE]                           // [additionalArgsSize, retOffset, retSize]
+    }
+    calldatasize add                                                            // [argsSize, retOffset, retSize]
+    [LOCK_SWAP_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call                      // [success]
+
+    successLbl jumpi                                                            // []
+        returndatasize 0x0 [LOCK_SWAP_RETURNDATA_OFFSET] returndatacopy         // []
+        returndatasize [LOCK_SWAP_RETURNDATA_OFFSET] revert
+    successLbl:                                                                 // []
+        returndatasize [LOCK_SWAP_RETURNDATA_OFFSET] return
+}

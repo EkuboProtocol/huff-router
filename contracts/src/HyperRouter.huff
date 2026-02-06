@@ -1,320 +1,82 @@
 /// @title HyperRouter
 /// @author Die Herdplatte <https://github.com/die-herdplatte>
 /// @notice A hyper gas-efficient, yet highly configurable, router for executing actions on Ekubo
-
-// Compiled with hnc 1.3.7 (rev: c5a3461c)
+///
+/// Compiled with hnc 1.5.12 (rev: 37f8ea83)
+///
+/// General comments:
+/// - Offsets suffixed with "_PACKED" indicate that the offset marks the first byte in the input containing the non-padded data
+/// - Constants aren't scoped, so we prefix them with appropriate identifiers where necessary to avoid mixing them up
 
 /* Imports */
 #include "lock.huff"
 #include "locked.huff"
-#include "payCallback.huff"
 
 /* Function Interfaces */
 #define function locked(uint256 id) nonpayable returns ()
-#define function payCallback(uint256 id, address token) nonpayable returns ()
+#define function claimIntegrationFees(address[] tokens) nonpayable returns (uint256[] claimedAmounts)
 
 #define error SlippageCheckFailed(uint256 calculatedAmount)
-#define error ETHTransferFailed()
+#define error NativeTransferFailed()
 #define error CoreOnly()
 
+/* General constants */
 #define constant BITS_PER_BYTE = 0x8
 #define constant BITS_PER_WORD = 0x100
+#define constant MINUS_ONE = -0x1
 
-#define constant MIN_SQRT_RATIO = 0x400065a8177fae27
-#define constant MAX_SQRT_RATIO = 0xffff9a5889f795069a41a8a3
+#define constant MAX_ADDRESS = 0xffffffffffffffffffffffffffffffffffffffff
+#define constant TWO_POW_8 = 0x100
 
-#define constant MINUS_ONE = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+#define constant WORD_SIZE = 0x20
+#define constant HALFWORD_SIZE = [WORD_SIZE] / 0x2
 
-#define constant ADDRESS_LENGTH = 0x14
-#define constant INTEGRATION_FEE_LENGTH = 0x16                              // feeShare (2) + feeRecipient (20)
-#define constant ADDRESS_PLUS_INTEGRATION_FEE_LENGTH = 0x2a
+#define constant SELECTOR_SIZE = 0x4
+#define constant PACKED_SELECTOR_OFFSET = [WORD_SIZE] - [SELECTOR_SIZE]
 
-/* Memory and calldata offsets, lengths, and sizes */
+#define constant ADDRESS_SIZE = 0x14
+#define constant PACKED_ADDRESS_OFFSET = [WORD_SIZE] - [ADDRESS_SIZE]
 
-// Input offsets suffixed with "_PACKED" indicate that the receiving contract expects ABI-encoded inputs and that
-// the offset marks the first byte in the input containing the actual, non-padded data.
-// The zeroedness of the leading bytes has to be ensured by either always keeping them zeroed or zeroeing them before the call.
+#define constant LOCKED_CALL_TYPE_OFFSET = [SELECTOR_SIZE] + [WORD_SIZE]
 
-// ILocker#locked(uint256 id) input offsets
-#define constant LOCKED_FIRST_WORD_OFFSET = 0x27                            // Includes the selector, locker ID, 2 bytes padding, and `withRecipient` (which isn't used in LOCKED())
-#define constant LOCKED_CALCULATED_AMOUNT_THRESHOLD_OFFSET = 0x2e           // Offset of the first dynamic piece of data
-
-// Calldata lengths of supported hop types
-#define constant BASE_EXTENSION_CALLDATA_LENGTH = 0xe                       // discriminator (1) + skipAhead (1) + fee (8) + tickSpacing (4)
-#define constant ORACLE_EXTENSION_CALLDATA_LENGTH = 0x1                     // discriminator (1)
-#define constant TWAMM_EXTENSION_CALLDATA_LENGTH = 0x9                      // discriminator (1) + fee (8)
-#define constant MEV_RESIST_EXTENSION_CALLDATA_LENGTH = 0xe                 // discriminator (1) + skipAhead (1) + fee (8) + tickSpacing (4)
-#define constant UNKNOWN_EXTENSION_CALLDATA_LENGTH = 0x22                   // discriminator (1) + skipAhead (1) + extension (20) + fee (8) + tickSpacing (4)
-#define constant WRAPPED_TOKEN_CALLDATA_LENGTH = 0x2                        // discriminator (1) + callType (1)
-
-// ICore#swap_611415377(address token0, address token1, bytes32 config, int128 amount, bool isToken1, uint96 sqrtRatioLimit, uint256 skipAhead) and IFlashAccountant#forward (for MEV-resist) input offsets
-#define constant SWAP_TOKEN0_OFFSET = 0x24
-#define constant SWAP_TOKEN0_OFFSET_PACKED = 0x30
-#define constant SWAP_TOKEN1_OFFSET = 0x44
-#define constant SWAP_CONFIG_OFFSET = 0x64
-#define constant SWAP_AMOUNT_OFFSET = 0x84
-#define constant SWAP_IS_TOKEN1_OFFSET = 0xa4
-#define constant SWAP_SQRT_RATIO_LIMIT_OFFSET = 0xc4
-#define constant SWAP_SQRT_RATIO_LIMIT_OFFSET_PACKED = 0xd8
-#define constant SWAP_SKIP_AHEAD_OFFSET = 0xe4
-
-// IFlashAccountant#forward input offsets
-#define constant FORWARD_TO_OFFSET = 0x4
-#define constant FORWARD_TO_OFFSET_PACKED = 0x10
-
-// IFlashAccountant#forward (for wrapped tokens) input offsets
-#define constant WRAPPED_TOKEN_CALL_TYPE_OFFSET = 0x24
-#define constant WRAPPED_TOKEN_AMOUNT_OFFSET = 0x44
-#define constant WRAPPED_TOKEN_ARGS_SIZE = 0x64
-
-// ICore#swap_611415377(address token0, address token1, bytes32 config, int128 amount, bool isToken1, uint96 sqrtRatioLimit, uint256 skipAhead) and IFlashAccountant#forward (for MEV-resist) output offsets
-#define constant SWAP_DELTA0_OFFSET = 0x30
-#define constant SWAP_DELTA1_OFFSET = 0x50
-
-// The lowest offset we don't touch while swapping (i.e. not counting the settlement phase)
-#define constant MAX_ARGS_OFFSET = 0x104
-
-// ICore#save(address owner, address token0, address token1, bytes32 salt, uint128 amount0, uint128 amount1) input offsets
-#define constant SAVE_OWNER_PACKED_OFFSET = 0x10
-#define constant SAVE_TOKEN0_OFFSET = 0x24
-#define constant SAVE_AMOUNT0_OFFSET = 0x84
-#define constant SAVE_AMOUNT1_OFFSET = 0xa4
-#define constant SAVE_ARGS_SIZE = 0xc4
-
-// IFlashAccountant#withdraw(address token, address recipient, uint128 amount) input offsets
-#define constant WITHDRAW_TOKEN_OFFSET = 0x4
-#define constant WITHDRAW_RECIPIENT_OFFSET_PACKED = 0x30
-#define constant WITHDRAW_AMOUNT_OFFSET = 0x44
-#define constant WITHDRAW_ARGS_SIZE = 0x64
-
-// IFlashAccountant#pay(address token) input offsets
-#define constant PAY_TOKEN_OFFSET = 0x4
-#define constant PAY_AMOUNT_OFFSET = 0x24
-#define constant PAY_FROM_OFFSET = 0x44
-#define constant PAY_ARGS_SIZE = 0x64
-
-// IPayer#payCallback(uint256 id, address token) input offsets
-#define constant PAY_CALLBACK_TOKEN_OFFSET = 0x24
-#define constant PAY_CALLBACK_AMOUNT_OFFSET = 0x44
-#define constant PAY_CALLBACK_FROM_OFFSET = 0x64
-
-// IERC20#transfer(address to, uint256 amount) input offsets
-#define constant TRANSFER_AMOUNT_OFFSET = 0x24
-#define constant TRANSFER_ARGS_SIZE = 0x44
-
-// IERC20#transferFrom(address from, address to, uint256 amount) input offsets
-#define constant TRANSFER_FROM_FROM_OFFSET = 0x4
-#define constant TRANSFER_FROM_TO_OFFSET = 0x24
-#define constant TRANSFER_FROM_AMOUNT_OFFSET = 0x44
-#define constant TRANSFER_FROM_ARGS_SIZE = 0x64
-
-#define constant RETURN_DATA_CALCULATED_AMOUNT_OFFSET = 0xc4
-#define constant RETURN_DATA_INTEGRATION_FEE_OFFSET = 0xe4
-
-/*
- * ATTENTION: This is a volatile value and may change even on minor modifications.
- * The reason for that seems to be that hnc doesn't insert jump and code tables in
- * the order that they appear in the source file but their first usage.
- * As of now, this offset includes the TOKENS, SAVE_DATA, and TRANSFER_DATA code tables and all jump tables.
- */
-#define constant ROUTER_ADDRESS_END_OFFSET = 0x894
-
-/* Constructor */
-#define macro CONSTRUCTOR() = {
-    // Copy runtime code into memory
-    __codesize(CONSTRUCTOR)                                                 // [constructorSize]
-    codesize sub                                                            // [runtimeSize]
-    address                                                                 // [address, runtimeSize]
-    [ROUTER_ADDRESS_END_OFFSET] dup3 sub                                    // [routerAddressOffset, address, runtimeSize]
-    dup3 __codesize(CONSTRUCTOR) 0x                                         // [memOffset, constructorSize, runtimeSize, routerAddressOffset, address, runtimeSize]
-    codecopy                                                                // [routerAddressOffset, address, runtimeSize]
-
-    // Write router address to runtime code
-    mstore                                                                  // [runtimeSize]
-
-    0x return
-}
+// cast sig "claimIntegrationFees(address[])"
+#define constant CLAIM_INTEGRATION_FEES_SELECTOR_FIRST_BYTE = 0xa3
 
 /* Entry Point */
 #define macro MAIN() = takes(0) returns(0) {
-    0x calldataload dup1                                                    // [firstWord, firstWord]
+    // We must ensure that the zero offset isn't a valid jump destination
+    __ASSERT_PC(0x0)                                                        // []
 
-    // Not only the function selector, but also the first 224 bits of the
-    // arguments (which is the locker id and always zero in any practical case)
-    __RIGHTPAD(__FUNC_SIG("locked(uint256)"))                               // [lockedFirstWord, firstWord, firstWord]
+    0x0 calldataload                                                        // [firstWord]
 
-    eq lockedLbl jumpi                                                      // [firstWord]
+    // The selector of "locked_6416899205(uint256 id)" and the first 224 bits of the
+    // arguments are (in any practical case) 0, hence simplifying this check.
+    // Note that the SDK would never generate calldata of this shape because it would
+    // mean that a swap on a pool with token0 == token1 should happen.
+    iszero lockedLbl jumpi                                                  // []
 
-    // Same approach for payCallback which also includes the locker id
-    __RIGHTPAD(__FUNC_SIG("payCallback(uint256,address)"))                  // [payCallbackFirstWord, first]
+    0x0 calldataload                                                        // [firstWord]
 
-    eq payCallbackLbl jumpi                                                 // []
-        LOCK()
-    lockedLbl:                                                              // [firstWord]
-        pop                                                                 // []
-        LOCKED()
-    payCallbackLbl:                                                         // []
-        PAY_CALLBACK()
+    // Also won't collide with any generated calldata from the SDK due to the
+    // first byte being either 0 or 1.
+    0x0 byte                                                                // [firstByte]
+    [CLAIM_INTEGRATION_FEES_SELECTOR_FIRST_BYTE] eq lockClaimLbl jumpi      // []
+        LOCK_SWAP()
+    lockedLbl:                                                              // []
+        CORE_CHECK()                                                        // []
+
+        [LOCKED_CALL_TYPE_OFFSET] calldataload 0x0 byte                     // [callType]
+        lockedClaimLbl jumpi                                                // []
+            LOCKED_SWAP()
+        lockedClaimLbl:                                                     // []
+            LOCKED_CLAIM()
+    lockClaimLbl:                                                           // []
+        LOCK_CLAIM()
 }
 
 #define macro CORE_CHECK() = takes(0) returns(0) {
     caller [CORE] eq coreCallerLbl jumpi                                    // []
-        __ERROR(CoreOnly) 0x mstore                                         // []
-        0x4 0x revert
+        __ERROR(CoreOnly) 0x0 mstore                                        // []
+        [SELECTOR_SIZE] 0x0 revert
     coreCallerLbl:                                                          // []
-}
-
-#define table LOCK_SIG_AND_ROUTER_ADDRESS {
-    __FUNC_SIG("lock()")
-    __LEFTPAD(0x) // Will be replaced with the ABI-encoded address of this contract in the constructor
-}
-
-#define table SAVE_DATA {
-    __FUNC_SIG("save(address,address,address,bytes32,uint128,uint128)")     // selector
-    __LEFTPAD(0x)                                                           // owner (will be filled in)
-    __LEFTPAD(0x)                                                           // token0 (will be filled in)
-    __LEFTPAD(0xffffffffffffffffffffffffffffffffffffffff)                   // token1 (the highest address possible, such that token0 will always be valid)
-    0x20f590376094779f18e2fad85b75f8dcaf255b05ab4790b9c83b8245e9185211      // salt (keccak("HYPER_ROUTER"))
-}
-
-#define table TRANSFER_DATA {
-    __FUNC_SIG("transfer(address,uint256)")
-    __LEFTPAD([CORE])
-}
-
-#define jumptable CONFIG_TABLE {
-    noSqrtRatioExactInLbl
-    noSqrtRatioExactOutLbl
-    withSqrtRatioExactInLbl
-    withSqrtRatioExactOutLbl
-}
-
-#define jumptable__packed HOP_TYPE0_TABLE {
-    baseExtension0Lbl
-    oracleExtension0Lbl
-    twammExtension0Lbl
-    mevResistExtension0Lbl
-    unknownExtension0Lbl
-    wrappedToken0Lbl
-}
-
-#define jumptable__packed HOP_TYPE1_TABLE {
-    baseExtension1Lbl
-    oracleExtension1Lbl
-    twammExtension1Lbl
-    mevResistExtension1Lbl
-    unknownExtension1Lbl
-    wrappedToken1Lbl
-}
-
-#define jumptable__packed HOP_TYPE2_TABLE {
-    baseExtension2Lbl
-    oracleExtension2Lbl
-    twammExtension2Lbl
-    mevResistExtension2Lbl
-    unknownExtension2Lbl
-    wrappedToken2Lbl
-}
-
-#define jumptable__packed HOP_TYPE3_TABLE {
-    baseExtension3Lbl
-    oracleExtension3Lbl
-    twammExtension3Lbl
-    mevResistExtension3Lbl
-    unknownExtension3Lbl
-    wrappedToken3Lbl
-}
-
-#define table TOKENS {
-    [TOKEN_AA]
-    [TOKEN_AB]
-    [TOKEN_AC]
-    [TOKEN_AD]
-    [TOKEN_AE]
-    [TOKEN_AF]
-    [TOKEN_AG]
-    [TOKEN_AH]
-    [TOKEN_AI]
-    [TOKEN_AJ]
-    [TOKEN_AK]
-    [TOKEN_AL]
-    [TOKEN_AM]
-    [TOKEN_AN]
-    [TOKEN_AO]
-    [TOKEN_AP]
-    [TOKEN_AQ]
-    [TOKEN_AR]
-    [TOKEN_AS]
-    [TOKEN_AT]
-    [TOKEN_AU]
-    [TOKEN_AV]
-    [TOKEN_AW]
-    [TOKEN_AX]
-    [TOKEN_AY]
-    [TOKEN_AZ]
-    [TOKEN_BA]
-    [TOKEN_BB]
-    [TOKEN_BC]
-    [TOKEN_BD]
-    [TOKEN_BE]
-    [TOKEN_BF]
-    [TOKEN_BG]
-    [TOKEN_BH]
-    [TOKEN_BI]
-    [TOKEN_BJ]
-    [TOKEN_BK]
-    [TOKEN_BL]
-    [TOKEN_BM]
-    [TOKEN_BN]
-    [TOKEN_BO]
-    [TOKEN_BP]
-    [TOKEN_BQ]
-    [TOKEN_BR]
-    [TOKEN_BS]
-    [TOKEN_BT]
-    [TOKEN_BU]
-    [TOKEN_BV]
-    [TOKEN_BW]
-    [TOKEN_BX]
-    [TOKEN_BY]
-    [TOKEN_BZ]
-    [TOKEN_CA]
-    [TOKEN_CB]
-    [TOKEN_CC]
-    [TOKEN_CD]
-    [TOKEN_CE]
-    [TOKEN_CF]
-    [TOKEN_CG]
-    [TOKEN_CH]
-    [TOKEN_CI]
-    [TOKEN_CJ]
-    [TOKEN_CK]
-    [TOKEN_CL]
-    [TOKEN_CM]
-    [TOKEN_CN]
-    [TOKEN_CO]
-    [TOKEN_CP]
-    [TOKEN_CQ]
-    [TOKEN_CR]
-    [TOKEN_CS]
-    [TOKEN_CT]
-    [TOKEN_CU]
-    [TOKEN_CV]
-    [TOKEN_CW]
-    [TOKEN_CX]
-    [TOKEN_CY]
-    [TOKEN_CZ]
-    [TOKEN_DA]
-    [TOKEN_DB]
-    [TOKEN_DC]
-    [TOKEN_DD]
-    [TOKEN_DE]
-    [TOKEN_DF]
-    [TOKEN_DG]
-    [TOKEN_DH]
-    [TOKEN_DI]
-    [TOKEN_DJ]
-    [TOKEN_DK]
-    [TOKEN_DL]
-    [TOKEN_DM]
 }

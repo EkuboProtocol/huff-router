@@ -1,11 +1,18 @@
 [profile.default]
-optimizer = true
-solc = "0.8.30"
-ffi = true # Necessary for the HuffNeoDeployer
-fs_permissions = [{ access = "read", path = "../tokens/ethereum.json"}]
-via-ir = true
-gas-limit = "4294967296" # MAX_UINT32, required for HyperRouterTest#executeSdkCases
+solc = "0.8.33"
+evm_version = "osaka"
+
+ffi = true                                                      # Necessary for the HuffNeoDeployer
+fs_permissions = [
+    { access = "read", path = "../tokens/"},                    # Shared token lists
+    { access = "write", path = "src/locked/tokens.huff" },      # Processed token list for deployment
+    { access = "read", path = "v3-artifacts/" }                 # Deployment artifacts for the Ekubo v3 contracts
+]
+via_ir = true
 
 [fmt]
 sort_imports = true
 wrap_comments = true
+
+[lint]
+exclude_lints = ["unsafe-cheatcode"]

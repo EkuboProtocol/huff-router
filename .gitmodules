@@ -1,9 +1,12 @@
-[submodule "lib/forge-std"]
+[submodule "contracts/lib/forge-std"]
 	path = contracts/lib/forge-std
 	url = https://github.com/foundry-rs/forge-std
-[submodule "lib/foundry-huff-neo"]
+[submodule "contracts/lib/foundry-huff-neo"]
 	path = contracts/lib/foundry-huff-neo
 	url = https://github.com/cakevm/foundry-huff-neo
-[submodule "lib/solady"]
+[submodule "contracts/lib/solady"]
 	path = contracts/lib/solady
 	url = https://github.com/vectorized/solady
+[submodule "contracts/lib/evm-contracts"]
+	path = contracts/lib/evm-contracts
+	url = https://github.com/EkuboProtocol/evm-contracts

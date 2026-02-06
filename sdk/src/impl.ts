@@ -1,7 +1,7 @@
-import { ByteArray, bytesToHex, concatBytes, getAddress, Hex, hexToBigInt, hexToBytes, maxInt128, maxUint16, maxUint256, maxUint32, maxUint64, maxUint8, minInt128, numberToBytes, numberToHex, padBytes, padHex, size, sliceHex, toBytes, zeroAddress } from "viem";
-import TOKENS from "../../tokens/ethereum.json";
-import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_RESIST_ADDRESS } from "./extensions";
-import { Hop, Parameters, Swap } from ".";
+import { ByteArray, bytesToHex, concatBytes, getAddress, Hex, hexToBigInt, hexToBytes, maxInt128, maxUint16, maxUint256, maxUint8, minInt128, numberToBytes, numberToHex, padBytes, padHex, size, sliceHex, toBytes, zeroAddress } from "viem";
+import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_CAPTURE_ADDRESS } from "./extensions";
+import { Parameters } from ".";
+import { Tokens } from "./tokens";
 
 const TWO_POW_62 = 2n ** 62n;
 const TWO_POW_256 = maxUint256 + 1n;
@@ -46,6 +46,9 @@ export function generateCalldataImpl(
     params: Parameters,
     { forceUnknownExtension, forceUnknownToken }: TestParameters = { forceUnknownExtension: false, forceUnknownToken: false },
 ): Hex {
+    const tokens = Tokens.load(params.chainId);
+    const asUnknownToken = forceUnknownToken || tokens === null;
+
     const { multiHops, recipient, calculatedAmountThreshold, integrationFee } = params;
     const specifiedToken = getAddress(padHex(params.specifiedToken, { size: 20 }));
 
@@ -148,7 +151,7 @@ export function generateCalldataImpl(
 
             function maybePushHopCalculatedToken(hopCalculatedToken: Hex) {
                 if (i !== hops.length - 1) {
-                    const swapCalculatedTokenId = forceUnknownToken ? null : tokenId(hopCalculatedToken);
+                    const swapCalculatedTokenId = asUnknownToken ? null : tokens.id(hopCalculatedToken);
 
                     calldata.push(new Uint8Array([swapCalculatedTokenId ?? UNKNOWN_TOKEN]));
 
@@ -227,7 +230,7 @@ export function generateCalldataImpl(
                                 fee,
                             );
                             break;
-                        case MEV_RESIST_ADDRESS:
+                        case MEV_CAPTURE_ADDRESS:
                             calldata.push(
                                 new Uint8Array([
                                     3,
@@ -311,12 +314,12 @@ export function generateCalldataImpl(
     }
 
     const calculatedToken = getAddress(numberToHex(
-        calculatedTokenBig!, // Holds true because we enforce at least one multiHopSwap and at least one swap per multiHopSwap
+        calculatedTokenBig!, // Safe because we enforce at least one multiHopSwap and at least one swap per multiHopSwap
         { size: 20 },
     ));
 
     const calculatedAmountThresholdBin = calculatedAmountThresholdUnsigned === 0n ? new Uint8Array() : numberToBytes(calculatedAmountThresholdUnsigned);
-    const [specifiedTokenId, calculatedTokenId] = forceUnknownToken ? [null, null] : [tokenId(specifiedToken), tokenId(calculatedToken)];
+    const [specifiedTokenId, calculatedTokenId] = asUnknownToken ? [null, null] : [tokens.id(specifiedToken), tokens.id(calculatedToken)];
 
     let headerCalldata: ByteArray[] = [
         new Uint8Array([
@@ -348,9 +351,4 @@ export function generateCalldataImpl(
 
 function abs(big: bigint): bigint {
     return big < 0n ? -big : big;
-}
-
-function tokenId(address: string): number | null {
-    const idx = TOKENS.findIndex(token => token.address === address);
-    return idx === -1 ? null : idx;
 }

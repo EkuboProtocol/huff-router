@@ -1,5 +1,0 @@
-// SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.30;
-
-uint96 constant MIN_SQRT_RATIO_RAW = 4611797791050542631;
-uint96 constant MAX_SQRT_RATIO_RAW = 79227682466138141934206691491;

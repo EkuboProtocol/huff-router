@@ -1,0 +1,1 @@
+Contains the artifacts from the [v3 deployment](https://github.com/EkuboProtocol/evm-contracts/releases/tag/v3.0.2)

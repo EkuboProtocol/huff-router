@@ -1,10 +1,11 @@
 import { Address, Hex } from "viem";
 import { generateCalldataImpl } from "./impl";
 
-export const MAINNET_ADDRESS: Address =
-  "0x8CCB1ffD5C2aa6Bd926473425Dea4c8c15DE60fd";
-export const SEPOLIA_ADDRESS: Address =
-  "0xd906C89cFc36aa668a9cABD2e7387EeF1Ea999Ff";
+export const DEPLOYMENTS: Map<bigint, Address> = new Map([
+  [1n, "0x4F168f17923435c999f5C8565ACAb52C2218EdF2"],
+  [42161n, "0xC93C4Ad185CA48d66FEfe80f906a67ef859fc47d"],
+  [11155111n, "0xf9bf8E1f79D8Ee9983abf3bE674B815d5d499a2E"],
+]);
 
 /**
  * The unique identifier of a pool
@@ -19,7 +20,7 @@ export interface PoolKey {
    */
   token1: Hex;
   /**
-   * The concatenated extension address (20 bytes) | fee (8 bytes) | tick spacing (4 bytes)
+   * The concatenated extension address (20 bytes) | fee (8 bytes) | pool type config (4 bytes)
    */
   config: Hex;
 }
@@ -131,6 +132,10 @@ export interface IntegrationFee {
  * The parameters required for constructing a call to the *HyperRouter*
  */
 export interface Parameters {
+  /**
+   * The chain ID of the chain that the *HyperRouter* instance for which the calldata is generated is deployed on
+   */
+  chainId: bigint;
   /**
    * The address of the token in which the {@link MultiHop.specifiedAmount | specified amounts} of the {@link multiHops} are denominated
    */

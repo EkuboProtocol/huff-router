@@ -1,12 +1,15 @@
-import { assert, describe, expect, test } from "vitest";
-import TOKENS from "../../tokens/ethereum.json";
-import { concatHex, Hex, IntegerOutOfRangeError, isAddress, padHex, parseEther, size, SizeExceedsPaddingSizeError } from "viem";
-import { generateCalldata, Parameters, Swap } from "../src";
-import { ETH_ADDRESS, INTEGRATOR, minimalCalldata, ORACLE_CONFIG, USDC_ADDRESS, USDT_ADDRESS } from "./shared";
-import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_HOP_CONNECTION, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_HOPS_LENGTH, ERROR_TOKEN0_TOKEN1_ORDER, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_INTEGRATION_FEE, MAX_MULTIHOP_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_HOP_LENGTH, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO, ERROR_UNDERLYING_EQ_WRAPPED } from "../src/impl";
+import { readdirSync, readFileSync } from "node:fs";
+import { describe, expect, test } from "vitest";
+import TOKENS from "../../tokens/31337.json" with {"type": "json"};
+import { concatHex, Hex, IntegerOutOfRangeError, isAddress, padHex, parseEther, SizeExceedsPaddingSizeError } from "viem";
+import { generateCalldata, Parameters, Swap } from "../src/index.js";
+import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
+import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_HOP_CONNECTION, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_HOPS_LENGTH, ERROR_TOKEN0_TOKEN1_ORDER, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_INTEGRATION_FEE, MAX_MULTIHOP_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_HOP_LENGTH, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO, ERROR_UNDERLYING_EQ_WRAPPED } from "../src/impl.js";
+import { MAX_CONTRACT_SIZE, MAX_TOKEN_LIST_LENGTH, TEST_CHAIN_ID } from "../shared.js";
 
 const VALID_ADDRESS = padHex("0x1", { size: 20 });
 const OVERSIZED_ADDRESS = concatHex([VALID_ADDRESS, "0xff"]);
+const TOKENS_DIR = new URL("../../tokens/", import.meta.url);
 
 function simpleParams({
     exactOut, poolConfig: poolConfig
@@ -21,7 +24,8 @@ function simpleParams({
     }
 
     return structuredClone({
-        specifiedToken: ETH_ADDRESS,
+        chainId: BigInt(TEST_CHAIN_ID),
+        specifiedToken: NATIVE_TOKEN_ADDRESS,
         multiHops: [
             {
                 specifiedAmount,
@@ -29,8 +33,8 @@ function simpleParams({
                     {
                         type: "swap",
                         poolKey: {
-                            token0: ETH_ADDRESS,
-                            token1: USDC_ADDRESS,
+                            token0: NATIVE_TOKEN_ADDRESS,
+                            token1: ERC20_FIRST_ADDRESS,
                             config: poolConfig ?? ORACLE_CONFIG,
                         },
                     } as Swap
@@ -40,24 +44,44 @@ function simpleParams({
     });
 }
 
-test("minimal calldata size", () => {
-    expect(size(minimalCalldata())).toBe(10);
+test("test token list", () => {
+    expect(TOKENS).toHaveLength(MAX_TOKEN_LIST_LENGTH);
+
+    for (const token of [NATIVE_TOKEN_ADDRESS, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS]) {
+        expect(TOKENS).toContain(token);
+    }
+
+    expect(TOKENS.every((token, i) => i === 0 || BigInt(TOKENS[i - 1]) < BigInt(token))).toBe(true);
 });
 
-test("token address checksums", () => {
-    for (const { symbol, address } of TOKENS) {
-        assert(isAddress(address), `${symbol} should have a checksummed address`);
+test("token json constraints", () => {
+    const tokenFiles = readdirSync(TOKENS_DIR);
+
+    for (const file of tokenFiles) {
+        const addresses: string[] = JSON.parse(readFileSync(new URL(file, TOKENS_DIR), "utf8"));
+
+        expect(addresses.length).toBeLessThanOrEqual(MAX_TOKEN_LIST_LENGTH);
+
+        for (const address of addresses) {
+            expect(isAddress(address)).toBe(true);
+
+            const numeric = BigInt(address);
+            if (numeric !== 0n) {
+                // A security invariant to make sure addresses can't be valid jump destinations
+                expect(numeric).toBeGreaterThanOrEqual(MAX_CONTRACT_SIZE);
+            }
+        }
     }
 });
 
 test("simple parameters", () => {
-    expect(() => generateCalldata(simpleParams())).not.toThrow();
+    expect(generateCalldata(simpleParams())).toBeDefined();
 });
 
 describe("specifiedToken", () => {
     describe("length", () => {
         test("valid", () => {
-            expect(() => generateCalldata(simpleParams())).not.toThrow();
+            expect(generateCalldata(simpleParams())).toBeDefined();
         });
 
         test("too long", () => {
@@ -78,21 +102,21 @@ describe("multiHopSwaps length", () => {
     });
 
     test("one", () => {
-        expect(() => generateCalldata(simpleParams())).not.toThrow();
+        expect(generateCalldata(simpleParams())).toBeDefined();
     });
 
     test("valid", () => {
         const params = simpleParams();
         params.multiHops = Array(10).fill(params.multiHops[0]);
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("max", () => {
         const params = simpleParams();
         params.multiHops = Array(MAX_MULTIHOP_LENGTH).fill(params.multiHops[0]);
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("too large", () => {
@@ -109,8 +133,8 @@ describe("hops", () => {
             return Array<Swap>(length).fill({
                 type: "swap",
                 poolKey: {
-                    token0: ETH_ADDRESS,
-                    token1: USDC_ADDRESS,
+                    token0: NATIVE_TOKEN_ADDRESS,
+                    token1: ERC20_FIRST_ADDRESS,
                     config: ORACLE_CONFIG,
                 }
             });
@@ -124,21 +148,21 @@ describe("hops", () => {
         });
 
         test("one", () => {
-            expect(() => generateCalldata(simpleParams())).not.toThrow();
+            expect(generateCalldata(simpleParams())).toBeDefined();
         });
 
         test("valid", () => {
             const params = simpleParams();
             params.multiHops[0].hops = swaps(5);
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("max", () => {
             const params = simpleParams();
             params.multiHops[0].hops = swaps(MAX_HOP_LENGTH);
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("too large", () => {
@@ -156,7 +180,7 @@ describe("hops", () => {
                     const params = simpleParams();
                     params.multiHops[0].hops[0].poolKey.config = padHex("0x", { size: 32 });
 
-                    expect(() => generateCalldata(params)).not.toThrow();
+                    expect(generateCalldata(params)).toBeDefined();
                 });
 
                 test("length too long", () => {
@@ -171,7 +195,7 @@ describe("hops", () => {
         describe("tokens", () => {
             test("token0 == token1", () => {
                 const params = simpleParams();
-                params.multiHops[0].hops[0].poolKey.token1 = ETH_ADDRESS;
+                params.multiHops[0].hops[0].poolKey.token1 = NATIVE_TOKEN_ADDRESS;
 
                 expect(() => generateCalldata(params)).toThrow(ERROR_TOKEN0_TOKEN1_ORDER);
             });
@@ -200,8 +224,8 @@ describe("hops", () => {
                 const params: Parameters = simpleParams();
                 params.multiHops[0].hops.push({
                     type: "wrappedToken",
-                    underlying: USDC_ADDRESS,
-                    wrapped: USDC_ADDRESS,
+                    underlying: ERC20_FIRST_ADDRESS,
+                    wrapped: ERC20_FIRST_ADDRESS,
                 });
 
                 expect(() => generateCalldata(params)).toThrow(ERROR_UNDERLYING_EQ_WRAPPED);
@@ -211,7 +235,7 @@ describe("hops", () => {
                 const params: Parameters = simpleParams();
                 params.multiHops[0].hops.push({
                     type: "wrappedToken",
-                    underlying: USDT_ADDRESS,
+                    underlying: ERC20_SECOND_ADDRESS,
                     wrapped: VALID_ADDRESS,
                 });
 
@@ -233,25 +257,25 @@ describe("specifiedAmount", () => {
         const params = simpleParams();
         params.multiHops[0].specifiedAmount = MIN_SPECIFIED_AMOUNT;
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("zero", () => {
         const params = simpleParams();
         params.multiHops[0].specifiedAmount = 0n;
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("valid", () => {
-        expect(() => generateCalldata(simpleParams())).not.toThrow();
+        expect(generateCalldata(simpleParams())).toBeDefined();
     });
 
     test("max", () => {
         const params = simpleParams();
         params.multiHops[0].specifiedAmount = MAX_SPECIFIED_AMOUNT;
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("too large", () => {
@@ -283,21 +307,21 @@ describe("sqrtRatioLimit", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].sqrtRatioLimit = MIN_SQRT_RATIO;
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("valid", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].sqrtRatioLimit = 19807884935885858851817748830n;
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("max", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].sqrtRatioLimit = MAX_SQRT_RATIO;
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("too large", () => {
@@ -332,21 +356,21 @@ describe("skipAhead", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].skipAhead = 0;
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("valid", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].skipAhead = 10;
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("max", () => {
         const params = simpleParams();
         params.multiHops[0].hops[0].skipAhead = MAX_SKIP_AHEAD;
 
-        expect(() => generateCalldata(params)).not.toThrow();
+        expect(generateCalldata(params)).toBeDefined();
     });
 
     test("too large", () => {
@@ -362,7 +386,7 @@ describe("calculatedToken", () => {
         const params = simpleParams();
 
         params.multiHops.push(structuredClone(params.multiHops[0]));
-        params.multiHops[1].hops[0].poolKey.token1 = USDT_ADDRESS;
+        params.multiHops[1].hops[0].poolKey.token1 = ERC20_SECOND_ADDRESS;
 
         expect(() => generateCalldata(params)).toThrow(ERROR_CALCULATED_TOKEN_MISMATCH);
     });
@@ -381,21 +405,21 @@ describe("calculatedAmountThreshold", () => {
             const params: Parameters = simpleParams();
             params.calculatedAmountThreshold = 0n;
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("valid", () => {
             const params: Parameters = simpleParams();
             params.calculatedAmountThreshold = 10n;
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("max", () => {
             const params: Parameters = simpleParams();
             params.calculatedAmountThreshold = MAX_CALCULATED_AMOUNT_THRESHOLD;
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("too large", () => {
@@ -418,14 +442,14 @@ describe("calculatedAmountThreshold", () => {
             const params: Parameters = simpleParams({ exactOut: true });
             params.calculatedAmountThreshold = MIN_CALCULATED_AMOUNT_THRESHOLD;
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("valid", () => {
             const params: Parameters = simpleParams({ exactOut: true });
             params.calculatedAmountThreshold = -10n;
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("zero / too large / sign mismatch", () => {
@@ -456,7 +480,7 @@ describe("integrationFee", () => {
                 integrator: INTEGRATOR,
             };
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("valid", () => {
@@ -466,7 +490,7 @@ describe("integrationFee", () => {
                 integrator: INTEGRATOR,
             };
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("max", () => {
@@ -476,7 +500,7 @@ describe("integrationFee", () => {
                 integrator: INTEGRATOR,
             };
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("too large", () => {
@@ -499,7 +523,7 @@ describe("integrationFee", () => {
                     integrator: VALID_ADDRESS,
                 };
 
-                expect(() => generateCalldata(simpleParams())).not.toThrow();
+                expect(generateCalldata(simpleParams())).toBeDefined();
             });
 
             test("too long", () => {
@@ -521,7 +545,7 @@ describe("recipient", () => {
             const params: Parameters = simpleParams();
             params.recipient = VALID_ADDRESS;
 
-            expect(() => generateCalldata(params)).not.toThrow();
+            expect(generateCalldata(params)).toBeDefined();
         });
 
         test("too long", () => {

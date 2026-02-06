@@ -1,10 +1,11 @@
 {
-  "extends": "../tsconfig.json",
   "compilerOptions": {
+    "strict": true,
     "target": "ES2020",
     "module": "ESNext",
     "moduleResolution": "bundler",
-
-    "esModuleInterop": true,
+    "composite": true,
+    "esModuleInterop": true
   },
+  "include": ["**/*.ts"]
 }
