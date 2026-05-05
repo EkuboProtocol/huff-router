@@ -281,6 +281,47 @@ contract HyperRouterTest is Test {
         assertEq(returndata.integrationFee, 0, "integrationFee");
     }
 
+    function testRevert_TrailingCalldataCannotOverrideTransferFrom() external {
+        uint32 specifiedAmount = 20_000_000;
+        address attacker = makeAddr("attacker");
+        address victim = makeAddr("victim");
+
+        _approve(_TOKEN_WRAPPER_ADDRESS, address(hyperRouter), specifiedAmount);
+        IERC20(_TOKEN_WRAPPER_ADDRESS).transfer(victim, specifiedAmount);
+
+        vm.prank(victim);
+        IERC20(_TOKEN_WRAPPER_ADDRESS).approve(address(hyperRouter), specifiedAmount);
+
+        bytes memory data = abi.encodePacked(
+            hex"000400ffff000000",
+            bytes20(_TOKEN_WRAPPER_ADDRESS),
+            bytes20(_ERC_20_FIRST_ADDRESS),
+            bytes4(specifiedAmount),
+            hex"000501",
+            bytes20(attacker),
+            bytes12(0),
+            bytes20(victim)
+        );
+
+        uint256 victimWrapperBalanceBefore = IERC20(_TOKEN_WRAPPER_ADDRESS).balanceOf(victim);
+        uint256 attackerUnderlyingBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker);
+
+        vm.prank(attacker);
+        (bool success,) = address(hyperRouter).call(data);
+
+        assertFalse(success, "success");
+        assertEq(
+            IERC20(_TOKEN_WRAPPER_ADDRESS).balanceOf(victim),
+            victimWrapperBalanceBefore,
+            "unexpected victim wrapper balance"
+        );
+        assertEq(
+            IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker),
+            attackerUnderlyingBalanceBefore,
+            "unexpected attacker underlying balance"
+        );
+    }
+
     function test_claimIntegrationFeesNative() external {
         _accrueIntegrationFees(NATIVE_TOKEN_ADDRESS);
 

@@ -257,7 +257,6 @@
 
         PAY_EXACT_OUT(
             exactOutWithIntegrationFeePayErc20Lbl,
-            ADDRESS_PLUS_INTEGRATION_FEE_SIZE,
             exactOutWithIntegrationFeeRefundDoneLbl,
         )
 
@@ -921,7 +920,6 @@
 
         PAY_EXACT_OUT(
             exactOutWithoutIntegrationFeePayErc20Lbl,
-            ADDRESS_SIZE,
             exactOutWithoutIntegrationFeeRefundDoneLbl,
         )
 }
@@ -976,16 +974,16 @@
 #define macro PAY_ERC20_EXACT_IN(summand) = takes(5) returns(0) {
     // takes: [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-    PAY_ERC20(ADD(<summand>))                                               // [success, specifiedAmountBytes, specifiedAmountBits]
+    PAY_ERC20()                                                             // [success, specifiedAmountBytes, specifiedAmountBits]
     LOCKED_RETURN()
 }
 
 #define macro PAY_ERC20_EXACT_OUT(summand) = takes(7) returns(6) {
     // takes: [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
-    PAY_ERC20(PUSH_OFFSET_AND(dup3, ADD(<summand>)))                        // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+    PAY_ERC20()                                                             // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 }
-#define macro PAY_ERC20(pushOffset) = takes(2) returns(1) {
+#define macro PAY_ERC20() = takes(2) returns(1) {
     // takes: [amount, token, ...]
 
     [TRANSFER_TRANSFER_FROM_AMOUNT_OFFSET] mstore                           // [token, ...]
@@ -998,8 +996,7 @@
     [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call    // [success, ...]
     pop                                                                     // [...]
 
-    <pushOffset>                                                            // [offset, ...]
-    calldataload                                                            // [transferFrom, ...]
+    [WORD_SIZE] calldatasize sub calldataload                               // [transferFrom, ...]
 
     dup1 transferFromLbl jumpi                                              // [from, ...]
         pop                                                                 // [...]
@@ -1032,7 +1029,7 @@
     0x0 0x0 [START_COMPLETE_PAYMENTS_ARGS_SIZE]                             // [argsSize, retOffset, retSize, ...]
     [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call    // [success, ...]
 }
-#define macro PAY_EXACT_OUT(erc20Lbl, transferFromOffset, refundDoneLbl) = takes(7) returns(0) {
+#define macro PAY_EXACT_OUT(erc20Lbl, refundDoneLbl) = takes(7) returns(0) {
     // takes: [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
     dup2 <erc20Lbl> jumpi                                                   // [totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
@@ -1047,7 +1044,7 @@
         <refundDoneLbl> jumpi                                               // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
             // Transfer remaining balance
             0x0 0x0 0x0 0x0 selfbalance                                     // [value, argsOffset, argsSize, retOffset, retSize, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
-            dup8 <transferFromOffset> add calldataload                      // [refundee, value, argsOffset, argsSize, retOffset, retSize, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
+            [WORD_SIZE] calldatasize sub calldataload                       // [refundee, value, argsOffset, argsSize, retOffset, retSize, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
             gas call                                                        // [success, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
 
             <refundDoneLbl> jumpi                                           // [totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
