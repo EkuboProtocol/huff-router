@@ -1,0 +1,1249 @@
+#!/usr/bin/env tsx
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+    bytesToHex,
+    createPublicClient,
+    decodeAbiParameters,
+    decodeFunctionResult,
+    getAddress,
+    hexToBigInt,
+    hexToBytes,
+    hexToString,
+    http,
+    parseAbi,
+} from "viem";
+import type { Hex } from "viem";
+import { ADDRESS_BYTES, decodeHyperRouterCalldata } from "./hyperrouter-calldata.ts";
+
+const TRACE_FILTER_COUNT = 100_000;
+const TRACE_CONCURRENCY = 8;
+const OUT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../out");
+export const IGNORED_TRANSACTIONS: readonly `0x${string}`[] = [
+    "0x401cc36f3ffdab4f9d3973700debcac614d5dea87dd9b520d60abc0c3e2033bc", // Tries to exploit SKL approvals which neither Core nor the victim owns
+    "0xebed608c462dbdc78e4b7324e19cc7558e36a9dd83a181ab628f2c35654d20fa", // Runs out-of-gas inside the lock
+];
+const IGNORED_TRANSACTION_SET = new Set(IGNORED_TRANSACTIONS.map((txHash) => txHash.toLowerCase()));
+
+export const V2_CORE_ADDRESS = getAddress("0xe0e0e08a6a4b9dc7bd67bcb7aade5cf48157d444");
+export const V3_CORE_ADDRESS = getAddress("0x00000000000014aa86c5d3c41765bb24e11bd701");
+export const TRANSFER_EVENT_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
+
+const SYMBOL_ABI = parseAbi(["function symbol() view returns (string)"]);
+const DECIMALS_ABI = parseAbi(["function decimals() view returns (uint8)"]);
+
+type Client = ReturnType<typeof createPublicClient>;
+
+function normalizeTokenList(tokenList: readonly string[]): readonly `0x${string}`[] {
+    return tokenList.map((token) => getAddress(token));
+}
+
+const TOKEN_LIST_05CE00D = normalizeTokenList([
+    "0x0000000000000000000000000000000000000000",
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f",
+    "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    "0xCa14007Eff0dB1f8135f4C25B34De49AB0d42766",
+    "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
+    "0x18084fbA666a33d37592fA2633fD49a74DD93a88",
+    "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
+    "0x6B175474E89094C44Da98b954EedeAC495271d0F",
+    "0x97Ad75064b20fb2B2447feD4fa953bF7F007a706",
+    "0xd9Fcd98c322942075A5C3860693e9f4f03AAE07b",
+    "0x643C4E15d7d62Ad0aBeC4a9BD4b001aA3Ef52d66",
+    "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9",
+    "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+    "0xFa2B947eEc368f42195f24F36d2aF29f7c24CeC2",
+    "0x45804880De22913dAFE09f4980848ECE6EcbAf78",
+    "0x8236a87084f8B84306f72007F36F2618A5634494",
+    "0x514910771AF9Ca656af840dff83E8264EcF986CA",
+    "0xbdF43ecAdC5ceF51B7D1772F722E40596BC1788B",
+    "0x437cc33344a0B27A429f795ff6B469C72698B291",
+    "0xaaeE1A9723aaDB7afA2810263653A34bA2C21C7a",
+    "0x9f8F72aA9304c8B593d555F12eF6589cC3A579A2",
+    "0x77E06c9eCCf2E797fd462A92B6D7642EF85b0A44",
+    "0x6982508145454Ce325dDbE47a25d4ec3d2311933",
+    "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+    "0x44ff8620b8cA30902395A7bD3F2407e1A091BF73",
+    "0xE0f63A424a4439cBE457D80E4f4b51aD25b2c56C",
+    "0x8d0D000Ee44948FC98c9B98A4FA4921476f08B0d",
+    "0xfAbA6f8e4a5E8Ab82F62fe7C39859FA577269BE3",
+    "0xF411903cbC70a74d22900a5DE66A2dda66507255",
+    "0x5A98FcBEA516Cf06857215779Fd812CA3beF1B32",
+    "0x68749665FF8D2d112Fa859AA293F07A622782F38",
+    "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
+    "0x6c3ea9036406852006290770BEdFcAbA0e23A0e8",
+    "0xA35923162C49cF95e6BF26623385eb431ad920D3",
+    "0x14feE680690900BA0ccCfC76AD70Fd1b95D10e16",
+    "0x4C1746A800D224393fE2470C70A35717eD4eA5F1",
+    "0xD533a949740bb3306d119CC777fa900bA034cd52",
+    "0xae78736Cd615f374D3085123A210448E74Fc6393",
+    "0x6De037ef9aD2725EB40118Bb1702EBb27e4Aeb24",
+    "0xdd3B11eF34cd511a2DA159034a05fcb94D806686",
+    "0xD31a59c85aE9D8edEFeC411D448f90841571b89c",
+    "0x58D97B57BB95320F9a05dC918Aef65434969c2B2",
+    "0xA2cd3D43c775978A96BdBf12d733D5A1ED94fb18",
+    "0xBe9895146f7AF43049ca1c1AE358B0541Ea49704",
+    "0xEE2a03Aa6Dacf51C18679C516ad5283d8E7C2637",
+    "0x5aFE3855358E112B5647B952709E6165e1c1eEEe",
+    "0xC18360217D8F7Ab5e7c516566761Ea12Ce7F9D72",
+    "0x80ac24aA929eaF5013f6436cdA2a7ba190f5Cc0b",
+    "0x57e114B691Db790C35207b2e685D4A43181e6061",
+    "0x62D0A8458eD7719FDAF978fe5929C6D342B0bFcE",
+    "0x808507121B80c02388fAd14726482e061B8da827",
+    "0x594DaaD7D77592a2b97b725A7AD59D7E188b5bFa",
+    "0x163f8C2467924be0ae7B5347228CABF260318753",
+    "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+    "0x4274cD7277C7bb0806Bd5FE84b9aDAE466a8DA0a",
+    "0x73A15FeD60Bf67631dC6cd7Bc5B6e8da8190aCF5",
+    "0xc5f0f7b66764F6ec8C8Dff7BA683102295E16409",
+    "0x0C10bF8FcB7Bf5412187A595ab97a3609160b5c6",
+    "0xb01dd87B29d187F3E3a4Bf6cdAebfb97F3D9aB98",
+    "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
+    "0x7C1156E515aA1A2E851674120074968C905aAF37",
+    "0x35D8949372D46B7a3D5A56006AE77B215fc69bC0",
+    "0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E",
+    "0x66a1E37c9b0eAddca17d3662D6c05F4DECf3e110",
+    "0x57aB1E0003F623289CD798B1824Be09a793e4Bec",
+    "0xcf62F905562626CfcDD2261162a51fd02Fc9c5b6",
+    "0xbdC7c08592Ee4aa51D06C27Ee23D5087D65aDbcD",
+    "0x99D8a9C45b2ecA8864373A26D1459e3Dff1e17F3",
+    "0x4737D9b4592B40d51e110b94c9C043c6654067Ae",
+    "0x085780639CC2cACd35E474e71f4d000e2405d8f6",
+    "0x865377367054516e17014CcdED1e7d814EDC9ce4",
+    "0xab5eB14c09D416F0aC63661E57EDB7AEcDb9BEfA",
+    "0x853d955aCEf822Db058eb8505911ED77F175b99e",
+    "0x5f98805A4E8be255a32880FDeC7F6728C6568bA0",
+    "0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f",
+    "0x657d9ABA1DBb59e53f9F3eCAA878447dCfC96dCb",
+    "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2",
+    "0x4e3FBD56CD56c3e72c1403e103b45Db9da5B9D2B",
+    "0x64351fC9810aDAd17A690E4e1717Df5e7e085160",
+    "0x5E8422345238F34275888049021821E8E08CAa1f",
+    "0xE72B141DF173b999AE7c1aDcbF60Cc9833Ce56a8",
+    "0xA0d69E286B938e21CBf7E51D71F6A4c8918f482F",
+    "0x320623b8E4fF03373931769A31Fc52A4E78B5d70",
+    "0x856c4Efb76C1D1AE02e20CEB03A2A6a08b0b8dC3",
+    "0xD11c452fc99cF405034ee446803b6F6c1F6d5ED8",
+    "0xaD55aebc9b8c03FC43cd9f62260391c13c23e7c0",
+    "0x0655977FEb2f289A4aB78af67BAB0d17aAb84367",
+]);
+
+const TOKEN_LIST_3759F9B = normalizeTokenList([
+    ...TOKEN_LIST_05CE00D,
+    "0x0c93b16cb1D8691E629514Fc98f02cbaD340Da3C",
+]);
+
+const TOKEN_LIST_06AC834 = normalizeTokenList([
+    "0x0000000000000000000000000000000000000000",
+    "0x0000000000085d4780B73119b644AE5ecd22b376",
+    "0x0000000000095413afC295d19EDeb1Ad7B71c952",
+    "0x00000000eFE302BEAA2b3e6e1b18d08D69a9012a",
+    "0x006BeA43Baa3f7A6f765F14f10A1a1b08334EF45",
+    "0x00907f9921424583e7ffBfEdf84F92B7B2Be4977",
+    "0x009bAB289f104699AE87e576294D18eD505FAa61",
+    "0x00c83aeCC790e8a4453e5dD3B0B4b3680501a7A7",
+    "0x00F2a835758B33f3aC53516Ebd69f3dc77B0D152",
+    "0x0100546F2cD4C9D97f798fFC9755E47865FF7Ee6",
+    "0x01791F726B4103694969820be083196cC7c045fF",
+    "0x018008bfb33d285247A21d44E50697654f754e63",
+    "0x018fb5Af9d015Af25592a014C4266a84143De7a0",
+    "0x0202Be363B8a4820f3F4DE7FaF5224fF05943AB1",
+    "0x021Bb23a45e9FC824260435e670fC383b7b8cbbB",
+    "0x0258F474786DdFd37ABCE6df6BBb1Dd5dfC4434a",
+    "0x028171bCA77440897B824Ca71D1c56caC55b68A3",
+    "0x030bA81f1c18d280636F32af80b9AAd02Cf0854e",
+    "0x033B186321fA88603E3ecc98821FB0932B2c0760",
+    "0x034eCb6dc0608B73765f2965771A003D940eE8b2",
+    "0x037A54AaB062628C9Bbae1FDB1583c195585fe41",
+    "0x038a68FF68c393373eC894015816e33Ad41BD564",
+    "0x0391D2021f89DC339F60Fff84546EA23E337750f",
+    "0x03ab458634910AaD20eF5f1C8ee96F1D6ac54919",
+    "0x03Be5C903c727Ee2C8C4e9bc0AcC860Cca4715e2",
+    "0x03CBe3DDa83908ad48643D6A1B5b13d11ACAF845",
+    "0x0488401c3F535193Fa8Df029d9fFe615A06E74E6",
+    "0x04Aa51bbcB46541455cCF1B8bef2ebc5d3787EC9",
+    "0x04C154b66CB340F3Ae24111CC767e0184Ed00Cc6",
+    "0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f",
+    "0x04Fa0d235C4abf4BcF4787aF4CF447DE572eF828",
+    "0x052Ad78E3aA0b0F2D3912FD3b50a9a289CF2f7Aa",
+    "0x056C1D42Fb1326f57da7f19eBB7dDA4673f1FF55",
+    "0x056Fd409E1d7A124BD7017459dFEa2F387b6d5Cd",
+    "0x05Ec93c0365baAeAbF7AefFb0972ea7ECdD39CF1",
+    "0x06246100bA403608B98ADfb006D82A7484f5D9ff",
+    "0x062c208073c9b439d1973262CFe0DDD88f38afa8",
+    "0x062F0732a7daCa652C3BD7d8aD51C3A920B25962",
+    "0x06450dEe7FD2Fb8E39061434BAbCFC05599a6Fb8",
+    "0x0655977FEb2f289A4aB78af67BAB0d17aAb84367",
+    "0x06A01a4d579479Dd5D884EBf61A31727A3d8D442",
+    "0x06AF07097C9Eeb7fD685c692751D5C66dB49c215",
+    "0x06cc12368fA6A3D4dc0872C60331156a21cDcc9C",
+    "0x06D0e5Aee443093aC5635B709C8a01342E59Df19",
+    "0x06F3C323f0238c72BF35011071f2b5B7F43A054c",
+    "0x07150e919B4De5fD6a63DE1F9384828396f25fDC",
+    "0x0763fdCCF1aE541A5961815C0872A8c5Bc6DE4d7",
+    "0x07da3cDaE2396aA826387a48Deba5868d7Deb7bc",
+    "0x081131434f93063751813C619Ecca9C4dC7862a3",
+    "0x08389495D7456E1951ddF7c3a1314A4bfb646d8B",
+    "0x08Ad1F3a48Be1D23C723a6cC8486b247F5dE935a",
+    "0x08c32b0726C5684024ea6e141C50aDe9690bBdcc",
+    "0x08d967bb0134F2d07f7cfb6E246680c53927DD30",
+    "0x090185f2135308BaD17527004364eBcC2D37e5F6",
+    "0x0954682Ff1b512D3927D06C591942f50917E16A0",
+    "0x0954906da0Bf32d5479e25f46056d22f08464cab",
+    "0x09a3EcAFa817268f77BE1283176B946C4ff2E608",
+    "0x09fD37d9AA613789c517e76DF1c53aEce2b60Df4",
+    "0x0a6E7Ba5042B38349e437ec6Db6214AEC7B35676",
+    "0x0AaCfbeC6a24756c20D41914F2caba817C0d8521",
+    "0x0ab87046fBb341D058F17CBC4c1133F25a20a52f",
+    "0x0AbdAce70D3790235af448C88547603b945604ea",
+    "0x0Ae055097C6d159879521C384F1D2123D1f195e6",
+    "0x0b38210ea11411557c13457D4dA7dC6ea731B88a",
+    "0x0b63128C40737B13647552e0C926bCFEccC35f93",
+    "0x0B925eD163218f6662a35e0f0371Ac234f9E9371",
+    "0x0bb217E40F8a5Cb79Adf04E1aAb60E5abd0dfC1e",
+    "0x0bc529c00C6401aEF6D220BE8C6Ea1667F6Ad93e",
+    "0x0C10bF8FcB7Bf5412187A595ab97a3609160b5c6",
+    "0x0C12f2b2c3aD5150D344b6D3ABB901b4795D72d9",
+    "0x0c3685559Af6F3d20C501b1076A8056A0A14426a",
+    "0x0c7D5ae016f806603CB1782bEa29AC69471CAb9c",
+    "0x0c93b16cb1D8691E629514Fc98f02cbaD340Da3C",
+    "0x0CDF9acd87E940837ff21BB40c9fd55F68bba059",
+    "0x0cEC1A9154Ff802e7934Fc916Ed7Ca50bDE6844e",
+    "0x0d02755a5700414B26FF040e1dE35D337DF56218",
+    "0x0D3CbED3f69EE050668ADF3D9Ea57241cBa33A2B",
+    "0x0d438F3b5175Bebc262bF23753C1E53d03432bDE",
+    "0x0d5d0B74c690170a82Bf52E5d16388fC4Fa29082",
+    "0x0D8775F648430679A709E98d2b0Cb6250d2887EF",
+    "0x0E29e5AbbB5FD88e28b2d355774e73BD47dE3bcd",
+    "0x0E5C8C387C5EBa2eCbc137aD012aeD5Fe729e251",
+    "0x0E8d6b471e332F140e7d9dbB99E5E3822F728DA6",
+    "0x0f2D719407FdBeFF09D87557AbB7232601FD9F29",
+    "0x0f51bb10119727a7e5eA3538074fb341F56B09Ad",
+    "0x0F5D2fB29fb7d3CFeE444a200298f468908cC942",
+    "0x0f71B8De197A1C84d31de0F1fA7926c365F052B3",
+    "0x0f7F961648aE6Db43C75663aC7E5414Eb79b5704",
+    "0x0fc2a55d5BD13033f1ee0cdd11f60F7eFe66f467",
+    "0x0fd357eA71AD533c6b8A62520321Ed286Ed9a0C2",
+    "0x0fF6ffcFDa92c53F615a4A75D982f399C989366b",
+    "0x101cc05f4A51C0319f570d5E146a8C625198e636",
+    "0x10633216E7E8281e33c86F02Bf8e565a635D9770",
+    "0x106538CC16F938776c7c180186975BCA23875287",
+    "0x106552C11272420aAd5d7e94f8AcAb9095A6c952",
+    "0x10Be9a8dAe441d276a5027936c3aADEd2d82bC15",
+    "0x10C2c7a5342988818eb6726faE369299d8FB6328",
+    "0x10cDE9d1E1a2d3B703f037a6788e04bc139CdF6f",
+    "0x1105c20aC6F4DE989fAF05d17ab3f950963B75Ad",
+    "0x1106d8755FFaFb1f1820b3668e354336d9085A12",
+    "0x111111111117dC0aa78b770fA6A738034120C302",
+    "0x111111517e4929D3dcbdfa7CCe55d30d4B6BC4d6",
+    "0x1121AcC14c63f3C872BFcA497d10926A6098AAc5",
+    "0x1151CB3d861920e07a38e03eEAd12C32178567F6",
+    "0x120a3879da835A5aF037bB2d1456beBd6B54d4bA",
+    "0x1321f1f1aa541A56C31682c57b80ECfCCd9bB288",
+    "0x1337DEF16F9B486fAEd0293eb623Dc8395dFE46a",
+    "0x1337DEF18C680aF1f9f45cBcab6309562975b1dD",
+    "0x1456688345527bE1f37E9e627DA0837D6f08C925",
+    "0x147faF8De9d8D8DAAE129B187F0D02D819126750",
+    "0x1494CA1F11D487c2bBe4543E90080AeBa4BA3C2b",
+    "0x14Da7b27b2E0FedEfe0a664118b0c9bc68e2E9AF",
+    "0x152649eA73beAb28c5b49B26eb48f7EAD6d4c898",
+    "0x1559FA1b8F28238FD5D76D9f434ad86FD20D1559",
+    "0x15700B564Ca08D9439C58cA5053166E8317aa138",
+    "0x15874d65e649880c2614e7a480cb7c9A55787FF6",
+    "0x159751323A9E0415DD3d6D42a1212fe9F4a0848C",
+    "0x15b7c0c907e4C6b9AdaAaabC300C08991D6CEA05",
+    "0x15e6E0D4ebeAC120F9a97e71FaA6a0235b85ED12",
+    "0x163f8C2467924be0ae7B5347228CABF260318753",
+    "0x1681bcB589b3cFCF0c0616B0cE9b19b240643dc1",
+    "0x16980b3B4a3f9D89E33311B5aa8f80303E5ca4F8",
+    "0x16c52CeeCE2ed57dAd87319D91B5e3637d50aFa4",
+    "0x16CC8367055aE7e9157DBcB9d86Fd6CE82522b31",
+    "0x16de59092dAE5CcF4A1E6439D611fd0653f0Bd01",
+    "0x16ECCfDbb4eE1A85A33f3A9B21175Cd7Ae753dB4",
+    "0x1707A9bAd232D728afded75fACED38Ec90EAA41e",
+    "0x1735Db6AB5BAa19eA55d0AdcEeD7bcDc008B3136",
+    "0x175cbD54d38F58B530785e01471a2Ec0D4596EB5",
+    "0x1776e1F26f98b1A5dF9cD347953a26dd3Cb46671",
+    "0x178c820f862B14f316509ec36b13123DA19A6054",
+    "0x1796ae0b0fa4862485106a0de9b654eFE301D0b2",
+    "0x18084fbA666a33d37592fA2633fD49a74DD93a88",
+    "0x182F4c4C97cd1c24E1Df8FC4c053E5C47bf53Bef",
+    "0x185E39D860CF86FBECF4A7c341bd1545eA3A41B9",
+    "0x18aAA7115705e8be94bfFEBDE57Af9BFc265B998",
+    "0x18E55343ECFc135E21916fcdb9788acCB5B53cAF",
+    "0x196c81385Bc536467433014042788Eb707703934",
+    "0x1985365e9f78359a9B6AD760e32412f4a445E862",
+    "0x19A6a39B746c4647A01a3Bf80751155969DDb15A",
+    "0x1a2EB478FA07125C9935A77b3C03a82470801E30",
+    "0x1A4b46696b2bB4794Eb3D4c26f1c55F9170fa4C5",
+    "0x1A5F9352Af8aF974bFC03399e3767DF6370d82e4",
+    "0x1a7e4e63778B4f12a199C062f3eFdD288afCBce8",
+    "0x1aBaEA1f7C830bD89Acc67eC4af516284b1bC33c",
+    "0x1b40183EFB4Dd766f11bDa7A7c3AD8982e998421",
+    "0x1Bbe973BeF3a977Fc51CbED703E8ffDEfE001Fed",
+    "0x1BeEF31946fbbb40B877a72E4ae04a8D1A5Cee06",
+    "0x1C5db575E2Ff833E46a2E9864C22F4B22E0B37C2",
+    "0x1C9922314ED1415c95b9FD453c3818fd41867d0B",
+    "0x1cBb83EbcD552D5EBf8131eF8c9CD9d9BAB342bC",
+    "0x1cEB5cB57C4D4E2b2433641b95Dd330A33185A44",
+    "0x1d5dA20522b1b94E3B7d983c954075Da429BBaE1",
+    "0x1E001730A23c7EBaFF35BC8bc90DA5a9b20804A4",
+    "0x1e31B601488e97bc247C57AF7B6Aa336edBc5477",
+    "0x1E4EDE388cbc9F4b5c79681B7f94d36a11ABEBC9",
+    "0x1Eb16EC378f0Ce8f81449120629F52ba28961d47",
+    "0x1F3f9D3068568F8040775be2e8C03C103C61f3aF",
+    "0x1F573D6Fb3F13d689FF844B4cE37794d79a7FF1C",
+    "0x1f9840a85d5aF5bf1D1762F925BDADdC4201F984",
+    "0x1FdB4015fD5E031C5641752C1e03B973ad5eA168",
+    "0x20157DBAbb84e3BBFE68C349d0d44E48AE7B5AD2",
+    "0x20170890ef210E402578F97D6B179784C45F3a1b",
+    "0x2089b1b815A2FD0187a48a1C66C511DA828a8128",
+    "0x20945cA1df56D237fD40036d47E866C7DcCD2114",
+    "0x211618Fa0934910666f2C2731101F5A3aC013fD8",
+    "0x219c820c2d25D8937601D8713235B556C4A37f62",
+    "0x21BfBDa47A0B4B5b1248c767Ee49F7caA9B23697",
+    "0x21f1aF3e751317a2F7De7Df31D5d092E6A907Bde",
+    "0x221657776846890989a759BA2973e427DfF5C9bB",
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599",
+    "0x226bb599a12C826476e3A771454697EA52E9E220",
+    "0x226f7b842E0F0120b7E194D05432b3fd14773a9D",
+    "0x22C8ECF727C23422f47093b562EC53c139805301",
+    "0x22CaBb38295eaeccFedE4e99AF508052e3B74cA0",
+    "0x232FB065D9d24c34708eeDbF03724f2e95ABE768",
+    "0x2360FcA74ed948Ff4F962E369080A64A40A1300D",
+    "0x23684569c0636C9aEa246551879d457D0a0E6F58",
+    "0x23878914EFE38d27C4D67Ab83ed1b93A74D4086a",
+    "0x23894DC9da6c94ECb439911cAF7d337746575A72",
+    "0x23B608675a2B2fB1890d3ABBd85c5775c51691d5",
+    "0x23BB1314b73AaAa888800B177Ad5D9719a51195b",
+    "0x24293ab20159cfc0f3D7C8727CD827fbA63d4F64",
+    "0x249cA82617eC3DfB2589c4c17ab7EC9765350a18",
+    "0x249e38Ea4102D0cf8264d3701f1a0E39C4f2DC3B",
+    "0x24A2558d0B0b2247A64eab7cf09d7244CB4c9597",
+    "0x24A6A37576377F63f194Caa5F518a60f45b42921",
+    "0x24E89bDf2f65326b94E36978A7EDeAc63623DAFA",
+    "0x24fcFC492C1393274B6bcd568ac9e225BEc93584",
+    "0x2516E7B3F76294e03C42AA4c5b5b4DCE9C436fB8",
+    "0x252231882FB38481497f3C767469106297c8d93b",
+    "0x2565ae0385659badCada1031DB704442E1b69982",
+    "0x256D1fCE1b1221e8398f65F9B36033CE50B2D497",
+    "0x25e1474170c4c0aA64fa98123bdc8dB49D7802fa",
+    "0x25f8087EAD173b73D6e8B84329989A8eEA16CF73",
+    "0x26607aC599266b21d13c7aCF7942c7701a8b699c",
+    "0x269616D549D7e8Eaa82DFb17028d0B212D11232A",
+    "0x26c8AFBBFE1EBaca03C2bB082E69D0476Bffe099",
+    "0x26CCC79ceeEc918E01BBd5C04a64767919f9ec1A",
+    "0x26EA744E5B887E5205727f55dFBE8685e3b21951",
+    "0x27054b13b1B798B345b591a4d22e6562d47eA75a",
+    "0x273A160eb5Df613c8c99869f5ae4941f65bf94cb",
+    "0x275f5Ad03be0Fa221B4C6649B8AeE09a42D9412A",
+    "0x40D16FC0246aD3160Ccc09B8D0D3A2cD28aE6C2f",
+    "0x48C3399719B582dD63eB5AADf12A40B4C3f52FA2",
+    "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3",
+    "0x57e114B691Db790C35207b2e685D4A43181e6061",
+    "0x6440f144b7e50D6a8439336510312d2F54beB01D",
+    "0x66a1E37c9b0eAddca17d3662D6c05F4DECf3e110",
+    "0x6BEF15D938d4E72056AC92Ea4bDD0D76B1C4ad29",
+    "0x6DEA81C8171D0bA574754EF6F8b412F2Ed88c54D",
+    "0x7C1156E515aA1A2E851674120074968C905aAF37",
+    "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0",
+    "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497",
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "0xa3931d71877C0E7a3148CB7Eb4463524FEc27fbD",
+    "0xae78736Cd615f374D3085123A210448E74Fc6393",
+    "0xCa14007Eff0dB1f8135f4C25B34De49AB0d42766",
+    "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee",
+    "0xd9Fcd98c322942075A5C3860693e9f4f03AAE07b",
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7",
+    "0xdC035D45d973E3EC169d2276DDab16f1e407384F",
+    "0xf1C9acDc66974dFB6dEcB12aA385b9cD01190E38",
+    "0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E",
+]);
+
+export type RouterGeneration = "V2" | "V3";
+
+export interface AffectedDeployments {
+    deployments: AffectedDeployment[];
+    startBlock: bigint;
+}
+
+export interface AffectedDeployment {
+    core: `0x${string}`;
+    router: `0x${string}`;
+    routerGeneration: RouterGeneration;
+    tokenList: readonly `0x${string}`[];
+}
+
+export interface TraceAction {
+    callType: string;
+    from: `0x${string}`;
+    gas: Hex;
+    input: Hex;
+    to: `0x${string}`;
+    value: Hex;
+}
+
+export interface TraceResult {
+    gasUsed: Hex;
+    output: Hex;
+}
+
+export interface TransactionTrace {
+    action: TraceAction;
+    blockHash: Hex;
+    blockNumber: number;
+    error?: string;
+    result: TraceResult;
+    subtraces: number;
+    traceAddress: number[];
+    transactionHash: `0x${string}`;
+    transactionPosition: number;
+    type: string;
+}
+
+export interface TransactionLog {
+    address: `0x${string}`;
+    data: Hex;
+    logIndex?: number | string | null;
+    topics: Hex[];
+}
+
+export interface WrappedTransactionTrace {
+    name?: string;
+    value?: unknown;
+}
+
+export interface ApprovalDrainExploitMatch {
+    amount: bigint;
+    attacker: `0x${string}`;
+    token: `0x${string}`;
+    victim: `0x${string}`;
+}
+
+export interface PotentialExploitTrace {
+    match: ApprovalDrainExploitMatch;
+    trace: TransactionTrace;
+}
+
+export interface IncidentRow {
+    blockNumber: number;
+    chainId: number;
+    rawAmount: string;
+    router: `0x${string}`;
+    routerCaller: `0x${string}`;
+    routerGeneration: RouterGeneration;
+    token: `0x${string}`;
+    traceAddress: string;
+    txFrom: `0x${string}`;
+    txHash: `0x${string}`;
+    victim: `0x${string}`;
+}
+
+export interface IncidentRowWithMetadata extends IncidentRow {
+    tokenDecimals?: number;
+    tokenSymbol?: string;
+}
+
+export interface VictimSummary {
+    chainId: number;
+    exploitRowCount: number;
+    rawAmountTotal: string;
+    routerCallers: `0x${string}`[];
+    token: `0x${string}`;
+    tokenDecimals?: number;
+    tokenSymbol?: string;
+    txHashes: `0x${string}`[];
+    victim: `0x${string}`;
+}
+
+export interface TokenMetadata {
+    decimals?: number;
+    symbol?: string;
+}
+
+interface ParsedTransferLog {
+    amount: bigint;
+    from: `0x${string}`;
+    logIndex: number;
+    token: `0x${string}`;
+    to: `0x${string}`;
+}
+
+interface CreditTransferLog extends ParsedTransferLog {
+    remainingAmount: bigint;
+}
+
+interface MatchedExploitTrace {
+    deployment: AffectedDeployment;
+    payLog: ParsedTransferLog;
+    potentialExploitTrace: PotentialExploitTrace;
+    withdrawLog: ParsedTransferLog;
+}
+
+interface ChainConfig {
+    affectedDeployments: AffectedDeployments;
+    chainId: bigint;
+    client: Client;
+    name: string;
+}
+
+function usage(): string {
+    return "Usage: tsx scripts/find-approval-drain-losses.ts\n";
+}
+
+function validateArgs(argv: string[]): void {
+    if (argv.length !== 0) {
+        throw new Error(`unknown argument: ${argv[0]}`);
+    }
+}
+
+function getChainConfigs(): ChainConfig[] {
+    const mainnetRpcUrl = process.env.MAINNET_RPC_URL;
+
+    if (!mainnetRpcUrl) {
+        throw new Error("MAINNET_RPC_URL must be set");
+    }
+
+    return [
+        {
+            affectedDeployments: {
+                deployments: [
+                    {
+                        core: V2_CORE_ADDRESS,
+                        router: getAddress("0x8f52903d17e2d8d6c77d1a1de0cc975b6b5a0d15"),
+                        routerGeneration: "V2",
+                        tokenList: TOKEN_LIST_05CE00D,
+                    },
+                    {
+                        core: V2_CORE_ADDRESS,
+                        router: getAddress("0x8ccb1ffd5c2aa6bd926473425dea4c8c15de60fd"),
+                        routerGeneration: "V2",
+                        tokenList: TOKEN_LIST_3759F9B,
+                    },
+                    {
+                        core: V3_CORE_ADDRESS,
+                        router: getAddress("0x4f168f17923435c999f5c8565acab52c2218edf2"),
+                        routerGeneration: "V3",
+                        tokenList: TOKEN_LIST_06AC834,
+                    },
+                ],
+                startBlock: 23_018_974n,
+            },
+            chainId: 1n,
+            client: createPublicClient({ transport: http(mainnetRpcUrl) }),
+            name: "mainnet",
+        },
+    ];
+}
+
+export function normalizeTransactionTraces(value: unknown): TransactionTrace[] {
+    if (Array.isArray(value)) {
+        return value.flatMap((entry) => {
+            const trace = normalizeTransactionTrace(unwrapTransactionTrace(entry));
+            return trace ? [trace] : [];
+        });
+    }
+
+    if (value && typeof value === "object" && "result" in value) {
+        return normalizeTransactionTraces((value as { result?: unknown }).result);
+    }
+
+    return [];
+}
+
+export function traceAddressToString(traceAddress: number[]): string {
+    return traceAddress.join("/");
+}
+
+export function findExploitIncidents({
+    chainId,
+    deployments,
+    logs,
+    potentialExploitTraces,
+    txFrom,
+}: {
+    chainId: bigint;
+    deployments: AffectedDeployment[];
+    logs: TransactionLog[];
+    potentialExploitTraces: PotentialExploitTrace[];
+    txFrom: `0x${string}`;
+}): IncidentRow[] {
+    const deploymentByRouter = new Map(deployments.map((deployment) => [deployment.router, deployment]));
+    const rows: IncidentRow[] = [];
+    const parsedTransferLogs = logs
+        .map((log, index) => parseTransferLog(log, index))
+        .filter((log): log is ParsedTransferLog => log !== null)
+        .sort((a, b) => a.logIndex - b.logIndex);
+    const availableTransferLogs = [...parsedTransferLogs];
+    const matchedTransferLogIndexes = new Set<number>();
+    const matchedExploitTraces: MatchedExploitTrace[] = [];
+    const sortedPotentialExploitTraces = [...potentialExploitTraces].sort((a, b) => {
+        return a.trace.blockNumber - b.trace.blockNumber
+            || compareStrings(a.trace.transactionHash, b.trace.transactionHash)
+            || compareStrings(traceAddressToString(a.trace.traceAddress), traceAddressToString(b.trace.traceAddress));
+    });
+
+    for (const potentialExploitTrace of sortedPotentialExploitTraces) {
+        const deployment = deploymentByRouter.get(getAddress(potentialExploitTrace.trace.action.to));
+        if (!deployment) {
+            throw new Error(
+                `no deployment metadata for tx ${potentialExploitTrace.trace.transactionHash} router ${potentialExploitTrace.trace.action.to}`,
+            );
+        }
+
+        const { amount, attacker, token, victim } = potentialExploitTrace.match;
+        const withdrawIndex = availableTransferLogs.findIndex((log) => {
+            return log.token === token
+                && log.from === deployment.core
+                && log.to === attacker
+                && log.amount === amount;
+        });
+        if (withdrawIndex === -1) {
+            throw new Error(
+                `could not match Core -> attacker transfer for tx ${potentialExploitTrace.trace.transactionHash} trace ${traceAddressToString(potentialExploitTrace.trace.traceAddress)}`,
+            );
+        }
+        const [withdrawLog] = availableTransferLogs.splice(withdrawIndex, 1);
+        matchedTransferLogIndexes.add(withdrawLog.logIndex);
+
+        const payIndex = availableTransferLogs.findIndex((log) => {
+            return log.token === token
+                && log.from === victim
+                && log.to === deployment.core
+                && log.amount === amount;
+        });
+        if (payIndex === -1) {
+            throw new Error(
+                `could not match victim -> Core transfer for tx ${potentialExploitTrace.trace.transactionHash} trace ${traceAddressToString(potentialExploitTrace.trace.traceAddress)}`,
+            );
+        }
+        const [payLog] = availableTransferLogs.splice(payIndex, 1);
+        matchedTransferLogIndexes.add(payLog.logIndex);
+
+        matchedExploitTraces.push({
+            deployment,
+            payLog,
+            potentialExploitTrace,
+            withdrawLog,
+        });
+    }
+
+    const availableCreditLogs: CreditTransferLog[] = parsedTransferLogs
+        .filter((log) => !matchedTransferLogIndexes.has(log.logIndex))
+        .map((log) => ({ ...log, remainingAmount: log.amount }));
+
+    matchedExploitTraces.sort((a, b) => {
+        return a.payLog.logIndex - b.payLog.logIndex
+            || compareStrings(traceAddressToString(a.potentialExploitTrace.trace.traceAddress), traceAddressToString(b.potentialExploitTrace.trace.traceAddress));
+    });
+
+    for (const matchedExploitTrace of matchedExploitTraces) {
+        const { deployment, payLog, potentialExploitTrace } = matchedExploitTrace;
+        const { amount, token, victim } = potentialExploitTrace.match;
+        let netLoss = amount;
+
+        for (const creditLog of availableCreditLogs) {
+            if (
+                creditLog.remainingAmount === 0n
+                || creditLog.token !== token
+                || creditLog.to !== victim
+                || creditLog.logIndex >= payLog.logIndex
+            ) {
+                continue;
+            }
+
+            const offsetAmount = creditLog.remainingAmount < netLoss ? creditLog.remainingAmount : netLoss;
+            creditLog.remainingAmount -= offsetAmount;
+            netLoss -= offsetAmount;
+
+            if (netLoss === 0n) {
+                break;
+            }
+        }
+
+        if (netLoss === 0n) {
+            continue;
+        }
+
+        rows.push({
+            blockNumber: potentialExploitTrace.trace.blockNumber,
+            chainId: Number(chainId),
+            rawAmount: netLoss.toString(),
+            router: deployment.router,
+            routerCaller: getAddress(potentialExploitTrace.trace.action.from),
+            routerGeneration: deployment.routerGeneration,
+            token,
+            traceAddress: traceAddressToString(potentialExploitTrace.trace.traceAddress),
+            txFrom: getAddress(txFrom),
+            txHash: potentialExploitTrace.trace.transactionHash,
+            victim,
+        });
+    }
+
+    rows.sort(compareIncidentRows);
+    return rows;
+}
+
+export function summarizeVictimLosses(rows: IncidentRowWithMetadata[]): VictimSummary[] {
+    const summaries = new Map<string, VictimSummary>();
+
+    for (const row of rows) {
+        const key = `${row.chainId}:${row.victim}:${row.token}`;
+        const existing = summaries.get(key);
+
+        if (!existing) {
+            summaries.set(key, {
+                chainId: row.chainId,
+                exploitRowCount: 1,
+                rawAmountTotal: row.rawAmount,
+                routerCallers: [row.routerCaller],
+                token: row.token,
+                tokenDecimals: row.tokenDecimals,
+                tokenSymbol: row.tokenSymbol,
+                txHashes: [row.txHash],
+                victim: row.victim,
+            });
+            continue;
+        }
+
+        existing.exploitRowCount += 1;
+        existing.rawAmountTotal = (BigInt(existing.rawAmountTotal) + BigInt(row.rawAmount)).toString();
+
+        if (!existing.txHashes.includes(row.txHash)) {
+            existing.txHashes.push(row.txHash);
+            existing.txHashes.sort();
+        }
+
+        if (!existing.routerCallers.includes(row.routerCaller)) {
+            existing.routerCallers.push(row.routerCaller);
+            existing.routerCallers.sort();
+        }
+
+        if (typeof existing.tokenSymbol === "undefined" && typeof row.tokenSymbol !== "undefined") {
+            existing.tokenSymbol = row.tokenSymbol;
+        }
+
+        if (typeof existing.tokenDecimals === "undefined" && typeof row.tokenDecimals !== "undefined") {
+            existing.tokenDecimals = row.tokenDecimals;
+        }
+    }
+
+    return [...summaries.values()].sort((a, b) => {
+        return a.chainId - b.chainId
+            || compareStrings(a.victim, b.victim)
+            || compareStrings(a.token, b.token);
+    });
+}
+
+export function rowsToCsv(rows: IncidentRowWithMetadata[]): string {
+    const headers: (keyof IncidentRowWithMetadata)[] = [
+        "chainId",
+        "router",
+        "routerGeneration",
+        "txHash",
+        "blockNumber",
+        "txFrom",
+        "routerCaller",
+        "victim",
+        "token",
+        "tokenSymbol",
+        "tokenDecimals",
+        "rawAmount",
+        "traceAddress",
+    ];
+
+    const lines = [
+        headers.join(","),
+        ...rows.map((row) => headers.map((header) => escapeCsv(row[header])).join(",")),
+    ];
+
+    return `${lines.join("\n")}\n`;
+}
+
+export function enrichRowsWithTokenMetadata(
+    rows: IncidentRow[],
+    metadataByTokenKey: ReadonlyMap<string, TokenMetadata>,
+): IncidentRowWithMetadata[] {
+    return rows.map((row) => {
+        const metadata = metadataByTokenKey.get(tokenKey(row.chainId, row.token));
+
+        return {
+            ...row,
+            ...(metadata?.symbol ? { tokenSymbol: metadata.symbol } : {}),
+            ...(typeof metadata?.decimals === "number" ? { tokenDecimals: metadata.decimals } : {}),
+        };
+    });
+}
+
+export async function loadTokenMetadata({
+    call,
+}: {
+    call: (token: `0x${string}`, data: Hex) => Promise<Hex | undefined>;
+}, token: `0x${string}`): Promise<TokenMetadata> {
+    const [symbolData, decimalsData] = await Promise.all([
+        call(token, "0x95d89b41"),
+        call(token, "0x313ce567"),
+    ]);
+
+    return {
+        ...(typeof decimalsData !== "undefined" ? { decimals: decodeDecimals(decimalsData) } : {}),
+        ...(typeof symbolData !== "undefined" ? { symbol: decodeSymbol(symbolData) } : {}),
+    };
+}
+
+export function tokenKey(chainId: bigint | number, token: `0x${string}`): string {
+    return `${chainId}:${token}`;
+}
+
+function matchPotentialExploitTraceInput(
+    hex: Hex,
+    chainId: bigint,
+    tokenList: readonly `0x${string}`[],
+): ApprovalDrainExploitMatch | null {
+    let decoded;
+    try {
+        decoded = decodeHyperRouterCalldata(hex, chainId, { allowTrailingBytes: true, tokenList });
+    } catch {
+        return null;
+    }
+
+    if (
+        decoded.withRecipient
+        || decoded.withIntegrationFee
+        || decoded.isExactOut
+        || decoded.specifiedTokenInfo !== decoded.calculatedTokenInfo
+        || decoded.specifiedToken !== decoded.calculatedToken
+        || decoded.multiHops.length !== 1
+        || !decoded.trailingCalldata
+    ) {
+        return null;
+    }
+
+    const [multiHop] = decoded.multiHops;
+    if (multiHop.hops.length !== 1 || multiHop.specifiedAmount <= 0n) {
+        return null;
+    }
+
+    const [hop] = multiHop.hops;
+    if (
+        hop.type !== "wrappedToken"
+        || hop.callType !== "unwrap"
+        || hop.underlying !== hop.wrapped
+        || hop.wrapped !== decoded.specifiedToken
+    ) {
+        return null;
+    }
+
+    const trailingBytes = hexToBytes(decoded.trailingCalldata);
+    if (trailingBytes.length < 52) {
+        return null;
+    }
+
+    return {
+        amount: multiHop.specifiedAmount,
+        attacker: getAddress(bytesToHex(trailingBytes.slice(0, ADDRESS_BYTES))),
+        token: decoded.specifiedToken,
+        victim: getAddress(bytesToHex(trailingBytes.slice(32, 52))),
+    };
+}
+
+async function findPotentialExploitTraces(
+    client: Client,
+    chainId: bigint,
+    affectedDeployments: AffectedDeployments,
+): Promise<PotentialExploitTrace[]> {
+    const deploymentByRouter = new Map(affectedDeployments.deployments.map((deployment) => [deployment.router, deployment]));
+    const traces = normalizeTransactionTraces(await client.request({
+        method: "trace_filter",
+        params: [
+            {
+                count: TRACE_FILTER_COUNT,
+                fromBlock: `0x${affectedDeployments.startBlock.toString(16)}`,
+                toAddress: affectedDeployments.deployments.map((deployment) => deployment.router),
+            },
+        ],
+    }));
+
+    if (traces.length === TRACE_FILTER_COUNT) {
+        throw new Error(
+            `trace_filter reached the configured count limit (${TRACE_FILTER_COUNT}); single-call scan may be truncated`,
+        );
+    }
+
+    return traces.flatMap((trace) => {
+        if (trace.type !== "call") {
+            return [];
+        }
+
+        const router = getAddress(trace.action.to);
+        const deployment = deploymentByRouter.get(router);
+        if (!deployment || getAddress(trace.action.from) === deployment.core) {
+            return [];
+        }
+
+        const match = matchPotentialExploitTraceInput(trace.action.input, chainId, deployment.tokenList);
+        if (!match) {
+            return [];
+        }
+
+        return [{ match, trace }];
+    });
+}
+
+async function mapConcurrent<T, R>(
+    items: readonly T[],
+    concurrency: number,
+    mapper: (item: T) => Promise<R>,
+): Promise<R[]> {
+    const results = new Array<R>(items.length);
+    let nextIndex = 0;
+
+    async function worker() {
+        while (true) {
+            const currentIndex = nextIndex++;
+            if (currentIndex >= items.length) {
+                return;
+            }
+
+            results[currentIndex] = await mapper(items[currentIndex]);
+        }
+    }
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, items.length) }, () => worker()));
+    return results;
+}
+
+async function analyzeTransaction(
+    client: Client,
+    chainId: bigint,
+    deployments: AffectedDeployment[],
+    potentialExploitTraces: PotentialExploitTrace[],
+    txHash: Hex,
+): Promise<IncidentRow[]> {
+    const receipt = await client.getTransactionReceipt({ hash: txHash });
+    if (receipt.status !== "success") {
+        return [];
+    }
+
+    return findExploitIncidents({
+        chainId,
+        deployments,
+        logs: receipt.logs as TransactionLog[],
+        potentialExploitTraces,
+        txFrom: getAddress(receipt.from),
+    });
+}
+
+async function main() {
+    validateArgs(process.argv.slice(2));
+
+    for (const { affectedDeployments, chainId, client, name } of getChainConfigs()) {
+        process.stdout.write(
+            `Scanning ${affectedDeployments.deployments.length} ${name} deployment(s) from block ${affectedDeployments.startBlock}...\n`,
+        );
+
+        const potentialExploitTraces = await findPotentialExploitTraces(client, chainId, affectedDeployments);
+        const tracesByTxHash = new Map<Hex, PotentialExploitTrace[]>();
+
+        for (const potentialExploitTrace of potentialExploitTraces) {
+            const txHash = potentialExploitTrace.trace.transactionHash;
+            const existing = tracesByTxHash.get(txHash);
+            if (typeof existing === "undefined") {
+                tracesByTxHash.set(txHash, [potentialExploitTrace]);
+            } else {
+                existing.push(potentialExploitTrace);
+            }
+        }
+
+        process.stdout.write(
+            `  found ${potentialExploitTraces.length} potential exploit traces across ${tracesByTxHash.size} transaction(s)\n`,
+        );
+        const txEntries = Array.from(tracesByTxHash.entries()).filter(([txHash]) => {
+            return !IGNORED_TRANSACTION_SET.has(txHash.toLowerCase());
+        });
+        const ignoredTransactionCount = tracesByTxHash.size - txEntries.length;
+        if (ignoredTransactionCount > 0) {
+            process.stdout.write(`  skipping ${ignoredTransactionCount} ignored transaction(s)\n`);
+        }
+
+        process.stdout.write("Analyzing individual transactions...\n");
+        let processedTransactions = 0;
+
+        const rawRows = (
+            await mapConcurrent(
+                txEntries,
+                TRACE_CONCURRENCY,
+                async ([txHash, traces]) => {
+                    try {
+                        const rows = await analyzeTransaction(
+                            client,
+                            chainId,
+                            affectedDeployments.deployments,
+                            traces,
+                            txHash,
+                        );
+                        processedTransactions += 1;
+                        process.stdout.write(
+                            `  processed ${processedTransactions}/${txEntries.length}: ${txHash} (${rows.length} row(s))\n`,
+                        );
+                        return rows;
+                    } catch (error) {
+                        processedTransactions += 1;
+                        process.stdout.write(`  failed ${processedTransactions}/${txEntries.length}: ${txHash}\n`);
+                        throw error;
+                    }
+                },
+            )
+        ).flat();
+
+        const metadataByToken = new Map<string, TokenMetadata>();
+        const uniqueTokens = [...new Set(rawRows.map((row) => row.token))];
+
+        await mapConcurrent(uniqueTokens, TRACE_CONCURRENCY, async (token) => {
+            const metadata = await loadTokenMetadata(
+                {
+                    call: async (address, data) => {
+                        try {
+                            const result = await client.call({ data, to: address });
+                            return result.data;
+                        } catch {
+                            return undefined;
+                        }
+                    },
+                },
+                getAddress(token),
+            );
+
+            metadataByToken.set(tokenKey(chainId, token), metadata);
+        });
+
+        const enrichedRows = enrichRowsWithTokenMetadata(rawRows, metadataByToken);
+        const summaries = summarizeVictimLosses(enrichedRows);
+
+        await mkdir(OUT_DIR, { recursive: true });
+        await writeFile(path.join(OUT_DIR, "incident-rows.csv"), rowsToCsv(enrichedRows));
+        await writeFile(path.join(OUT_DIR, "summary-by-victim.json"), JSON.stringify(summaries, null, 2) + "\n");
+
+        process.stdout.write(
+            `Wrote ${enrichedRows.length} incident row(s) and ${summaries.length} victim summary row(s) to ${OUT_DIR}\n`,
+        );
+    }
+}
+
+function decodeSymbol(data: Hex): string | undefined {
+    try {
+        const decoded = decodeFunctionResult({
+            abi: SYMBOL_ABI,
+            data,
+        });
+
+        return typeof decoded === "string" && decoded.length > 0 ? decoded : undefined;
+    } catch {
+        try {
+            const [bytes32] = decodeAbiParameters([{ type: "bytes32" }], data);
+            const decoded = hexToString(bytes32, { size: 32 }).replace(/\u0000+$/g, "");
+
+            return decoded.length > 0 ? decoded : undefined;
+        } catch {
+            return undefined;
+        }
+    }
+}
+
+function decodeDecimals(data: Hex): number | undefined {
+    try {
+        const decoded = decodeFunctionResult({
+            abi: DECIMALS_ABI,
+            data,
+        });
+
+        return typeof decoded === "number" ? decoded : Number(decoded);
+    } catch {
+        try {
+            return Number(hexToBigInt(data));
+        } catch {
+            return undefined;
+        }
+    }
+}
+
+function parseTransferLog(log: TransactionLog, fallbackIndex: number): ParsedTransferLog | null {
+    if (log.topics.length !== 3 || log.topics[0].toLowerCase() !== TRANSFER_EVENT_TOPIC) {
+        return null;
+    }
+
+    try {
+        return {
+            amount: hexToBigInt(log.data),
+            from: topicToAddress(log.topics[1]),
+            logIndex: parseOptionalNumericField(log.logIndex) ?? fallbackIndex,
+            token: getAddress(log.address),
+            to: topicToAddress(log.topics[2]),
+        };
+    } catch {
+        return null;
+    }
+}
+
+function topicToAddress(topic: Hex): `0x${string}` {
+    return getAddress(`0x${topic.slice(-40)}`);
+}
+
+function unwrapTransactionTrace(value: unknown): unknown {
+    if (!value || typeof value !== "object") {
+        return null;
+    }
+
+    if ("value" in value) {
+        return unwrapTransactionTrace((value as WrappedTransactionTrace).value);
+    }
+
+    return value;
+}
+
+function normalizeTransactionTrace(value: unknown): TransactionTrace | null {
+    if (!value || typeof value !== "object") {
+        return null;
+    }
+
+    const maybeTrace = value as Partial<TransactionTrace>;
+    const action = normalizeTraceAction(maybeTrace.action);
+    const result = normalizeTraceResult(maybeTrace.result);
+    const blockHash = typeof maybeTrace.blockHash === "string" ? maybeTrace.blockHash as Hex : null;
+    const blockNumber = parseNumericField(maybeTrace.blockNumber);
+    const subtraces = parseNumericField(maybeTrace.subtraces);
+    const traceAddress = normalizeTraceAddress(maybeTrace.traceAddress);
+    const transactionHash = typeof maybeTrace.transactionHash === "string" ? maybeTrace.transactionHash as `0x${string}` : null;
+    const transactionPosition = parseNumericField(maybeTrace.transactionPosition);
+    const type = typeof maybeTrace.type === "string" ? maybeTrace.type : null;
+
+    if (!action || !result || !blockHash || blockNumber === null || subtraces === null || !traceAddress || !transactionHash || transactionPosition === null || !type) {
+        return null;
+    }
+
+    return {
+        action,
+        blockHash,
+        blockNumber,
+        ...(typeof maybeTrace.error === "string" ? { error: maybeTrace.error } : {}),
+        result,
+        subtraces,
+        traceAddress,
+        transactionHash,
+        transactionPosition,
+        type,
+    };
+}
+
+function normalizeTraceAction(value: unknown): TraceAction | null {
+    if (!value || typeof value !== "object") {
+        return null;
+    }
+
+    const maybeAction = value as Partial<TraceAction>;
+    if (
+        typeof maybeAction.callType !== "string"
+        || typeof maybeAction.from !== "string"
+        || typeof maybeAction.gas !== "string"
+        || typeof maybeAction.input !== "string"
+        || typeof maybeAction.to !== "string"
+        || typeof maybeAction.value !== "string"
+    ) {
+        return null;
+    }
+
+    return {
+        callType: maybeAction.callType,
+        from: maybeAction.from,
+        gas: maybeAction.gas as Hex,
+        input: maybeAction.input as Hex,
+        to: maybeAction.to,
+        value: maybeAction.value as Hex,
+    };
+}
+
+function normalizeTraceResult(value: unknown): TraceResult | null {
+    if (!value || typeof value !== "object") {
+        return null;
+    }
+
+    const maybeResult = value as Partial<TraceResult>;
+    if (typeof maybeResult.gasUsed !== "string" || typeof maybeResult.output !== "string") {
+        return null;
+    }
+
+    return {
+        gasUsed: maybeResult.gasUsed as Hex,
+        output: maybeResult.output as Hex,
+    };
+}
+
+function normalizeTraceAddress(value: unknown): number[] | null {
+    if (!Array.isArray(value)) {
+        return null;
+    }
+
+    const normalized = value.map(parseNumericField);
+    return normalized.every((segment) => segment !== null) ? normalized as number[] : null;
+}
+
+function parseNumericField(value: unknown): number | null {
+    if (typeof value === "number") {
+        return Number.isInteger(value) ? value : null;
+    }
+
+    if (typeof value !== "string") {
+        return null;
+    }
+
+    const parsed = value.startsWith("0x")
+        ? Number.parseInt(value.slice(2), 16)
+        : Number.parseInt(value, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseOptionalNumericField(value: unknown): number | null {
+    if (typeof value === "undefined" || value === null) {
+        return null;
+    }
+
+    return parseNumericField(value);
+}
+
+function compareIncidentRows(a: IncidentRow, b: IncidentRow): number {
+    return a.chainId - b.chainId
+        || a.blockNumber - b.blockNumber
+        || compareStrings(a.txHash, b.txHash)
+        || compareStrings(a.traceAddress, b.traceAddress);
+}
+
+function compareStrings(a: string, b: string): number {
+    return a < b ? -1 : a > b ? 1 : 0;
+}
+
+function escapeCsv(value: string | number | undefined): string {
+    if (typeof value === "undefined") {
+        return "";
+    }
+
+    const raw = String(value);
+    if (!/[,"\n]/.test(raw)) {
+        return raw;
+    }
+
+    return `"${raw.replaceAll("\"", "\"\"")}"`;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+    try {
+        await main();
+    } catch (error) {
+        process.stderr.write(`Error: ${(error as Error).message}\n`);
+        process.stderr.write(usage());
+        process.exit(1);
+    }
+}
