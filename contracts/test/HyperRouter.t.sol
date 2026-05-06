@@ -283,18 +283,18 @@ contract HyperRouterTest is Test {
 
     function testRevert_TrailingCalldataCannotOverrideTransferFrom() external {
         uint32 specifiedAmount = 20_000_000;
-        address attacker = makeAddr("attacker");
+        address attacker = address(this);
         address victim = makeAddr("victim");
 
-        _approve(_TOKEN_WRAPPER_ADDRESS, address(hyperRouter), specifiedAmount);
-        IERC20(_TOKEN_WRAPPER_ADDRESS).transfer(victim, specifiedAmount);
+        deal(_ERC_20_FIRST_ADDRESS, address(CORE), specifiedAmount);
+        deal(_ERC_20_FIRST_ADDRESS, victim, specifiedAmount);
 
         vm.prank(victim);
-        IERC20(_TOKEN_WRAPPER_ADDRESS).approve(address(hyperRouter), specifiedAmount);
+        IERC20(_ERC_20_FIRST_ADDRESS).approve(address(hyperRouter), specifiedAmount);
 
         bytes memory data = abi.encodePacked(
             hex"000400ffff000000",
-            bytes20(_TOKEN_WRAPPER_ADDRESS),
+            bytes20(_ERC_20_FIRST_ADDRESS),
             bytes20(_ERC_20_FIRST_ADDRESS),
             bytes4(specifiedAmount),
             hex"000501",
@@ -303,22 +303,53 @@ contract HyperRouterTest is Test {
             bytes20(victim)
         );
 
-        uint256 victimWrapperBalanceBefore = IERC20(_TOKEN_WRAPPER_ADDRESS).balanceOf(victim);
-        uint256 attackerUnderlyingBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker);
-
-        vm.prank(attacker);
         (bool success,) = address(hyperRouter).call(data);
 
         assertFalse(success, "success");
-        assertEq(
-            IERC20(_TOKEN_WRAPPER_ADDRESS).balanceOf(victim),
-            victimWrapperBalanceBefore,
-            "unexpected victim wrapper balance"
+    }
+
+    function test_TrailingCalldataCannotDrainVictimWhenAttackerAllowanceIsActive() external {
+        uint32 specifiedAmount = 20_000_000;
+        address attacker = address(this);
+        address victim = makeAddr("victim");
+
+        deal(_ERC_20_FIRST_ADDRESS, address(CORE), specifiedAmount);
+        deal(_ERC_20_FIRST_ADDRESS, victim, specifiedAmount);
+
+        IERC20(_ERC_20_FIRST_ADDRESS).approve(address(hyperRouter), specifiedAmount);
+
+        vm.prank(victim);
+        IERC20(_ERC_20_FIRST_ADDRESS).approve(address(hyperRouter), specifiedAmount);
+
+        bytes memory data = abi.encodePacked(
+            hex"000400ffff000000",
+            bytes20(_ERC_20_FIRST_ADDRESS),
+            bytes20(_ERC_20_FIRST_ADDRESS),
+            bytes4(specifiedAmount),
+            hex"000501",
+            bytes20(attacker),
+            bytes12(0),
+            bytes20(victim)
         );
+
+        uint256 attackerBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker);
+        uint256 victimBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(victim);
+
+        (bool success, bytes memory returndataRaw) = address(hyperRouter).call(data);
+
+        assertTrue(success, "success");
+
+        HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(returndataRaw);
+
+        assertEq(returndata.calculatedAmount, specifiedAmount, "calculatedAmount");
+        assertEq(returndata.integrationFee, 0, "integrationFee");
         assertEq(
             IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker),
-            attackerUnderlyingBalanceBefore,
-            "unexpected attacker underlying balance"
+            attackerBalanceBefore,
+            "unexpected attacker balance"
+        );
+        assertEq(
+            IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(victim), victimBalanceBefore, "unexpected victim balance"
         );
     }
 
