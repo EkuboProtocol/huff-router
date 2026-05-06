@@ -72,6 +72,12 @@ As a result, attacker-controlled trailing bytes could be reinterpreted as:
 
 While the `recipient` is intended to be caller-controlled, the `transferFrom` address should not be, which opened up the possibility for exploitation.
 
+## Contributing Factors
+
+We chose not to audit this contract because we assessed its practical risk as low. That assessment relied on two assumptions: approvals could be limited and bundled, and swaps initiated through the user interface would remain small and infrequent.
+
+That judgment underestimated the consequences of a parsing bug in an approval-bearing router. Low expected usage and constrained approval patterns were not sufficient reasons to skip an audit of a contract that could move user funds.
+
 ## Impact
 
 The primary impact was approval draining from victims that had granted an affected router ERC20 approvals.
