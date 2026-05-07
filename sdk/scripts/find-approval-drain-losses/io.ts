@@ -15,13 +15,13 @@ import type { EIP1474Methods, Hex, HttpTransport, PublicClient } from "viem";
 import type {
     AffectedDeployments,
     IncidentRow,
+    TokenLossSummary,
     VictimSummary,
 } from "./search.ts";
 import {
     V2_CORE_ADDRESS,
     V3_CORE_ADDRESS,
     mapConcurrent,
-    tokenKey,
 } from "./search.ts";
 import {
     TOKEN_LIST_05CE00D,
@@ -38,6 +38,11 @@ export interface ChainConfig {
     chainId: bigint;
     client: Client;
     name: string;
+}
+
+export interface TokenMetadata {
+    decimals?: number;
+    symbol?: string;
 }
 
 export type Client = PublicClient<HttpTransport, undefined, undefined, [...EIP1474Methods, {
@@ -109,14 +114,51 @@ export function rowsToCsv(rows: IncidentRow[]): string {
     return `${lines.join("\n")}\n`;
 }
 
+export async function loadTokenMetadataMap(
+    client: Pick<Client, "call">,
+    tokens: readonly `0x${string}`[],
+): Promise<Map<`0x${string}`, TokenMetadata>> {
+    const metadataByToken = new Map<`0x${string}`, TokenMetadata>();
+
+    await mapConcurrent(tokens, 8, async (token) => {
+        const [symbolData, decimalsData] = await Promise.all([
+            callToken(client, token, "0x95d89b41"),
+            callToken(client, token, "0x313ce567"),
+        ]);
+
+        metadataByToken.set(token, {
+            ...(typeof symbolData !== "undefined" ? { symbol: decodeSymbol(symbolData) } : {}),
+            ...(typeof decimalsData !== "undefined" ? { decimals: decodeDecimals(decimalsData) } : {}),
+        });
+    });
+
+    return metadataByToken;
+}
+
 export async function writeReports(
     incidentRows: IncidentRow[],
-    summaries: VictimSummary[],
+    summaries: VictimSummary,
+    tokenSummaries: TokenLossSummary[],
+    tokenMetadataByToken: ReadonlyMap<`0x${string}`, TokenMetadata>,
 ): Promise<string> {
     await mkdir(OUT_DIR, { recursive: true });
     await writeFile(path.join(OUT_DIR, "incident-rows.csv"), rowsToCsv(incidentRows));
     await writeFile(path.join(OUT_DIR, "summary-by-victim.json"), JSON.stringify(summaries, null, 2) + "\n");
+    await writeFile(path.join(OUT_DIR, "summary-by-token.csv"), tokenSummariesToCsv(tokenSummaries, tokenMetadataByToken));
     return OUT_DIR;
+}
+
+async function callToken(
+    client: Pick<Client, "call">,
+    token: `0x${string}`,
+    data: Hex,
+): Promise<Hex | undefined> {
+    try {
+        const result = await client.call({ data, to: token });
+        return result.data;
+    } catch {
+        return undefined;
+    }
 }
 
 function decodeSymbol(data: Hex): string | undefined {
@@ -167,4 +209,50 @@ function escapeCsv(value: string | number | undefined): string {
     }
 
     return `"${raw.replaceAll("\"", "\"\"")}"`;
+}
+
+function tokenSummariesToCsv(
+    rows: TokenLossSummary[],
+    tokenMetadataByToken: ReadonlyMap<`0x${string}`, TokenMetadata>,
+): string {
+    const headers = ["token", "symbol", "amount"] as const;
+    const lines = [
+        headers.join(","),
+        ...rows.map((row) => {
+            const metadata = tokenMetadataByToken.get(row.token);
+            return [
+                escapeCsv(row.token),
+                escapeCsv(metadata?.symbol),
+                escapeCsv(formatDisplayAmount(row.amount, metadata?.decimals)),
+            ].join(",");
+        }),
+    ];
+
+    return `${lines.join("\n")}\n`;
+}
+
+function formatDisplayAmount(rawAmount: string, decimals?: number): string {
+    if (typeof decimals !== "number" || decimals < 0) {
+        return rawAmount;
+    }
+
+    const amount = BigInt(rawAmount);
+    if (decimals === 0) {
+        return amount.toString();
+    }
+
+    const base = 10n ** BigInt(decimals);
+    const whole = amount / base;
+    const fraction = amount % base;
+
+    if (fraction === 0n) {
+        return whole.toString();
+    }
+
+    const fractionString = fraction
+        .toString()
+        .padStart(decimals, "0")
+        .replace(/0+$/u, "");
+
+    return `${whole}.${fractionString}`;
 }

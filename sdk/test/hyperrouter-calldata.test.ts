@@ -33,9 +33,8 @@ const EXPLOIT_INPUT = `${ROUTE_PREFIX_ONLY}${ATTACKER}${JUNK_12_BYTES}${VICTIM}$
 
 describe("decodeHyperRouterCalldata", () => {
     test("keeps trailing calldata for exploit-shaped routes", () => {
-        const decoded = decodeHyperRouterCalldata(EXPLOIT_INPUT, 1n, {
+        const decoded = decodeHyperRouterCalldata(EXPLOIT_INPUT, HISTORICAL_V2_TOKEN_LIST, {
             allowTrailingBytes: true,
-            tokenList: HISTORICAL_V2_TOKEN_LIST,
         });
 
         expect(decoded.withRecipient).toBe(false);

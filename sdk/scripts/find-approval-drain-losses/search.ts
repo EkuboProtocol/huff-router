@@ -113,19 +113,16 @@ export interface IncidentRow {
     victim: `0x${string}`;
 }
 
-export interface VictimSummary {
-    chainId: number;
-    exploitRowCount: number;
-    rawAmountTotal: string;
-    routerCallers: `0x${string}`[];
+export interface VictimLossEntry {
+    amount: string;
     token: `0x${string}`;
-    txHashes: `0x${string}`[];
-    victim: `0x${string}`;
 }
 
-export interface TokenMetadata {
-    decimals?: number;
-    symbol?: string;
+export type VictimSummary = Partial<Record<`0x${string}`, VictimLossEntry[]>>;
+
+export interface TokenLossSummary {
+    amount: string;
+    token: `0x${string}`;
 }
 
 interface ParsedTransferLog {
@@ -364,45 +361,50 @@ export function findExploitIncidents({
     return rows;
 }
 
-export function summarizeVictimLosses(rows: IncidentRow[]): VictimSummary[] {
-    const summaries = new Map<string, VictimSummary>();
+export function summarizeVictimLosses(rows: IncidentRow[]): VictimSummary {
+    const summaries = new Map<`0x${string}`, Map<`0x${string}`, bigint>>();
 
     for (const row of rows) {
-        const key = `${row.chainId}:${row.victim}:${row.victimToken}`;
-        const existing = summaries.get(key);
-
-        if (!existing) {
-            summaries.set(key, {
-                chainId: row.chainId,
-                exploitRowCount: 1,
-                rawAmountTotal: row.rawAmount,
-                routerCallers: [row.routerCaller],
-                token: row.victimToken,
-                txHashes: [row.txHash],
-                victim: row.victim,
-            });
-            continue;
+        let tokenSummaries = summaries.get(row.victim);
+        if (!tokenSummaries) {
+            tokenSummaries = new Map();
+            summaries.set(row.victim, tokenSummaries);
         }
 
-        existing.exploitRowCount += 1;
-        existing.rawAmountTotal = (BigInt(existing.rawAmountTotal) + BigInt(row.rawAmount)).toString();
-
-        if (!existing.txHashes.includes(row.txHash)) {
-            existing.txHashes.push(row.txHash);
-            existing.txHashes.sort();
-        }
-
-        if (!existing.routerCallers.includes(row.routerCaller)) {
-            existing.routerCallers.push(row.routerCaller);
-            existing.routerCallers.sort();
-        }
+        tokenSummaries.set(
+            row.victimToken,
+            (tokenSummaries.get(row.victimToken) ?? 0n) + BigInt(row.rawAmount),
+        );
     }
 
-    return [...summaries.values()].sort((a, b) => {
-        return a.chainId - b.chainId
-            || compareStrings(a.victim, b.victim)
-            || compareStrings(a.token, b.token);
-    });
+    return Object.fromEntries(
+        [...summaries.entries()]
+            .sort(([victimA], [victimB]) => compareStrings(victimA, victimB))
+            .map(([victim, tokenSummaries]) => [
+                victim,
+                [...tokenSummaries.entries()]
+                    .sort(([tokenA], [tokenB]) => compareStrings(tokenA, tokenB))
+                    .map(([token, amount]) => ({
+                        amount: amount.toString(),
+                        token,
+                    })),
+            ]),
+    ) as VictimSummary;
+}
+
+export function summarizeTokenLosses(rows: IncidentRow[]): TokenLossSummary[] {
+    const summaries = new Map<`0x${string}`, bigint>();
+
+    for (const row of rows) {
+        summaries.set(row.victimToken, (summaries.get(row.victimToken) ?? 0n) + BigInt(row.rawAmount));
+    }
+
+    return [...summaries.entries()]
+        .sort(([tokenA], [tokenB]) => compareStrings(tokenA, tokenB))
+        .map(([token, amount]) => ({
+            amount: amount.toString(),
+            token,
+        }));
 }
 
 export function tokenKey(chainId: bigint | number, token: `0x${string}`): string {

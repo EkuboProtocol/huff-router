@@ -5,10 +5,12 @@ import {
     findPotentialExploitTraces,
     isIgnoredTransaction,
     mapConcurrent,
+    summarizeTokenLosses,
     summarizeVictimLosses,
 } from "./find-approval-drain-losses/search.ts";
 import {
     getChainConfigs,
+    loadTokenMetadataMap,
     writeReports,
 } from "./find-approval-drain-losses/io.ts";
 
@@ -65,9 +67,14 @@ try {
         ).flat();
 
         const summaries = summarizeVictimLosses(rows);
-        const outDir = await writeReports(rows, summaries);
+        const tokenSummaries = summarizeTokenLosses(rows);
+        const tokenMetadataByToken = await loadTokenMetadataMap(
+            client,
+            tokenSummaries.map((summary) => summary.token),
+        );
+        const outDir = await writeReports(rows, summaries, tokenSummaries, tokenMetadataByToken);
 
-        console.log(`Wrote ${rows.length} incident row(s) and ${summaries.length} victim summary row(s) to ${outDir}`);
+        console.log(`Wrote ${rows.length} incident row(s), ${Object.keys(summaries).length} victim summary row(s), and ${tokenSummaries.length} token summary row(s) to ${outDir}`);
     }
 } catch (error) {
     console.error(`Error: ${(error as Error).message}`);

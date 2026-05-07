@@ -3,12 +3,14 @@ import { getAddress } from "viem";
 import type { Hex } from "viem";
 import {
     findExploitIncidents,
+    summarizeTokenLosses,
     summarizeVictimLosses,
     V2_CORE_ADDRESS,
     V3_CORE_ADDRESS,
 } from "../scripts/find-approval-drain-losses/search.ts";
 import type {
     AffectedDeployment,
+    IncidentRow,
     PotentialExploitTrace,
     TransactionLog,
     TransactionTrace,
@@ -102,6 +104,34 @@ function makeTransferLog({
     };
 }
 
+function makeExploitMatch(amount: bigint) {
+    return {
+        amount,
+        attacker: ATTACKER,
+        attackerToken: TOKEN,
+        victim: VICTIM,
+        victimToken: TOKEN,
+    } as const;
+}
+
+function makeIncidentRow(overrides: Partial<IncidentRow> = {}): IncidentRow {
+    return {
+        blockNumber: 24_200_000,
+        chainId: 1,
+        rawAmount: "20000000",
+        router: V3_ROUTER,
+        routerCaller: ATTACKER,
+        routerGeneration: "V3",
+        attackerToken: TOKEN,
+        traceAddress: "",
+        txFrom: ATTACKER,
+        txHash: "0x3333333333333333333333333333333333333333333333333333333333333333",
+        victim: VICTIM,
+        victimToken: TOKEN,
+        ...overrides,
+    };
+}
+
 describe("findExploitIncidents", () => {
     test("matches one exploit trace to the withdraw and pay transfer events", () => {
         const txHash = "0x770bc9a1f7c32cb63a5002b9ceb5c7994cd3af0fc6b2309cb32d3c46f629daa0" as const;
@@ -114,12 +144,7 @@ describe("findExploitIncidents", () => {
             ],
             potentialExploitTraces: [
                 {
-                    match: {
-                        amount: 20_000_000n,
-                        attacker: ATTACKER,
-                        token: TOKEN,
-                        victim: VICTIM,
-                    },
+                    match: makeExploitMatch(20_000_000n),
                     trace: makeTrace({
                         blockNumber: 24_200_000,
                         router: V3_ROUTER,
@@ -139,11 +164,12 @@ describe("findExploitIncidents", () => {
             router: V3_ROUTER,
             routerCaller: ATTACKER,
             routerGeneration: "V3",
-            token: TOKEN,
+            attackerToken: TOKEN,
             traceAddress: "",
             txFrom: ATTACKER,
             txHash,
             victim: VICTIM,
+            victimToken: TOKEN,
         });
     });
 
@@ -151,12 +177,7 @@ describe("findExploitIncidents", () => {
         const txHash = "0x1111111111111111111111111111111111111111111111111111111111111111" as const;
         const traces: PotentialExploitTrace[] = [
             {
-                match: {
-                    amount: 20_000_000n,
-                    attacker: ATTACKER,
-                    token: TOKEN,
-                    victim: VICTIM,
-                },
+                match: makeExploitMatch(20_000_000n),
                 trace: makeTrace({
                     blockNumber: 24_200_001,
                     router: V3_ROUTER,
@@ -166,12 +187,7 @@ describe("findExploitIncidents", () => {
                 }),
             },
             {
-                match: {
-                    amount: 20_000_000n,
-                    attacker: ATTACKER,
-                    token: TOKEN,
-                    victim: VICTIM,
-                },
+                match: makeExploitMatch(20_000_000n),
                 trace: makeTrace({
                     blockNumber: 24_200_001,
                     router: V3_ROUTER,
@@ -212,12 +228,7 @@ describe("findExploitIncidents", () => {
             ],
             potentialExploitTraces: [
                 {
-                    match: {
-                        amount: 20_000_000n,
-                        attacker: ATTACKER,
-                        token: TOKEN,
-                        victim: VICTIM,
-                    },
+                    match: makeExploitMatch(20_000_000n),
                     trace: makeTrace({
                         blockNumber: 24_200_002,
                         router: V3_ROUTER,
@@ -248,12 +259,7 @@ describe("findExploitIncidents", () => {
             ],
             potentialExploitTraces: [
                 {
-                    match: {
-                        amount: 20_000_000n,
-                        attacker: ATTACKER,
-                        token: TOKEN,
-                        victim: VICTIM,
-                    },
+                    match: makeExploitMatch(20_000_000n),
                     trace: makeTrace({
                         blockNumber: 24_200_003,
                         router: V3_ROUTER,
@@ -278,46 +284,42 @@ describe("findExploitIncidents", () => {
 describe("summarizeVictimLosses", () => {
     test("aggregates rows by victim and token", () => {
         const summary = summarizeVictimLosses([
-            {
-                blockNumber: 24_200_000,
-                chainId: 1,
-                rawAmount: "20000000",
-                router: V3_ROUTER,
-                routerCaller: ATTACKER,
-                routerGeneration: "V3",
-                token: TOKEN,
-                traceAddress: "",
-                txFrom: ATTACKER,
-                txHash: "0x3333333333333333333333333333333333333333333333333333333333333333",
-                victim: VICTIM,
-            },
-            {
+            makeIncidentRow(),
+            makeIncidentRow({
                 blockNumber: 24_200_001,
-                chainId: 1,
                 rawAmount: "30000000",
-                router: V3_ROUTER,
-                routerCaller: ATTACKER,
-                routerGeneration: "V3",
-                token: TOKEN,
                 traceAddress: "0",
-                txFrom: ATTACKER,
                 txHash: "0x4444444444444444444444444444444444444444444444444444444444444444",
-                victim: VICTIM,
-            },
+            }),
+        ]);
+
+        expect(summary).toEqual({
+            [VICTIM]: [
+                {
+                    amount: "50000000",
+                    token: TOKEN,
+                },
+            ],
+        });
+    });
+});
+
+describe("summarizeTokenLosses", () => {
+    test("aggregates rows by token", () => {
+        const summary = summarizeTokenLosses([
+            makeIncidentRow(),
+            makeIncidentRow({
+                blockNumber: 24_200_001,
+                rawAmount: "30000000",
+                traceAddress: "0",
+                txHash: "0x4444444444444444444444444444444444444444444444444444444444444444",
+            }),
         ]);
 
         expect(summary).toEqual([
             {
-                chainId: 1,
-                exploitRowCount: 2,
-                rawAmountTotal: "50000000",
-                routerCallers: [ATTACKER],
+                amount: "50000000",
                 token: TOKEN,
-                txHashes: [
-                    "0x3333333333333333333333333333333333333333333333333333333333333333",
-                    "0x4444444444444444444444444444444444444444444444444444444444444444",
-                ],
-                victim: VICTIM,
             },
         ]);
     });
