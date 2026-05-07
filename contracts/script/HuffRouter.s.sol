@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {HyperRouterLib} from "../src/HyperRouter.sol";
+import {HuffRouterLib} from "../src/HuffRouter.sol";
 import {Script} from "forge-std/Script.sol";
 
-contract HyperRouterScript is Script {
+contract HuffRouterScript is Script {
     function run() external {
-        HyperRouterLib.deploy(vm);
+        HuffRouterLib.deploy(vm);
     }
 }

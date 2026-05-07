@@ -7,7 +7,7 @@ export default defineConfig({
     foundry({
       "project": "../contracts",
       "exclude": [],
-      "include": ["HyperRouter.t.sol/*"]
+      "include": ["HuffRouter.t.sol/*"]
     })
   ],
 });

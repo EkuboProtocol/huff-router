@@ -131,11 +131,11 @@ export interface IntegrationFee {
 }
 
 /**
- * The parameters required for constructing a call to the *HyperRouter*
+ * The parameters required for constructing a call to the *HuffRouter*
  */
 export interface Parameters {
   /**
-   * The chain ID of the chain that the *HyperRouter* instance for which the calldata is generated is deployed on
+   * The chain ID of the chain that the *HuffRouter* instance for which the calldata is generated is deployed on
    */
   chainId: bigint;
   /**
@@ -156,7 +156,7 @@ export interface Parameters {
    * The recipient of the tokens received from Ekubo Core
    *
    * @defaultValue
-   * If the *HyperRouter* is called via a `call`, the `caller`; if called via a `delegatecall`, the delegating contract.
+   * If the *HuffRouter* is called via a `call`, the `caller`; if called via a `delegatecall`, the delegating contract.
    */
   recipient?: Hex;
   /**
@@ -183,12 +183,12 @@ export interface Parameters {
 }
 
 /**
- * Generates calldata which can both be used in a `call` or a `delegatecall` to the *HyperRouter*.
+ * Generates calldata which can both be used in a `call` or a `delegatecall` to the *HuffRouter*.
  *
  * If called via a `call`, depending on the type of the token that needs to be transferred to Ekubo Core:
- * - ERC-20: The *HyperRouter* needs an approval from the `caller`
- * - Native token: Has to be transferred directly to the *HyperRouter*.
- *      If the route is exact-out, the remaining balance of the *HyperRouter* after settlement will be refunded to
+ * - ERC-20: The *HuffRouter* needs an approval from the `caller`
+ * - Native token: Has to be transferred directly to the *HuffRouter*.
+ *      If the route is exact-out, the remaining balance of the *HuffRouter* after settlement will be refunded to
  *      the `caller`.
  *
  * If called via a `delegatecall`, all transfers happen directly from the delegating contract and no approvals,

@@ -44,7 +44,7 @@ export interface DecodedIntegrationFee {
     integrator: Hex;
 }
 
-export interface DecodedHyperRouterCalldata {
+export interface DecodedHuffRouterCalldata {
     bytesConsumed: number;
     calculatedAmountThreshold?: string;
     calculatedToken: Hex;
@@ -63,7 +63,7 @@ export interface DecodedHyperRouterCalldata {
     withSqrtRatioLimit: boolean;
 }
 
-export interface DecodeHyperRouterCalldataOptions {
+export interface DecodeHuffRouterCalldataOptions {
     allowTrailingBytes?: boolean;
 }
 
@@ -97,11 +97,11 @@ function extensionLabel(address: string): string {
     return `unknown (${normalized})`;
 }
 
-export function decodeHyperRouterCalldata(
+export function decodeHuffRouterCalldata(
     hex: Hex,
     chainIdOrTokenList: bigint | readonly `0x${string}`[] | null,
-    { allowTrailingBytes = false }: DecodeHyperRouterCalldataOptions = {},
-): DecodedHyperRouterCalldata {
+    { allowTrailingBytes = false }: DecodeHuffRouterCalldataOptions = {},
+): DecodedHuffRouterCalldata {
     const data = hexToBytes(hex);
     let offset = 0;
 
@@ -310,11 +310,11 @@ export function decodeHyperRouterCalldata(
 export function matchApprovalDrainExploitInput(
     hex: Hex,
     chainId: bigint,
-    options: Omit<DecodeHyperRouterCalldataOptions, "allowTrailingBytes"> = {},
+    options: Omit<DecodeHuffRouterCalldataOptions, "allowTrailingBytes"> = {},
 ): ApprovalDrainExploitInputMatch | null {
-    let decoded: DecodedHyperRouterCalldata;
+    let decoded: DecodedHuffRouterCalldata;
     try {
-        decoded = decodeHyperRouterCalldata(hex, chainId, { ...options, allowTrailingBytes: true });
+        decoded = decodeHuffRouterCalldata(hex, chainId, { ...options, allowTrailingBytes: true });
     } catch {
         return null;
     }

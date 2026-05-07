@@ -1,5 +1,5 @@
 import { Address, concatHex, encodeAbiParameters, getAbiItem, Hex, hexToBigInt, maxUint256, numberToHex, parseEther, parseUnits, zeroAddress } from "viem";
-import { hyperRouterTestAbi } from "./abi.js";
+import { huffRouterTestAbi } from "./abi.js";
 import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions.js";
 import { generateCalldata, IntegrationFee, Hop } from "../src/index.js";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl.js";
@@ -80,7 +80,7 @@ const NATIVE_ERC20_CONFIGS: PoolConfigWithName[] = [
 ];
 
 const inputs = getAbiItem({
-    "abi": hyperRouterTestAbi,
+    "abi": huffRouterTestAbi,
     "name": "executeSdkCases",
 }).inputs;
 

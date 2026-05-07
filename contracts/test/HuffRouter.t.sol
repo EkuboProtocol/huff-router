@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {HyperRouterLib, IHyperRouter} from "../src/HyperRouter.sol";
+import {HuffRouterLib, IHuffRouter} from "../src/HuffRouter.sol";
 import {CORE_ADDRESS, MEV_CAPTURE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS} from "../src/addresses.sol";
 
 import {Positions} from "ekubo/Positions.sol";
@@ -31,7 +31,7 @@ contract TestToken is ERC20 {
     }
 }
 
-contract HyperRouterTest is Test {
+contract HuffRouterTest is Test {
     using CoreLib for *;
 
     struct SuccessCase {
@@ -79,12 +79,12 @@ contract HyperRouterTest is Test {
     uint128 private constant _POSITION_AMOUNT = 100_000 ether;
     address private immutable _PAYER = address(this);
 
-    // cast keccak "HyperRouterTest#DISABLE_RECEIVE_SLOT"
+    // cast keccak "HuffRouterTest#DISABLE_RECEIVE_SLOT"
     uint256 private constant _DISABLE_RECEIVE_SLOT = 0x27095381dc94d25f5c191482faa73780fd308183456a62f43e8833e46ea4a541;
     uint256 private constant _MAX_CODE_SIZE = 24_576; // https://eips.ethereum.org/EIPS/eip-170
     uint256 private constant _MINIMAL_CALLDATA_LENGTH = 10;
 
-    IHyperRouter private hyperRouter;
+    IHuffRouter private huffRouter;
     ICore private constant CORE = ICore(CORE_ADDRESS);
     IPositions private positions;
 
@@ -94,7 +94,7 @@ contract HyperRouterTest is Test {
     address private constant _TOKEN_WRAPPER_ADDRESS = 0x3333333333333333333333333333333333333333;
 
     function setUp() public {
-        hyperRouter = HyperRouterLib.deploy(vm);
+        huffRouter = HuffRouterLib.deploy(vm);
 
         deployCodeTo("v3-artifacts/Core.json", CORE_ADDRESS);
         deployCodeTo("v3-artifacts/MEVCapture.json", abi.encode(CORE_ADDRESS), MEV_CAPTURE_ADDRESS);
@@ -103,8 +103,8 @@ contract HyperRouterTest is Test {
 
         positions = new Positions(CORE, address(this), 0, 1);
 
-        deployCodeTo("HyperRouter.t.sol:TestToken", _ERC_20_FIRST_ADDRESS);
-        deployCodeTo("HyperRouter.t.sol:TestToken", _ERC_20_SECOND_ADDRESS);
+        deployCodeTo("HuffRouter.t.sol:TestToken", _ERC_20_FIRST_ADDRESS);
+        deployCodeTo("HuffRouter.t.sol:TestToken", _ERC_20_SECOND_ADDRESS);
 
         deployCodeTo(
             "v3-artifacts/TokenWrapper.json",
@@ -126,15 +126,15 @@ contract HyperRouterTest is Test {
     }
 
     function test_ContractSize() external {
-        uint256 codeSize = HyperRouterLib.initcodeSize(vm);
+        uint256 codeSize = HuffRouterLib.initcodeSize(vm);
         console.log(codeSize);
 
         assertLe(codeSize, _MAX_CODE_SIZE);
     }
 
     function testRevert_LockedCoreOnly() external {
-        vm.expectRevert(IHyperRouter.CoreOnly.selector);
-        hyperRouter.locked_6416899205(0);
+        vm.expectRevert(IHuffRouter.CoreOnly.selector);
+        huffRouter.locked_6416899205(0);
     }
 
     function test_SdkCases() external {
@@ -178,7 +178,7 @@ contract HyperRouterTest is Test {
 
         // Double the total specified amount because the testdata contains some unprofitable arbitrage swaps
         uint256 dealAmount = c.isExactOut ? _EXACT_OUT_APPROVE_AMOUNT : c.totalSpecified * 10;
-        uint256 value = _approve(tokenIn, address(hyperRouter), dealAmount);
+        uint256 value = _approve(tokenIn, address(huffRouter), dealAmount);
 
         address recipient = c.recipient == address(0) ? _PAYER : c.recipient;
 
@@ -188,10 +188,10 @@ contract HyperRouterTest is Test {
             _unclaimedIntegrationFees(c.integrator, integratorToken)
         );
 
-        bytes memory result = LibCall.callContract(address(hyperRouter), value, c.data);
+        bytes memory result = LibCall.callContract(address(huffRouter), value, c.data);
         vm.snapshotGasLastCall(c.name);
 
-        HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(result);
+        HuffRouterLib.SwapReturndata memory returndata = HuffRouterLib.decodeSwapReturndata(result);
 
         assertNotEq(returndata.calculatedAmount, 0);
 
@@ -241,11 +241,11 @@ contract HyperRouterTest is Test {
     function testRevert_SlippageCheckFailed(SlippageCheckFailedCase memory c) private {
         _initializePools(c.poolKeys);
 
-        (bool success, bytes memory result) = address(hyperRouter).call(c.data);
+        (bool success, bytes memory result) = address(huffRouter).call(c.data);
         assertFalse(success, "success");
 
         // forge-lint: disable-next-line(unsafe-typecast)
-        assertEq(IHyperRouter.SlippageCheckFailed.selector, bytes4(result), "error selector");
+        assertEq(IHuffRouter.SlippageCheckFailed.selector, bytes4(result), "error selector");
 
         uint256 calculatedAmount = abi.decode(LibBytes.slice(result, 4), (uint256));
 
@@ -261,8 +261,8 @@ contract HyperRouterTest is Test {
 
         vm.deal(_PAYER, _EXACT_OUT_APPROVE_AMOUNT);
 
-        vm.expectRevert(IHyperRouter.NativeTransferFailed.selector);
-        LibCall.callContract(address(hyperRouter), _EXACT_OUT_APPROVE_AMOUNT, c.data);
+        vm.expectRevert(IHuffRouter.NativeTransferFailed.selector);
+        LibCall.callContract(address(huffRouter), _EXACT_OUT_APPROVE_AMOUNT, c.data);
     }
 
     function test_MinimalCalldata(MinimalCalldataCase memory c) private {
@@ -272,10 +272,10 @@ contract HyperRouterTest is Test {
         pks[0] = c.poolKey;
         _initializePools(pks);
 
-        (bool success, bytes memory data) = address(hyperRouter).call(c.data);
+        (bool success, bytes memory data) = address(huffRouter).call(c.data);
         assertTrue(success, "success");
 
-        HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(data);
+        HuffRouterLib.SwapReturndata memory returndata = HuffRouterLib.decodeSwapReturndata(data);
 
         assertEq(returndata.calculatedAmount, 0, "calculatedAmount");
         assertEq(returndata.integrationFee, 0, "integrationFee");
@@ -290,7 +290,7 @@ contract HyperRouterTest is Test {
         deal(_ERC_20_FIRST_ADDRESS, victim, specifiedAmount);
 
         vm.prank(victim);
-        IERC20(_ERC_20_FIRST_ADDRESS).approve(address(hyperRouter), specifiedAmount);
+        IERC20(_ERC_20_FIRST_ADDRESS).approve(address(huffRouter), specifiedAmount);
 
         bytes memory data = abi.encodePacked(
             hex"000400ffff000000",
@@ -303,7 +303,7 @@ contract HyperRouterTest is Test {
             bytes20(victim)
         );
 
-        (bool success,) = address(hyperRouter).call(data);
+        (bool success,) = address(huffRouter).call(data);
 
         assertFalse(success, "success");
     }
@@ -316,10 +316,10 @@ contract HyperRouterTest is Test {
         deal(_ERC_20_FIRST_ADDRESS, address(CORE), specifiedAmount);
         deal(_ERC_20_FIRST_ADDRESS, victim, specifiedAmount);
 
-        IERC20(_ERC_20_FIRST_ADDRESS).approve(address(hyperRouter), specifiedAmount);
+        IERC20(_ERC_20_FIRST_ADDRESS).approve(address(huffRouter), specifiedAmount);
 
         vm.prank(victim);
-        IERC20(_ERC_20_FIRST_ADDRESS).approve(address(hyperRouter), specifiedAmount);
+        IERC20(_ERC_20_FIRST_ADDRESS).approve(address(huffRouter), specifiedAmount);
 
         bytes memory data = abi.encodePacked(
             hex"000400ffff000000",
@@ -335,11 +335,11 @@ contract HyperRouterTest is Test {
         uint256 attackerBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker);
         uint256 victimBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(victim);
 
-        (bool success, bytes memory returndataRaw) = address(hyperRouter).call(data);
+        (bool success, bytes memory returndataRaw) = address(huffRouter).call(data);
 
         assertTrue(success, "success");
 
-        HyperRouterLib.SwapReturndata memory returndata = HyperRouterLib.decodeSwapReturndata(returndataRaw);
+        HuffRouterLib.SwapReturndata memory returndata = HuffRouterLib.decodeSwapReturndata(returndataRaw);
 
         assertEq(returndata.calculatedAmount, specifiedAmount, "calculatedAmount");
         assertEq(returndata.integrationFee, 0, "integrationFee");
@@ -360,7 +360,7 @@ contract HyperRouterTest is Test {
         tokens[0] = NATIVE_TOKEN_ADDRESS;
 
         uint256 balanceBefore = address(this).balance;
-        uint256[] memory res = hyperRouter.claimIntegrationFees(tokens);
+        uint256[] memory res = huffRouter.claimIntegrationFees(tokens);
         uint256 balanceAfter = address(this).balance;
 
         assertEq(res.length, 1);
@@ -375,7 +375,7 @@ contract HyperRouterTest is Test {
         tokens[0] = _ERC_20_FIRST_ADDRESS;
 
         uint256 balanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(this));
-        uint256[] memory res = hyperRouter.claimIntegrationFees(tokens);
+        uint256[] memory res = huffRouter.claimIntegrationFees(tokens);
         uint256 balanceAfter = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(this));
 
         assertEq(res.length, 1);
@@ -394,7 +394,7 @@ contract HyperRouterTest is Test {
         (uint256 balanceBeforeNative, uint256 balanceBeforeErc20) =
             (address(this).balance, IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(this)));
 
-        uint256[] memory res = hyperRouter.claimIntegrationFees(tokens);
+        uint256[] memory res = huffRouter.claimIntegrationFees(tokens);
 
         (uint256 balanceAfterNative, uint256 balanceAfterErc20) =
             (address(this).balance, IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(address(this)));
@@ -418,7 +418,7 @@ contract HyperRouterTest is Test {
             address(CORE),
             StorageSlot.unwrap(
                 CoreStorageLayout.savedBalancesSlot(
-                    address(hyperRouter), token, address(type(uint160).max), bytes32(uint256(uint160(address(this))))
+                    address(huffRouter), token, address(type(uint160).max), bytes32(uint256(uint160(address(this))))
                 )
             ),
             bytes32(bytes16(_INTEGRATION_FEE_AMOUNT))
@@ -463,7 +463,7 @@ contract HyperRouterTest is Test {
 
     function _unclaimedIntegrationFees(address owner, address token) private view returns (uint128 balance) {
         (balance,) = CORE.savedBalances(
-            address(hyperRouter), token, address(type(uint160).max), bytes32(uint256(uint160(owner)))
+            address(huffRouter), token, address(type(uint160).max), bytes32(uint256(uint160(owner)))
         );
     }
 
@@ -515,7 +515,7 @@ contract HyperRouterTest is Test {
     }
 
     fallback() external {
-        bytes memory result = LibCall.delegateCallContract(address(hyperRouter), msg.data);
+        bytes memory result = LibCall.delegateCallContract(address(huffRouter), msg.data);
         uint256 len = result.length;
 
         assembly ("memory-safe") {

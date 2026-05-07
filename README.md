@@ -1,13 +1,13 @@
-# Ekubo V3 Huff Router
+# Ekubo HuffRouter
 
-This repository contains the Ekubo HyperRouter smart contracts, the TypeScript SDK for generating HyperRouter calldata, shared token lists, and incident-analysis scripts used to investigate the approval-draining calldata parsing bug documented in [POSTMORTEM-approval-draining-via-trailing-calldata-override.md](./POSTMORTEM-approval-draining-via-trailing-calldata-override.md).
+This repository contains the Ekubo HuffRouter smart contracts, the TypeScript SDK for generating HuffRouter calldata, shared token lists, and incident-analysis scripts used to investigate the approval-draining calldata parsing bug documented in [POSTMORTEM-approval-draining-via-trailing-calldata-override.md](./POSTMORTEM-approval-draining-via-trailing-calldata-override.md).
 
 ## Repository Layout
 
 - `contracts/`
   Huff and Solidity contract sources, Foundry tests, deployment scripts, and generated artifacts.
 - `sdk/`
-  TypeScript SDK for generating HyperRouter calldata, plus analysis and maintenance scripts.
+  TypeScript SDK for generating HuffRouter calldata, plus analysis and maintenance scripts.
 - `tokens/`
   Shared token lists used by deployments, calldata decoding, and analysis tooling.
 - `POSTMORTEM-approval-draining-via-trailing-calldata-override.md`
@@ -53,7 +53,7 @@ npm test
 Useful scripts in [sdk/scripts](./sdk/scripts):
 
 - [decode-calldata.ts](./sdk/scripts/decode-calldata.ts)
-  Decodes HyperRouter calldata for inspection.
+  Decodes HuffRouter calldata for inspection.
 - [update-token-lists.ts](./sdk/scripts/update-token-lists.ts)
   Refreshes token list inputs used by the SDK and deployment flow.
 - [find-approval-drain-losses.ts](./sdk/scripts/find-approval-drain-losses.ts)

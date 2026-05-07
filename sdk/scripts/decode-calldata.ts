@@ -1,6 +1,6 @@
 #!/usr/bin/env tsx
 import type { Hex } from "viem";
-import { decodeHyperRouterCalldata } from "./hyperrouter-calldata.ts";
+import { decodeHuffRouterCalldata } from "./huffrouter-calldata.ts";
 import { inspect } from "node:util";
 
 const [, , calldataArg, chainIdArg] = process.argv;
@@ -14,7 +14,7 @@ const hex = calldataArg.startsWith("0x") ? calldataArg as Hex : `0x${calldataArg
 const chainId = chainIdArg ? BigInt(chainIdArg) : null;
 
 try {
-    const decoded = decodeHyperRouterCalldata(hex, chainId, { allowTrailingBytes: true });
+    const decoded = decodeHuffRouterCalldata(hex, chainId, { allowTrailingBytes: true });
     console.log(inspect(decoded, {depth: null}));
 } catch (error) {
     console.error(`Error: ${(error as Error).message}\n`);

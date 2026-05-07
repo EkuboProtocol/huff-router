@@ -1,6 +1,6 @@
 import { getAddress } from "viem";
 import { describe, expect, test } from "vitest";
-import { decodeHyperRouterCalldata, matchApprovalDrainExploitInput } from "../scripts/hyperrouter-calldata.ts";
+import { decodeHuffRouterCalldata, matchApprovalDrainExploitInput } from "../scripts/huffrouter-calldata.ts";
 
 const ATTACKER = "a911ff351b143634dbc5af3e204ea074583a83e3";
 const JUNK_12_BYTES = "b3ab4ab5ab6ab7ab8ab9ac0a";
@@ -31,9 +31,9 @@ const ROUTE_PREFIX_ONLY = `0x${[
 ].join("")}`;
 const EXPLOIT_INPUT = `${ROUTE_PREFIX_ONLY}${ATTACKER}${JUNK_12_BYTES}${VICTIM}${TRAILING_JUNK}`;
 
-describe("decodeHyperRouterCalldata", () => {
+describe("decodeHuffRouterCalldata", () => {
     test("keeps trailing calldata for exploit-shaped routes", () => {
-        const decoded = decodeHyperRouterCalldata(EXPLOIT_INPUT, HISTORICAL_V2_TOKEN_LIST, {
+        const decoded = decodeHuffRouterCalldata(EXPLOIT_INPUT, HISTORICAL_V2_TOKEN_LIST, {
             allowTrailingBytes: true,
         });
 

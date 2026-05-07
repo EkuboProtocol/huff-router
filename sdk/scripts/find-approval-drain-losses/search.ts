@@ -6,14 +6,14 @@ import {
     zeroAddress,
 } from "viem";
 import type { Hex, PublicClient } from "viem";
-import { ADDRESS_BYTES, decodeHyperRouterCalldata } from "../hyperrouter-calldata.ts";
+import { ADDRESS_BYTES, decodeHuffRouterCalldata } from "../huffrouter-calldata.ts";
 import { Client } from "./io.ts";
 import { inspect } from "node:util";
 
 const TRACE_FILTER_COUNT = 100_000;
 export const TRACE_CONCURRENCY = 8;
 export const IGNORED_TRANSACTIONS: readonly `0x${string}`[] = [
-    "0x7b818b4a00c182ad2fb5e383b4c1664012cf8a274bec1506dbc28dfcc2e97733", // Seems like the HyperRouter was called with Solidity router args
+    "0x7b818b4a00c182ad2fb5e383b4c1664012cf8a274bec1506dbc28dfcc2e97733", // Seems like the HuffRouter was called with Solidity router args
     "0x812a3bad2805776bf4f601ec15963eb136829ca76ba5f3daaf568e3cad94a57b", // Just wrong calldata
     "0xb719245c14b2a609e0b4bf2223aae7025b49722ddf12c1bf1b976cbe436ff5a4", // Same as above
     "0xccac5c6a1618202eb23c6b092f9d04744767e39063f37062f4991a23a17ca928", // Tries to execute via a one-hop swap but fails due to both the victim and Core not having the required WBTC amounts
@@ -201,7 +201,7 @@ function matchPotentialExploitTraceInput(
     hex: Hex,
     tokenList: readonly `0x${string}`[],
 ): ApprovalDrainExploitMatch | null {
-    const decoded = decodeHyperRouterCalldata(hex, tokenList, { allowTrailingBytes: true });
+    const decoded = decodeHuffRouterCalldata(hex, tokenList, { allowTrailingBytes: true });
 
     if (!decoded.trailingCalldata) {
         return null;

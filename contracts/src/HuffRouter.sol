@@ -7,7 +7,7 @@ import {VmSafe} from "forge-std/Vm.sol";
 import {HuffNeoConfig} from "foundry-huff-neo/HuffNeoConfig.sol";
 
 // TODO Generate with hnc
-interface IHyperRouter is ILocker {
+interface IHuffRouter is ILocker {
     error SlippageCheckFailed(uint256 calculatedAmount);
     error NativeTransferFailed();
     error CoreOnly();
@@ -15,22 +15,22 @@ interface IHyperRouter is ILocker {
     function claimIntegrationFees(address[] calldata tokens) external returns (uint256[] calldata claimedAmounts);
 }
 
-library HyperRouterLib {
+library HuffRouterLib {
     struct SwapReturndata {
         uint256 calculatedAmount;
         uint128 integrationFee;
     }
 
     string private constant _TOKENS_FILE_NAME = "src/locked/tokens.huff";
-    string private constant _ENTRY_POINT_FILE_NAME = "src/HyperRouter.huff";
+    string private constant _ENTRY_POINT_FILE_NAME = "src/HuffRouter.huff";
 
     function initcodeSize(VmSafe vm) internal returns (uint256) {
         return _config(vm).creation_code_with_args(_ENTRY_POINT_FILE_NAME).length;
     }
 
     // TODO --relax-jumps
-    function deploy(VmSafe vm) internal returns (IHyperRouter) {
-        return IHyperRouter(_config(vm).deploy(_ENTRY_POINT_FILE_NAME));
+    function deploy(VmSafe vm) internal returns (IHuffRouter) {
+        return IHuffRouter(_config(vm).deploy(_ENTRY_POINT_FILE_NAME));
     }
 
     function decodeSwapReturndata(bytes memory data) internal pure returns (SwapReturndata memory returndata) {
