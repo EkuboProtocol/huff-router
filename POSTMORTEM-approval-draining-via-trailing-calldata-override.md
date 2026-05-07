@@ -123,10 +123,10 @@ When users who still have an outstanding approval visit the frontend, they are s
 ## Long-Term Mitigations
 
 The specific parsing bug is fixed in the current repository, the frontend no longer generates separate approval calls for the affected routers, and users with outstanding approvals are warned to revoke them.
-The broader lesson is that ERC20 approvals are often long-lived and remain valid until they are explicitly revoked.
+The broader lesson is that systems built around ERC20 approvals should mitigate their exposure to inherently risky ERC20 approvals, and otherwise push toward safer approval standards.
 
 In response, we opened [ERC-8255](https://eips.ethereum.org/EIPS/eip-8255), a draft standard for expiring token approvals.
-The proposal makes approvals time-bounded so that they automatically become unusable after a limited duration, reducing the risk from stale approvals across token integrations if adopted.
+The proposal makes approvals time-bounded so that they automatically become unusable after a limited duration, reducing the risk from stale approvals across tokens if adopted.
 
-Separately, we also want router deployments themselves to expire.
-That would limit the lifetime of an old router even if some users never revoke historical approvals to it.
+Separately, future router deployments will have an explicit expiration.
+This limits the exposure created by stale approvals, even if users do not revoke them.
