@@ -6,13 +6,13 @@ import {
     summarizeVictimLosses,
     V2_CORE_ADDRESS,
     V3_CORE_ADDRESS,
-} from "../scripts/find-approval-drain-losses.ts";
+} from "../scripts/find-approval-drain-losses/search.ts";
 import type {
     AffectedDeployment,
     PotentialExploitTrace,
     TransactionLog,
     TransactionTrace,
-} from "../scripts/find-approval-drain-losses.ts";
+} from "../scripts/find-approval-drain-losses/search.ts";
 
 const TEST_BLOCK_HASH = `0x${"1".repeat(64)}` as Hex;
 const TEST_GAS = "0x0" as Hex;
