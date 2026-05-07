@@ -32,6 +32,7 @@ import {
 const OUT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../out");
 const SYMBOL_ABI = parseAbi(["function symbol() view returns (string)"]);
 const DECIMALS_ABI = parseAbi(["function decimals() view returns (uint8)"]);
+const APPROVAL_EVENT = parseAbi(["event Approval(address indexed owner, address indexed spender, uint256 value)"])[0];
 
 export interface ChainConfig {
     affectedDeployments: AffectedDeployments;
@@ -44,6 +45,17 @@ export interface TokenMetadata {
     decimals?: number;
     symbol?: string;
 }
+
+export interface DisqualifiedApproval {
+    blockNumber: number;
+    spender: `0x${string}`;
+    token: `0x${string}`;
+    txFrom: `0x${string}`;
+    txHash: `0x${string}`;
+    value: string;
+}
+
+export type DisqualifiedVictimReport = Partial<Record<`0x${string}`, DisqualifiedApproval[]>>;
 
 export type Client = PublicClient<HttpTransport, undefined, undefined, [...EIP1474Methods, {
   Method: "trace_filter"
@@ -135,16 +147,92 @@ export async function loadTokenMetadataMap(
     return metadataByToken;
 }
 
+export async function findDisqualifiedVictims(
+    client: Pick<Client, "getLogs" | "getTransaction">,
+    latestExploitOrderByVictim: ReadonlyMap<`0x${string}`, {
+        blockNumber: number;
+        transactionIndex: number;
+    }>,
+    routers: readonly `0x${string}`[],
+    fromBlock: bigint,
+): Promise<DisqualifiedVictimReport> {
+    const routerSet = new Set(routers.map((router) => router.toLowerCase()));
+
+    const results = await mapConcurrent([...latestExploitOrderByVictim.keys()], 8, async (victim) => {
+        const latestExploitOrder = latestExploitOrderByVictim.get(victim);
+        if (!latestExploitOrder) {
+            return null;
+        }
+
+        const logs = await client.getLogs({
+            event: APPROVAL_EVENT,
+            fromBlock,
+            args: {
+                owner: victim,
+            },
+        });
+
+        const candidateLogs = logs.filter((log) => {
+            if (!log.transactionHash || !log.args.spender || typeof log.args.value === "undefined") {
+                return false;
+            }
+
+            return routerSet.has(getAddress(log.args.spender).toLowerCase()) && log.args.value > 0n;
+        });
+
+        if (candidateLogs.length === 0) {
+            return null;
+        }
+
+        const txFromByHash = new Map<`0x${string}`, `0x${string}`>();
+        const txHashes = [...new Set(candidateLogs.map((log) => log.transactionHash).filter((hash): hash is `0x${string}` => typeof hash === "string"))];
+
+        await mapConcurrent(txHashes, 8, async (txHash) => {
+            const transaction = await client.getTransaction({ hash: txHash });
+            txFromByHash.set(txHash, getAddress(transaction.from));
+        });
+
+        const disqualifiedApprovals = candidateLogs
+            .filter((log) => {
+                const approvalBlock = Number(log.blockNumber ?? fromBlock);
+                const approvalTransactionIndex = log.transactionIndex ?? 0;
+                return txFromByHash.get(log.transactionHash as `0x${string}`) === victim
+                    && (
+                        approvalBlock < latestExploitOrder.blockNumber
+                        || (approvalBlock === latestExploitOrder.blockNumber
+                            && approvalTransactionIndex <= latestExploitOrder.transactionIndex)
+                    );
+            })
+            .map((log) => ({
+                blockNumber: Number(log.blockNumber ?? fromBlock),
+                spender: getAddress(log.args.spender as `0x${string}`),
+                token: getAddress(log.address),
+                txFrom: txFromByHash.get(log.transactionHash as `0x${string}`)!,
+                txHash: log.transactionHash as `0x${string}`,
+                value: (log.args.value as bigint).toString(),
+            }))
+            .sort((a, b) => a.blockNumber - b.blockNumber || a.txHash.localeCompare(b.txHash));
+
+        return disqualifiedApprovals.length > 0 ? [victim, disqualifiedApprovals] as const : null;
+    });
+
+    return Object.fromEntries(
+        results.filter((result): result is readonly [`0x${string}`, DisqualifiedApproval[]] => result !== null),
+    ) as DisqualifiedVictimReport;
+}
+
 export async function writeReports(
     incidentRows: IncidentRow[],
     summaries: VictimSummary,
     tokenSummaries: TokenLossSummary[],
     tokenMetadataByToken: ReadonlyMap<`0x${string}`, TokenMetadata>,
+    disqualifiedVictims: DisqualifiedVictimReport,
 ): Promise<string> {
     await mkdir(OUT_DIR, { recursive: true });
     await writeFile(path.join(OUT_DIR, "incident-rows.csv"), rowsToCsv(incidentRows));
     await writeFile(path.join(OUT_DIR, "summary-by-victim.json"), JSON.stringify(summaries, null, 2) + "\n");
     await writeFile(path.join(OUT_DIR, "summary-by-token.csv"), tokenSummariesToCsv(tokenSummaries, tokenMetadataByToken));
+    await writeFile(path.join(OUT_DIR, "disqualified-victims.json"), JSON.stringify(disqualifiedVictims, null, 2) + "\n");
     return OUT_DIR;
 }
 

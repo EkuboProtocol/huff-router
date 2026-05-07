@@ -108,6 +108,7 @@ export interface IncidentRow {
     victimToken: Hex;
     attackerToken: Hex;
     traceAddress: string;
+    transactionIndex?: number;
     txFrom: `0x${string}`;
     txHash: `0x${string}`;
     victim: `0x${string}`;
@@ -456,7 +457,10 @@ export async function analyzeTransaction(
         logs: receipt.logs as TransactionLog[],
         potentialExploitTraces,
         txFrom: getAddress(receipt.from),
-    });
+    }).map((row) => ({
+        ...row,
+        transactionIndex: receipt.transactionIndex,
+    }));
 }
 
 function parseTransferLog(log: TransactionLog, fallbackIndex: number): ParsedTransferLog | null {
@@ -624,6 +628,7 @@ function parseOptionalNumericField(value: unknown): number | null {
 function compareIncidentRows(a: IncidentRow, b: IncidentRow): number {
     return a.chainId - b.chainId
         || a.blockNumber - b.blockNumber
+        || (a.transactionIndex ?? 0) - (b.transactionIndex ?? 0)
         || compareStrings(a.txHash, b.txHash)
         || compareStrings(a.traceAddress, b.traceAddress);
 }

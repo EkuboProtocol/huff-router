@@ -10,9 +10,12 @@ import {
 } from "./find-approval-drain-losses/search.ts";
 import {
     getChainConfigs,
+    findDisqualifiedVictims,
     loadTokenMetadataMap,
     writeReports,
 } from "./find-approval-drain-losses/io.ts";
+
+const VICTIM_GAMING_CHECK_FROM_BLOCK = 25_030_409n;
 
 try {
     for (const { affectedDeployments, chainId, client, name } of getChainConfigs()) {
@@ -66,15 +69,48 @@ try {
             )
         ).flat();
 
-        const summaries = summarizeVictimLosses(rows);
-        const tokenSummaries = summarizeTokenLosses(rows);
+        const latestExploitOrderByVictim = new Map<`0x${string}`, {
+            blockNumber: number;
+            transactionIndex: number;
+        }>();
+        for (const row of rows) {
+            const current = {
+                blockNumber: row.blockNumber,
+                transactionIndex: row.transactionIndex ?? 0,
+            };
+            const previous = latestExploitOrderByVictim.get(row.victim);
+            if (
+                typeof previous === "undefined"
+                || current.blockNumber > previous.blockNumber
+                || (current.blockNumber === previous.blockNumber && current.transactionIndex > previous.transactionIndex)
+            ) {
+                latestExploitOrderByVictim.set(row.victim, current);
+            }
+        }
+
+        const disqualifiedVictims = await findDisqualifiedVictims(
+            client,
+            latestExploitOrderByVictim,
+            affectedDeployments.deployments.map((deployment) => deployment.router),
+            VICTIM_GAMING_CHECK_FROM_BLOCK,
+        );
+        const disqualifiedVictimSet = new Set(Object.keys(disqualifiedVictims).map((victim) => victim.toLowerCase()));
+        if (disqualifiedVictimSet.size > 0) {
+            console.warn(
+                `Disqualified ${disqualifiedVictimSet.size} victim(s) due to non-zero router approvals at or after block ${VICTIM_GAMING_CHECK_FROM_BLOCK}: ${[...disqualifiedVictimSet].join(", ")}`,
+            );
+        }
+
+        const filteredRows = rows.filter((row) => !disqualifiedVictimSet.has(row.victim.toLowerCase()));
+        const summaries = summarizeVictimLosses(filteredRows);
+        const tokenSummaries = summarizeTokenLosses(filteredRows);
         const tokenMetadataByToken = await loadTokenMetadataMap(
             client,
             tokenSummaries.map((summary) => summary.token),
         );
-        const outDir = await writeReports(rows, summaries, tokenSummaries, tokenMetadataByToken);
+        const outDir = await writeReports(filteredRows, summaries, tokenSummaries, tokenMetadataByToken, disqualifiedVictims);
 
-        console.log(`Wrote ${rows.length} incident row(s), ${Object.keys(summaries).length} victim summary row(s), and ${tokenSummaries.length} token summary row(s) to ${outDir}`);
+        console.log(`Wrote ${filteredRows.length} incident row(s), ${Object.keys(summaries).length} victim summary row(s), and ${tokenSummaries.length} token summary row(s) to ${outDir}`);
     }
 } catch (error) {
     console.error(`Error: ${(error as Error).message}`);
