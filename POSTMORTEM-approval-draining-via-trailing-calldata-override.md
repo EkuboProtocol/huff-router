@@ -1,9 +1,9 @@
-# Post-Mortem: `HyperRouter` Approval Draining via Trailing Calldata Override
+# Post-Mortem: `HuffRouter` Approval Draining via Trailing Calldata Override
 
-A calldata parsing bug in `HyperRouter`, a gas-optimized Ekubo router contract written in Huff, allowed a caller to append arbitrary bytes after an otherwise valid swap route and have those bytes interpreted as router-set data during settlement.
+A calldata parsing bug in `HuffRouter`, a gas-optimized Ekubo router contract written in Huff, allowed a caller to append arbitrary bytes after an otherwise valid swap route and have those bytes interpreted as router-set data during settlement.
 This allowed attackers to override the effective `transferFrom` address to the address of a victim that had previously approved the router.
 
-This issue affected both `HyperRouter` generations tied to Ekubo V2 and Ekubo V3:
+This issue affected both `HuffRouter` generations tied to Ekubo V2 and Ekubo V3:
 
 - Mainnet V2: `0x8f52903d17e2d8d6c77d1a1de0cc975b6b5a0d15`
 - Mainnet V2: `0x8ccb1ffd5c2aa6bd926473425dea4c8c15de60fd`
@@ -12,7 +12,7 @@ This issue affected both `HyperRouter` generations tied to Ekubo V2 and Ekubo V3
 
 ## Exploit By Example
 
-First seen in [0x770bc9a1f7c32cb63a5002b9ceb5c7994cd3af0fc6b2309cb32d3c46f629daa0](https://etherscan.io/tx/0x770bc9a1f7c32cb63a5002b9ceb5c7994cd3af0fc6b2309cb32d3c46f629daa0), the calldata initially passed to the `HyperRouter` started in the expected format:
+First seen in [0x770bc9a1f7c32cb63a5002b9ceb5c7994cd3af0fc6b2309cb32d3c46f629daa0](https://etherscan.io/tx/0x770bc9a1f7c32cb63a5002b9ceb5c7994cd3af0fc6b2309cb32d3c46f629daa0), the calldata initially passed to the `HuffRouter` started in the expected format:
 
 ```text
 00                : withRecipient (false)
@@ -50,7 +50,7 @@ b3ab4ab5ab6ab7ab8ab9ac0a                : 12-byte junk
 The given `recipient` was no different from what the router would have intended, because with `withRecipient = false` the router would have defaulted the recipient to the caller, which in this exploit was the attacker. The injected `transferFrom` pointed to the victim's address.
 Consequently, if the victim had approved the router, this allowed the attacker to use the victim's approval to transfer the router-tracked debt amount to Core, while previously withdrawing the same amount from Core to the attacker.
 
-In the exploit transaction, the `HyperRouter` was called repeatedly with the same calldata, each time draining 0.2 WBTC from the victim.
+In the exploit transaction, the `HuffRouter` was called repeatedly with the same calldata, each time draining 0.2 WBTC from the victim.
 
 ## Root Cause
 
@@ -109,11 +109,24 @@ Another covers the case where the attacker has a legitimate approval of their ow
 
 This prevents the behavior in patched or replacement deployments, but the affected deployed routers are immutable and remain vulnerable in place.
 
+Alongside the contract-side fix, the Ekubo frontend immediately stopped offering separate approval flows for the affected routers so that new standalone approvals would not continue to accumulate while users migrated away from the vulnerable deployments.
+
 ## Operational Guidance
 
 The affected deployments remain vulnerable because they are immutable and cannot be patched in place.
 
-Outstanding approvals to the affected `HyperRouter` deployments should be withdrawn.
+Outstanding approvals to the affected `HuffRouter` deployments should be withdrawn.
 
-The Ekubo frontend was the only known dApp that created approvals for the various affected `HyperRouter` deployments.
-When users who still have an outstanding approval visit the frontend, they are alerted and encouraged to withdraw it.
+The Ekubo frontend was the only known dApp that created approvals for the various affected `HuffRouter` deployments.
+When users who still have an outstanding approval visit the frontend, they are shown a banner that alerts them and encourages them to revoke it.
+
+## Long-Term Mitigations
+
+The specific parsing bug is fixed in the current repository, the frontend no longer generates separate approval calls for the affected routers, and users with outstanding approvals are warned to revoke them.
+The broader lesson is that ERC20 approvals are often long-lived and remain valid until they are explicitly revoked.
+
+In response, we opened [ERC-8255](https://eips.ethereum.org/EIPS/eip-8255), a draft standard for expiring token approvals.
+The proposal makes approvals time-bounded so that they automatically become unusable after a limited duration, reducing the risk from stale approvals across token integrations if adopted.
+
+Separately, we also want router deployments themselves to expire.
+That would limit the lifetime of an old router even if some users never revoke historical approvals to it.
