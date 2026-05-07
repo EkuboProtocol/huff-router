@@ -11,11 +11,10 @@ import {
     http,
     parseAbi,
 } from "viem";
-import type { Hex } from "viem";
+import type { EIP1474Methods, Hex, HttpTransport, PublicClient } from "viem";
 import type {
     AffectedDeployments,
-    IncidentRowWithMetadata,
-    TokenMetadata,
+    IncidentRow,
     VictimSummary,
 } from "./search.ts";
 import {
@@ -37,9 +36,15 @@ const DECIMALS_ABI = parseAbi(["function decimals() view returns (uint8)"]);
 export interface ChainConfig {
     affectedDeployments: AffectedDeployments;
     chainId: bigint;
-    client: ReturnType<typeof createPublicClient>;
+    client: Client;
     name: string;
 }
+
+export type Client = PublicClient<HttpTransport, undefined, undefined, [...EIP1474Methods, {
+  Method: "trace_filter"
+  Parameters: [{count: number, fromBlock: Hex, toAddress: Hex[]}]
+  ReturnType: unknown
+}]>
 
 export function getChainConfigs(): ChainConfig[] {
     const mainnetRpcUrl = process.env.MAINNET_RPC_URL;
@@ -80,8 +85,8 @@ export function getChainConfigs(): ChainConfig[] {
     ];
 }
 
-export function rowsToCsv(rows: IncidentRowWithMetadata[]): string {
-    const headers: (keyof IncidentRowWithMetadata)[] = [
+export function rowsToCsv(rows: IncidentRow[]): string {
+    const headers: (keyof IncidentRow)[] = [
         "chainId",
         "router",
         "routerGeneration",
@@ -90,9 +95,8 @@ export function rowsToCsv(rows: IncidentRowWithMetadata[]): string {
         "txFrom",
         "routerCaller",
         "victim",
-        "token",
-        "tokenSymbol",
-        "tokenDecimals",
+        "victimToken",
+        "attackerToken",
         "rawAmount",
         "traceAddress",
     ];
@@ -105,60 +109,8 @@ export function rowsToCsv(rows: IncidentRowWithMetadata[]): string {
     return `${lines.join("\n")}\n`;
 }
 
-export async function loadTokenMetadata({
-    call,
-}: {
-    call: (token: `0x${string}`, data: Hex) => Promise<Hex | undefined>;
-}, token: `0x${string}`): Promise<TokenMetadata> {
-    const [symbolData, decimalsData] = await Promise.all([
-        call(token, "0x95d89b41"),
-        call(token, "0x313ce567"),
-    ]);
-
-    return {
-        ...(typeof decimalsData !== "undefined" ? { decimals: decodeDecimals(decimalsData) } : {}),
-        ...(typeof symbolData !== "undefined" ? { symbol: decodeSymbol(symbolData) } : {}),
-    };
-}
-
-export async function loadTokenMetadataMap({
-    chainId,
-    client,
-    concurrency,
-    tokens,
-}: {
-    chainId: bigint;
-    client: {
-        call(args: { data: Hex; to: `0x${string}` }): Promise<{ data?: Hex }>;
-    };
-    concurrency: number;
-    tokens: readonly `0x${string}`[];
-}): Promise<Map<string, TokenMetadata>> {
-    const metadataByToken = new Map<string, TokenMetadata>();
-
-    await mapConcurrent(tokens, concurrency, async (token) => {
-        const metadata = await loadTokenMetadata(
-            {
-                call: async (address, data) => {
-                    try {
-                        const result = await client.call({ data, to: address });
-                        return result.data;
-                    } catch {
-                        return undefined;
-                    }
-                },
-            },
-            getAddress(token),
-        );
-
-        metadataByToken.set(tokenKey(chainId, token), metadata);
-    });
-
-    return metadataByToken;
-}
-
 export async function writeReports(
-    incidentRows: IncidentRowWithMetadata[],
+    incidentRows: IncidentRow[],
     summaries: VictimSummary[],
 ): Promise<string> {
     await mkdir(OUT_DIR, { recursive: true });

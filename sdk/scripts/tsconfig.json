@@ -1,6 +1,7 @@
 {
     "extends": "..",
     "compilerOptions": {
+        "target": "es2021",
         "noEmit": true,
         "allowImportingTsExtensions": true
     }

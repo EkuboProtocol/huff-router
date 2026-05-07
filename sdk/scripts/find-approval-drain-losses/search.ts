@@ -3,13 +3,26 @@ import {
     getAddress,
     hexToBigInt,
     hexToBytes,
+    zeroAddress,
 } from "viem";
-import type { Hex } from "viem";
+import type { Hex, PublicClient } from "viem";
 import { ADDRESS_BYTES, decodeHyperRouterCalldata } from "../hyperrouter-calldata.ts";
+import { Client } from "./io.ts";
+import { inspect } from "node:util";
 
 const TRACE_FILTER_COUNT = 100_000;
 export const TRACE_CONCURRENCY = 8;
 export const IGNORED_TRANSACTIONS: readonly `0x${string}`[] = [
+    "0x7b818b4a00c182ad2fb5e383b4c1664012cf8a274bec1506dbc28dfcc2e97733", // Seems like the HyperRouter was called with Solidity router args
+    "0x812a3bad2805776bf4f601ec15963eb136829ca76ba5f3daaf568e3cad94a57b", // Just wrong calldata
+    "0xb719245c14b2a609e0b4bf2223aae7025b49722ddf12c1bf1b976cbe436ff5a4", // Same as above
+    "0xccac5c6a1618202eb23c6b092f9d04744767e39063f37062f4991a23a17ca928", // Tries to execute via a one-hop swap but fails due to both the victim and Core not having the required WBTC amounts
+    "0xe79f0bd4bfb4483c4b3b118cd2cf1a66947799688f2a89af037ea54887cf40d8", // No-op swap
+    "0xf589463f87e1b7c5b95c4ac21fedd614675f159dc409d5a8e72b5c5509968fa3", // Same as above
+    "0x5cd6791559c242c63f6c8576f8f059c0b3df9a8fa61b7123e07de4699fb5e8ce", // Slippage check fail
+    "0x74523d25ec6fd516518ed918a842874a96c57133e2c9bf69c90c1c6f5ff369dc", // Slippage check fail
+    "0x6929cd83a98ac9f94454b04fd20955dc5af64063b6e014d099103c118541ab7d", // White-hat rescue attempt, fails twice with "bad jump destination" (intentional, since hop type is out-of-bounds (196))
+    "0xe67198cf4991eccb28ee430b6d4b21f929bb9193c164ff04061fb9baad0323df", // Also "bad jump destination", calldata only 8 bytes long
     "0x401cc36f3ffdab4f9d3973700debcac614d5dea87dd9b520d60abc0c3e2033bc", // Tries to exploit SKL approvals which neither Core nor the victim owns
     "0xebed608c462dbdc78e4b7324e19cc7558e36a9dd83a181ab628f2c35654d20fa", // Runs out-of-gas inside the lock
 ];
@@ -18,18 +31,6 @@ const IGNORED_TRANSACTION_SET = new Set(IGNORED_TRANSACTIONS.map((txHash) => txH
 export const V2_CORE_ADDRESS = getAddress("0xe0e0e08a6a4b9dc7bd67bcb7aade5cf48157d444");
 export const V3_CORE_ADDRESS = getAddress("0x00000000000014aa86c5d3c41765bb24e11bd701");
 export const TRANSFER_EVENT_TOPIC = "0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef";
-
-interface Client {
-    getTransactionReceipt(args: { hash: Hex }): Promise<{
-        from: `0x${string}`;
-        logs: unknown[];
-        status: string;
-    }>;
-    request(args: {
-        method: "trace_filter";
-        params: unknown[];
-    }): Promise<unknown>;
-}
 
 export type RouterGeneration = "V2" | "V3";
 
@@ -86,8 +87,9 @@ export interface WrappedTransactionTrace {
 
 export interface ApprovalDrainExploitMatch {
     amount: bigint;
+    attackerToken: Hex;
     attacker: `0x${string}`;
-    token: `0x${string}`;
+    victimToken: `0x${string}`;
     victim: `0x${string}`;
 }
 
@@ -103,16 +105,12 @@ export interface IncidentRow {
     router: `0x${string}`;
     routerCaller: `0x${string}`;
     routerGeneration: RouterGeneration;
-    token: `0x${string}`;
+    victimToken: Hex;
+    attackerToken: Hex;
     traceAddress: string;
     txFrom: `0x${string}`;
     txHash: `0x${string}`;
     victim: `0x${string}`;
-}
-
-export interface IncidentRowWithMetadata extends IncidentRow {
-    tokenDecimals?: number;
-    tokenSymbol?: string;
 }
 
 export interface VictimSummary {
@@ -121,8 +119,6 @@ export interface VictimSummary {
     rawAmountTotal: string;
     routerCallers: `0x${string}`[];
     token: `0x${string}`;
-    tokenDecimals?: number;
-    tokenSymbol?: string;
     txHashes: `0x${string}`[];
     victim: `0x${string}`;
 }
@@ -148,26 +144,90 @@ interface MatchedExploitTrace {
     deployment: AffectedDeployment;
     payLog: ParsedTransferLog;
     potentialExploitTrace: PotentialExploitTrace;
-    withdrawLog: ParsedTransferLog;
 }
 
-export function normalizeTransactionTraces(value: unknown): TransactionTrace[] {
-    if (Array.isArray(value)) {
-        return value.flatMap((entry) => {
-            const trace = normalizeTransactionTrace(unwrapTransactionTrace(entry));
-            return trace ? [trace] : [];
-        });
+export async function findPotentialExploitTraces(
+    client: Client,
+    affectedDeployments: AffectedDeployments,
+): Promise<PotentialExploitTrace[]> {
+    const deploymentByRouter = new Map(affectedDeployments.deployments.map((deployment) => [deployment.router, deployment]));
+    const traces = normalizeTransactionTraces(await client.request({
+        method: "trace_filter",
+        params: [
+            {
+                count: TRACE_FILTER_COUNT,
+                fromBlock: `0x${affectedDeployments.startBlock.toString(16)}`,
+                toAddress: affectedDeployments.deployments.map((deployment) => deployment.router),
+            },
+        ],
+    }));
+
+    if (traces.length === TRACE_FILTER_COUNT) {
+        throw new Error(
+            `trace_filter reached the configured count limit (${TRACE_FILTER_COUNT}); single-call scan may be truncated`,
+        );
     }
 
-    if (value && typeof value === "object" && "result" in value) {
-        return normalizeTransactionTraces((value as { result?: unknown }).result);
-    }
+    return traces.flatMap((trace) => {
+        if (IGNORED_TRANSACTION_SET.has(trace.transactionHash.toLowerCase())) {
+            return [];
+        }
 
-    return [];
+        if (trace.type !== "call") {
+            return [];
+        }
+
+        const router = getAddress(trace.action.to);
+        const deployment = deploymentByRouter.get(router);
+        if (!deployment || getAddress(trace.action.from) === deployment.core) {
+            return [];
+        }
+
+        let match;
+        try {
+            match = matchPotentialExploitTraceInput(trace.action.input, deployment.tokenList);
+        } catch(err) {
+            console.error(`Transaction ${trace.transactionHash}:`, err);
+            return [];
+        }
+
+        if (match === null) {
+            return [];
+        }
+
+        return [{ match, trace }];
+    });
 }
 
-export function traceAddressToString(traceAddress: number[]): string {
-    return traceAddress.join("/");
+function matchPotentialExploitTraceInput(
+    hex: Hex,
+    tokenList: readonly `0x${string}`[],
+): ApprovalDrainExploitMatch | null {
+    const decoded = decodeHyperRouterCalldata(hex, tokenList, { allowTrailingBytes: true });
+
+    if (!decoded.trailingCalldata) {
+        return null;
+    }
+
+    const trailingBytes = hexToBytes(decoded.trailingCalldata);
+
+    let unknownParameterization = trailingBytes.length < 52
+        || decoded.withRecipient
+        || decoded.withIntegrationFee
+        || decoded.isExactOut
+        || decoded.multiHops.length !== 1;
+
+    if (unknownParameterization) {
+        throw new Error(`Unknown trailing calldata parameterization: ${inspect(decoded, {depth: null})}`);
+    }
+
+    return {
+        amount: decoded.multiHops[0].specifiedAmount,
+        attackerToken: decoded.calculatedToken,
+        attacker: getAddress(bytesToHex(trailingBytes.slice(0, ADDRESS_BYTES))),
+        victimToken: decoded.specifiedToken,
+        victim: getAddress(bytesToHex(trailingBytes.slice(32, 52))),
+    };
 }
 
 export function findExploitIncidents({
@@ -206,23 +266,28 @@ export function findExploitIncidents({
             );
         }
 
-        const { amount, attacker, token, victim } = potentialExploitTrace.match;
-        const withdrawIndex = availableTransferLogs.findIndex((log) => {
-            return log.token === token
-                && log.from === deployment.core
-                && log.to === attacker
-                && log.amount === amount;
-        });
-        if (withdrawIndex === -1) {
-            throw new Error(
-                `could not match Core -> attacker transfer for tx ${potentialExploitTrace.trace.transactionHash} trace ${traceAddressToString(potentialExploitTrace.trace.traceAddress)}`,
-            );
+        const { amount, attacker, victimToken, attackerToken, victim } = potentialExploitTrace.match;
+        if (attackerToken === zeroAddress) {
+            console.warn("Skipping attacker receival check due to native token");
+        } else {
+            const withdrawIndex = availableTransferLogs.findIndex((log) => {
+                return log.token === attackerToken
+                    && log.from === deployment.core
+                    && log.to === attacker
+                    && log.amount === amount;
+            });
+            if (withdrawIndex === -1) {
+                throw new Error(
+                    `could not match Core -> attacker transfer for tx ${potentialExploitTrace.trace.transactionHash} trace ${traceAddressToString(potentialExploitTrace.trace.traceAddress)}`,
+                );
+            }
+            const [withdrawLog] = availableTransferLogs.splice(withdrawIndex, 1);
+            matchedTransferLogIndexes.add(withdrawLog.logIndex);
         }
-        const [withdrawLog] = availableTransferLogs.splice(withdrawIndex, 1);
-        matchedTransferLogIndexes.add(withdrawLog.logIndex);
+
 
         const payIndex = availableTransferLogs.findIndex((log) => {
-            return log.token === token
+            return log.token === victimToken
                 && log.from === victim
                 && log.to === deployment.core
                 && log.amount === amount;
@@ -239,7 +304,6 @@ export function findExploitIncidents({
             deployment,
             payLog,
             potentialExploitTrace,
-            withdrawLog,
         });
     }
 
@@ -254,13 +318,13 @@ export function findExploitIncidents({
 
     for (const matchedExploitTrace of matchedExploitTraces) {
         const { deployment, payLog, potentialExploitTrace } = matchedExploitTrace;
-        const { amount, token, victim } = potentialExploitTrace.match;
+        const { amount, victimToken, attackerToken, victim } = potentialExploitTrace.match;
         let netLoss = amount;
 
         for (const creditLog of availableCreditLogs) {
             if (
                 creditLog.remainingAmount === 0n
-                || creditLog.token !== token
+                || creditLog.token !== victimToken
                 || creditLog.to !== victim
                 || creditLog.logIndex >= payLog.logIndex
             ) {
@@ -287,7 +351,8 @@ export function findExploitIncidents({
             router: deployment.router,
             routerCaller: getAddress(potentialExploitTrace.trace.action.from),
             routerGeneration: deployment.routerGeneration,
-            token,
+            victimToken,
+            attackerToken,
             traceAddress: traceAddressToString(potentialExploitTrace.trace.traceAddress),
             txFrom: getAddress(txFrom),
             txHash: potentialExploitTrace.trace.transactionHash,
@@ -299,11 +364,11 @@ export function findExploitIncidents({
     return rows;
 }
 
-export function summarizeVictimLosses(rows: IncidentRowWithMetadata[]): VictimSummary[] {
+export function summarizeVictimLosses(rows: IncidentRow[]): VictimSummary[] {
     const summaries = new Map<string, VictimSummary>();
 
     for (const row of rows) {
-        const key = `${row.chainId}:${row.victim}:${row.token}`;
+        const key = `${row.chainId}:${row.victim}:${row.victimToken}`;
         const existing = summaries.get(key);
 
         if (!existing) {
@@ -312,9 +377,7 @@ export function summarizeVictimLosses(rows: IncidentRowWithMetadata[]): VictimSu
                 exploitRowCount: 1,
                 rawAmountTotal: row.rawAmount,
                 routerCallers: [row.routerCaller],
-                token: row.token,
-                tokenDecimals: row.tokenDecimals,
-                tokenSymbol: row.tokenSymbol,
+                token: row.victimToken,
                 txHashes: [row.txHash],
                 victim: row.victim,
             });
@@ -333,14 +396,6 @@ export function summarizeVictimLosses(rows: IncidentRowWithMetadata[]): VictimSu
             existing.routerCallers.push(row.routerCaller);
             existing.routerCallers.sort();
         }
-
-        if (typeof existing.tokenSymbol === "undefined" && typeof row.tokenSymbol !== "undefined") {
-            existing.tokenSymbol = row.tokenSymbol;
-        }
-
-        if (typeof existing.tokenDecimals === "undefined" && typeof row.tokenDecimals !== "undefined") {
-            existing.tokenDecimals = row.tokenDecimals;
-        }
     }
 
     return [...summaries.values()].sort((a, b) => {
@@ -350,122 +405,12 @@ export function summarizeVictimLosses(rows: IncidentRowWithMetadata[]): VictimSu
     });
 }
 
-export function enrichRowsWithTokenMetadata(
-    rows: IncidentRow[],
-    metadataByTokenKey: ReadonlyMap<string, TokenMetadata>,
-): IncidentRowWithMetadata[] {
-    return rows.map((row) => {
-        const metadata = metadataByTokenKey.get(tokenKey(row.chainId, row.token));
-
-        return {
-            ...row,
-            ...(metadata?.symbol ? { tokenSymbol: metadata.symbol } : {}),
-            ...(typeof metadata?.decimals === "number" ? { tokenDecimals: metadata.decimals } : {}),
-        };
-    });
-}
-
 export function tokenKey(chainId: bigint | number, token: `0x${string}`): string {
     return `${chainId}:${token}`;
 }
 
 export function isIgnoredTransaction(txHash: string): boolean {
     return IGNORED_TRANSACTION_SET.has(txHash.toLowerCase());
-}
-
-function matchPotentialExploitTraceInput(
-    hex: Hex,
-    chainId: bigint,
-    tokenList: readonly `0x${string}`[],
-): ApprovalDrainExploitMatch | null {
-    let decoded;
-    try {
-        decoded = decodeHyperRouterCalldata(hex, chainId, { allowTrailingBytes: true, tokenList });
-    } catch {
-        return null;
-    }
-
-    if (
-        decoded.withRecipient
-        || decoded.withIntegrationFee
-        || decoded.isExactOut
-        || decoded.specifiedTokenInfo !== decoded.calculatedTokenInfo
-        || decoded.specifiedToken !== decoded.calculatedToken
-        || decoded.multiHops.length !== 1
-        || !decoded.trailingCalldata
-    ) {
-        return null;
-    }
-
-    const [multiHop] = decoded.multiHops;
-    if (multiHop.hops.length !== 1 || multiHop.specifiedAmount <= 0n) {
-        return null;
-    }
-
-    const [hop] = multiHop.hops;
-    if (
-        hop.type !== "wrappedToken"
-        || hop.callType !== "unwrap"
-        || hop.underlying !== hop.wrapped
-        || hop.wrapped !== decoded.specifiedToken
-    ) {
-        return null;
-    }
-
-    const trailingBytes = hexToBytes(decoded.trailingCalldata);
-    if (trailingBytes.length < 52) {
-        return null;
-    }
-
-    return {
-        amount: multiHop.specifiedAmount,
-        attacker: getAddress(bytesToHex(trailingBytes.slice(0, ADDRESS_BYTES))),
-        token: decoded.specifiedToken,
-        victim: getAddress(bytesToHex(trailingBytes.slice(32, 52))),
-    };
-}
-
-export async function findPotentialExploitTraces(
-    client: Client,
-    chainId: bigint,
-    affectedDeployments: AffectedDeployments,
-): Promise<PotentialExploitTrace[]> {
-    const deploymentByRouter = new Map(affectedDeployments.deployments.map((deployment) => [deployment.router, deployment]));
-    const traces = normalizeTransactionTraces(await client.request({
-        method: "trace_filter",
-        params: [
-            {
-                count: TRACE_FILTER_COUNT,
-                fromBlock: `0x${affectedDeployments.startBlock.toString(16)}`,
-                toAddress: affectedDeployments.deployments.map((deployment) => deployment.router),
-            },
-        ],
-    }));
-
-    if (traces.length === TRACE_FILTER_COUNT) {
-        throw new Error(
-            `trace_filter reached the configured count limit (${TRACE_FILTER_COUNT}); single-call scan may be truncated`,
-        );
-    }
-
-    return traces.flatMap((trace) => {
-        if (trace.type !== "call") {
-            return [];
-        }
-
-        const router = getAddress(trace.action.to);
-        const deployment = deploymentByRouter.get(router);
-        if (!deployment || getAddress(trace.action.from) === deployment.core) {
-            return [];
-        }
-
-        const match = matchPotentialExploitTraceInput(trace.action.input, chainId, deployment.tokenList);
-        if (!match) {
-            return [];
-        }
-
-        return [{ match, trace }];
-    });
 }
 
 export async function mapConcurrent<T, R>(
@@ -532,6 +477,25 @@ function parseTransferLog(log: TransactionLog, fallbackIndex: number): ParsedTra
 
 function topicToAddress(topic: Hex): `0x${string}` {
     return getAddress(`0x${topic.slice(-40)}`);
+}
+
+export function normalizeTransactionTraces(value: unknown): TransactionTrace[] {
+    if (Array.isArray(value)) {
+        return value.flatMap((entry) => {
+            const trace = normalizeTransactionTrace(unwrapTransactionTrace(entry));
+            return trace ? [trace] : [];
+        });
+    }
+
+    if (value && typeof value === "object" && "result" in value) {
+        return normalizeTransactionTraces((value as { result?: unknown }).result);
+    }
+
+    return [];
+}
+
+export function traceAddressToString(traceAddress: number[]): string {
+    return traceAddress.join("/");
 }
 
 function unwrapTransactionTrace(value: unknown): unknown {

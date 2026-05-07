@@ -2,7 +2,6 @@
 import {
     TRACE_CONCURRENCY,
     analyzeTransaction,
-    enrichRowsWithTokenMetadata,
     findPotentialExploitTraces,
     isIgnoredTransaction,
     mapConcurrent,
@@ -10,7 +9,6 @@ import {
 } from "./find-approval-drain-losses/search.ts";
 import {
     getChainConfigs,
-    loadTokenMetadataMap,
     writeReports,
 } from "./find-approval-drain-losses/io.ts";
 
@@ -18,7 +16,7 @@ try {
     for (const { affectedDeployments, chainId, client, name } of getChainConfigs()) {
         console.log(`Scanning ${affectedDeployments.deployments.length} ${name} deployment(s) from block ${affectedDeployments.startBlock}...`);
 
-        const potentialExploitTraces = await findPotentialExploitTraces(client, chainId, affectedDeployments);
+        const potentialExploitTraces = await findPotentialExploitTraces(client, affectedDeployments);
         const tracesByTxHash = new Map<string, typeof potentialExploitTraces>();
 
         for (const potentialExploitTrace of potentialExploitTraces) {
@@ -41,7 +39,7 @@ try {
         console.log("Analyzing individual transactions...");
         let processedTransactions = 0;
 
-        const rawRows = (
+        const rows = (
             await mapConcurrent(
                 txEntries,
                 TRACE_CONCURRENCY,
@@ -66,19 +64,10 @@ try {
             )
         ).flat();
 
-        const uniqueTokens = [...new Set(rawRows.map((row) => row.token))];
-        const metadataByToken = await loadTokenMetadataMap({
-            chainId,
-            client,
-            concurrency: TRACE_CONCURRENCY,
-            tokens: uniqueTokens,
-        });
+        const summaries = summarizeVictimLosses(rows);
+        const outDir = await writeReports(rows, summaries);
 
-        const enrichedRows = enrichRowsWithTokenMetadata(rawRows, metadataByToken);
-        const summaries = summarizeVictimLosses(enrichedRows);
-        const outDir = await writeReports(enrichedRows, summaries);
-
-        console.log(`Wrote ${enrichedRows.length} incident row(s) and ${summaries.length} victim summary row(s) to ${outDir}`);
+        console.log(`Wrote ${rows.length} incident row(s) and ${summaries.length} victim summary row(s) to ${outDir}`);
     }
 } catch (error) {
     console.error(`Error: ${(error as Error).message}`);

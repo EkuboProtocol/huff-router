@@ -1,11 +1,12 @@
 #!/usr/bin/env tsx
 import type { Hex } from "viem";
 import { decodeHyperRouterCalldata } from "./hyperrouter-calldata.ts";
+import { inspect } from "node:util";
 
 const [, , calldataArg, chainIdArg] = process.argv;
 
 if (!calldataArg) {
-    process.stderr.write("Usage: tsx scripts/decode-calldata.ts <calldata> [chainId]\n");
+    console.error("Usage: tsx scripts/decode-calldata.ts <calldata> [chainId]");
     process.exit(1);
 }
 
@@ -14,8 +15,8 @@ const chainId = chainIdArg ? BigInt(chainIdArg) : null;
 
 try {
     const decoded = decodeHyperRouterCalldata(hex, chainId, { allowTrailingBytes: true });
-    process.stdout.write(JSON.stringify(decoded, null, 2) + "\n");
+    console.log(inspect(decoded, {depth: null}));
 } catch (error) {
-    process.stderr.write(`Error: ${(error as Error).message}\n`);
+    console.error(`Error: ${(error as Error).message}\n`);
     process.exit(1);
 }

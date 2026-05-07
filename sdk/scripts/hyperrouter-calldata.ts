@@ -65,7 +65,6 @@ export interface DecodedHyperRouterCalldata {
 
 export interface DecodeHyperRouterCalldataOptions {
     allowTrailingBytes?: boolean;
-    tokenList?: readonly `0x${string}`[] | null;
 }
 
 export interface ApprovalDrainExploitInputMatch {
@@ -100,8 +99,8 @@ function extensionLabel(address: string): string {
 
 export function decodeHyperRouterCalldata(
     hex: Hex,
-    chainId: bigint | null,
-    { allowTrailingBytes = false, tokenList = null }: DecodeHyperRouterCalldataOptions = {},
+    chainIdOrTokenList: bigint | readonly `0x${string}`[] | null,
+    { allowTrailingBytes = false }: DecodeHyperRouterCalldataOptions = {},
 ): DecodedHyperRouterCalldata {
     const data = hexToBytes(hex);
     let offset = 0;
@@ -122,8 +121,7 @@ export function decodeHyperRouterCalldata(
     const readUint = (length: number): bigint => (length === 0 ? 0n : bytesToBigInt(read(length)));
     const readAddress = (): Hex => getAddress(bytesToHex(read(ADDRESS_BYTES)));
 
-    const loadedTokenList = chainId !== null && tokenList === null ? Tokens.load(chainId).list : null;
-    const tokens = tokenList ?? loadedTokenList;
+    const tokens = typeof chainIdOrTokenList === "bigint" ? Tokens.load(chainIdOrTokenList)?.list ?? null : chainIdOrTokenList;
 
     function resolveToken(id: number): Hex {
         if (id === UNKNOWN_TOKEN_ID) {
@@ -139,7 +137,7 @@ export function decodeHyperRouterCalldata(
         const address = tokens[id];
         if (!address) {
             throw new Error(
-                `Token ID ${id} is out of range for ${chainId === null ? "the provided token list" : `chain ${chainId}`} (list has ${tokens.length} tokens)`,
+                `Token ID ${id} is out of range for ${chainIdOrTokenList === null ? "the provided token list" : `chain ${chainIdOrTokenList}`} (list has ${tokens.length} tokens)`,
             );
         }
 
