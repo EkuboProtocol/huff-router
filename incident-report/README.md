@@ -3,7 +3,7 @@
 A calldata parsing bug in `HuffRouter`, a gas-optimized Ekubo router contract written in Huff, allowed a caller to append arbitrary bytes after an otherwise valid swap route and have those bytes interpreted as router-set data during settlement.
 This allowed attackers to cause the effective `transferFrom` address to be read from attacker-supplied trailing calldata, pointing it at a victim that had previously approved the router.
 
-This issue affected both `HuffRouter` generations tied to Ekubo V2 and Ekubo V3:
+This issue affected both `HuffRouter` generations tied to Ekubo V2 and Ekubo V3 and led to approximately $1.43M in exploited funds:
 
 - Mainnet V2: `0x8f52903d17e2d8d6c77d1a1de0cc975b6b5a0d15`
 - Mainnet V2: `0x8ccb1ffd5c2aa6bd926473425dea4c8c15de60fd`
