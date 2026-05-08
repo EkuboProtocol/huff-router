@@ -76,15 +76,15 @@ While the `recipient` is intended to be caller-controllable, the `transferFrom` 
 
 We chose not to audit this contract because we assessed its practical risk as low. That assessment relied on two assumptions: approvals could be limited and bundled, and swaps initiated through the user interface would remain small and infrequent.
 
-In practice, the Ekubo frontend did not request approvals larger than needed for the immediate action, except for exact-out swaps where the approval had to include some slippage headroom. Larger outstanding and unconsumed approvals were therefore likely cases where users had manually increased the allowance themselves.
-
 That judgment underestimated the consequences of a parsing bug in an approval-bearing router. Low expected usage and constrained approval patterns were not sufficient reasons to skip an audit of a contract that could move user funds.
+
+In practice, the Ekubo frontend did not request approvals larger than needed for the immediate action, except for exact-out swaps where the approval had to include some slippage headroom. Larger outstanding and unconsumed approvals were therefore likely cases where users had manually increased the allowance themselves.
 
 ## Impact
 
 The primary impact was approval draining from victims that had granted an affected router ERC20 approvals.
 
-In the exploit pattern above:
+In the exploit pattern:
 
 - the victim supplied the ERC20 allowance,
 - the attacker supplied a crafted route, and
