@@ -62,7 +62,7 @@ describe("matchApprovalDrainExploitInput", () => {
         });
     });
 
-    test("rejects a route without trailing override bytes", () => {
+    test("rejects a route without trailing calldata bytes", () => {
         expect(matchApprovalDrainExploitInput(ROUTE_PREFIX_ONLY, 1n)).toBeNull();
     });
 });

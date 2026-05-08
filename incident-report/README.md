@@ -1,7 +1,7 @@
-# Post-Mortem: `HuffRouter` Approval Draining via Trailing Calldata Override
+# Post-Mortem: `HuffRouter` Approval Draining via Trailing Calldata
 
 A calldata parsing bug in `HuffRouter`, a gas-optimized Ekubo router contract written in Huff, allowed a caller to append arbitrary bytes after an otherwise valid swap route and have those bytes interpreted as router-set data during settlement.
-This allowed attackers to override the effective `transferFrom` address to the address of a victim that had previously approved the router.
+This allowed attackers to cause the effective `transferFrom` address to be read from attacker-supplied trailing calldata, pointing it at a victim that had previously approved the router.
 
 This issue affected both `HuffRouter` generations tied to Ekubo V2 and Ekubo V3:
 
