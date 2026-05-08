@@ -70,11 +70,13 @@ As a result, attacker-controlled trailing bytes could be reinterpreted as:
 - the recipient when `withRecipient = false`, and
 - the `transferFrom` address.
 
-While the `recipient` is intended to be caller-controlled, the `transferFrom` address should not be, which opened up the possibility for exploitation.
+While the `recipient` is intended to be caller-controllable, the `transferFrom` address should not be, which opened up the possibility for exploitation.
 
 ## Contributing Factors
 
 We chose not to audit this contract because we assessed its practical risk as low. That assessment relied on two assumptions: approvals could be limited and bundled, and swaps initiated through the user interface would remain small and infrequent.
+
+In practice, the Ekubo frontend did not request approvals larger than needed for the immediate action, except for exact-out swaps where the approval had to include some slippage headroom. Larger outstanding and unconsumed approvals were therefore likely cases where users had manually increased the allowance themselves.
 
 That judgment underestimated the consequences of a parsing bug in an approval-bearing router. Low expected usage and constrained approval patterns were not sufficient reasons to skip an audit of a contract that could move user funds.
 
@@ -90,7 +92,7 @@ In the exploit pattern above:
 
 In the example above, the attacker chose a route whose legitimate hop failed before creating meaningful dynamic deltas, but that was not a prerequisite for the bug.
 
-Although the settlement flow in Ekubo V2 (described here) and V3 is different, the listed router deployments for both Ekubo versions were vulnerable because the flaw lived in the shared callback parsing logic.
+Although the settlement flow in Ekubo V2 and V3 is different, the listed router deployments for both Ekubo versions were vulnerable because the flaw lived in the shared callback parsing logic.
 
 ## Analysis Artifacts
 
@@ -138,6 +140,7 @@ Alongside the contract-side fix, the Ekubo frontend immediately stopped offering
 The affected deployments remain vulnerable because they are immutable and cannot be patched in place.
 
 Outstanding approvals to the affected `HuffRouter` deployments should be withdrawn.
+Users are also encouraged to check [`vulnerable-approvals.json`](./vulnerable-approvals.json), the outstanding approvals artifact in this directory, to see which approvals remain exposed.
 
 The Ekubo frontend was the only known dApp that created approvals for the various affected `HuffRouter` deployments.
 When users who still have an outstanding approval visit the frontend, they are shown a banner that alerts them and encourages them to revoke it.
