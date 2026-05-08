@@ -9,16 +9,18 @@ import {
     summarizeVictimLosses,
 } from "./find-approval-drain-losses/search.ts";
 import {
+    findVulnerableApprovals,
     getMainnetConfig,
     findDisqualifiedVictims,
     loadTokenMetadataMap,
+    type VulnerableApprovalSummary,
     writeReports,
 } from "./find-approval-drain-losses/io.ts";
 
 const VICTIM_GAMING_CHECK_FROM_BLOCK = 25_030_409n;
 
 try {
-    const { affectedDeployments, client } = getMainnetConfig();
+    const { affectedDeployments, client, vulnerableApprovalTokens } = getMainnetConfig();
     console.log(`Scanning ${affectedDeployments.deployments.length} mainnet deployment(s) from block ${affectedDeployments.startBlock}...`);
 
     const potentialExploitTraces = await findPotentialExploitTraces(client, affectedDeployments);
@@ -87,12 +89,20 @@ try {
         }
     }
 
-    const disqualifiedVictims = await findDisqualifiedVictims(
-        client,
-        latestExploitOrderByVictim,
-        affectedDeployments.deployments.map((deployment) => deployment.router),
-        VICTIM_GAMING_CHECK_FROM_BLOCK,
-    );
+    console.log("Analyzing current vulnerable approvals and disqualified victims...");
+    const [vulnerableApprovals, disqualifiedVictims] = await Promise.all([
+        findVulnerableApprovals(client, {
+            fromBlock: affectedDeployments.startBlock,
+            spenders: affectedDeployments.deployments.map((deployment) => deployment.router),
+            tokens: vulnerableApprovalTokens,
+        }),
+        findDisqualifiedVictims(
+            client,
+            latestExploitOrderByVictim,
+            affectedDeployments.deployments.map((deployment) => deployment.router),
+            VICTIM_GAMING_CHECK_FROM_BLOCK,
+        ),
+    ]);
     const disqualifiedVictimSet = new Set(Object.keys(disqualifiedVictims).map((victim) => victim.toLowerCase()));
     if (disqualifiedVictimSet.size > 0) {
         console.warn(
@@ -107,10 +117,32 @@ try {
         client,
         tokenSummaries.map((summary) => summary.token),
     );
-    const outDir = await writeReports(filteredRows, summaries, tokenSummaries, tokenMetadataByToken, disqualifiedVictims);
+    const outDir = await writeReports(
+        filteredRows,
+        summaries,
+        tokenSummaries,
+        tokenMetadataByToken,
+        disqualifiedVictims,
+        vulnerableApprovals,
+    );
+    const vulnerableApprovalCount = countVulnerableApprovals(vulnerableApprovals);
 
-    console.log(`Wrote ${filteredRows.length} incident row(s), ${Object.keys(summaries).length} victim summary row(s), and ${tokenSummaries.length} token summary row(s) to ${outDir}`);
+    console.log(
+        `Wrote ${filteredRows.length} incident row(s), ${Object.keys(summaries).length} victim summary row(s), ${tokenSummaries.length} token summary row(s), and ${vulnerableApprovalCount} vulnerable approval row(s) to ${outDir}`,
+    );
 } catch (error) {
     console.error(`Error: ${(error as Error).message}`);
     process.exitCode = 1;
+}
+
+function countVulnerableApprovals(vulnerableApprovals: VulnerableApprovalSummary): number {
+    let count = 0;
+
+    for (const approvalsByToken of Object.values(vulnerableApprovals)) {
+        for (const approvals of Object.values(approvalsByToken ?? {})) {
+            count += approvals?.length ?? 0;
+        }
+    }
+
+    return count;
 }

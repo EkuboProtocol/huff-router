@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { getAddress } from "viem";
+import { describe, expect, test, vi } from "vitest";
+import { encodeFunctionData, getAddress, parseAbi } from "viem";
 import type { Hex } from "viem";
 import {
     findExploitIncidents,
@@ -15,6 +15,8 @@ import type {
     TransactionLog,
     TransactionTrace,
 } from "../scripts/find-approval-drain-losses/search.ts";
+import { findVulnerableApprovals } from "../scripts/find-approval-drain-losses/io.ts";
+import type { Client } from "../scripts/find-approval-drain-losses/io.ts";
 
 const TEST_BLOCK_HASH = `0x${"1".repeat(64)}` as Hex;
 const TEST_GAS = "0x0" as Hex;
@@ -30,6 +32,11 @@ const VICTIM = getAddress("0x765decf4fa157756e850c1079f60801b9219edd1");
 const TOKEN = getAddress("0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599");
 const FLASH_LENDER = getAddress("0x130dDDD151A00f05A9F8d8d0D52fA3f58a884321");
 const OTHER_BOT = getAddress("0x11AB8a601Bd3C42CdDAA57cD15e16ca3963Aa015");
+const V2_ROUTER_ALT = getAddress("0x8ccb1ffd5c2aa6bd926473425dea4c8c15de60fd");
+const ALLOWANCE_ABI = parseAbi(["function allowance(address owner, address spender) view returns (uint256)"]);
+const BALANCE_OF_ABI = parseAbi(["function balanceOf(address owner) view returns (uint256)"]);
+const APPROVAL_TOPIC = "0x8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925" as Hex;
+const MAX_UINT256 = (1n << 256n) - 1n;
 
 const DEPLOYMENTS: AffectedDeployment[] = [
     {
@@ -112,6 +119,45 @@ function makeExploitMatch(amount: bigint) {
         victim: VICTIM,
         victimToken: TOKEN,
     } as const;
+}
+
+function makeApprovalLog({
+    blockNumber,
+    logIndex,
+    owner,
+    spender,
+    token,
+    transactionIndex = 0,
+    value,
+}: {
+    blockNumber: number;
+    logIndex: number;
+    owner: `0x${string}`;
+    spender: `0x${string}`;
+    token: `0x${string}`;
+    transactionIndex?: number;
+    value: bigint;
+}) {
+    return {
+        address: token,
+        blockNumber: `0x${blockNumber.toString(16)}`,
+        data: encodeUint256(value),
+        logIndex: `0x${logIndex.toString(16)}`,
+        topics: [
+            APPROVAL_TOPIC,
+            addressToTopic(owner),
+            addressToTopic(spender),
+        ],
+        transactionIndex: `0x${transactionIndex.toString(16)}`,
+    };
+}
+
+function encodeUint256(value: bigint): Hex {
+    return `0x${value.toString(16).padStart(64, "0")}` as Hex;
+}
+
+function addressToTopic(address: `0x${string}`): Hex {
+    return `0x${address.slice(2).toLowerCase().padStart(64, "0")}` as Hex;
 }
 
 function makeIncidentRow(overrides: Partial<IncidentRow> = {}): IncidentRow {
@@ -316,5 +362,137 @@ describe("summarizeTokenLosses", () => {
                 token: TOKEN,
             },
         ]);
+    });
+});
+
+describe("findVulnerableApprovals", () => {
+    test("keeps approvals separated by router and computes effective amount as min(balance, allowance)", async () => {
+        const spenderRouters = [V2_ROUTER, V2_ROUTER_ALT, V3_ROUTER] as const;
+        const currentAllowanceByCallData = new Map<Hex, bigint>([
+            [
+                encodeFunctionData({
+                    abi: ALLOWANCE_ABI,
+                    functionName: "allowance",
+                    args: [VICTIM, V2_ROUTER],
+                }),
+                MAX_UINT256,
+            ],
+            [
+                encodeFunctionData({
+                    abi: ALLOWANCE_ABI,
+                    functionName: "allowance",
+                    args: [VICTIM, V2_ROUTER_ALT],
+                }),
+                0n,
+            ],
+            [
+                encodeFunctionData({
+                    abi: ALLOWANCE_ABI,
+                    functionName: "allowance",
+                    args: [VICTIM, V3_ROUTER],
+                }),
+                8n,
+            ],
+        ]);
+        const currentBalanceByCallData = new Map<Hex, bigint>([
+            [
+                encodeFunctionData({
+                    abi: BALANCE_OF_ABI,
+                    functionName: "balanceOf",
+                    args: [VICTIM],
+                }),
+                7n,
+            ],
+        ]);
+
+        const client = {
+            request: vi.fn(async () => [
+                makeApprovalLog({
+                    blockNumber: 10,
+                    logIndex: 1,
+                    owner: VICTIM,
+                    spender: V2_ROUTER,
+                    token: TOKEN,
+                    value: 5n,
+                }),
+                makeApprovalLog({
+                    blockNumber: 11,
+                    logIndex: 2,
+                    owner: VICTIM,
+                    spender: V2_ROUTER_ALT,
+                    token: TOKEN,
+                    value: 9n,
+                }),
+                makeApprovalLog({
+                    blockNumber: 12,
+                    logIndex: 3,
+                    owner: VICTIM,
+                    spender: V2_ROUTER_ALT,
+                    token: TOKEN,
+                    value: 8n,
+                }),
+                makeApprovalLog({
+                    blockNumber: 13,
+                    logIndex: 4,
+                    owner: VICTIM,
+                    spender: V2_ROUTER_ALT,
+                    token: TOKEN,
+                    value: 0n,
+                }),
+                makeApprovalLog({
+                    blockNumber: 14,
+                    logIndex: 5,
+                    owner: VICTIM,
+                    spender: V3_ROUTER,
+                    token: TOKEN,
+                    value: 8n,
+                }),
+            ]),
+            call: vi.fn(async ({ data }) => {
+                if (typeof data !== "string") {
+                    throw new Error("missing calldata");
+                }
+
+                const currentAllowance = currentAllowanceByCallData.get(data as Hex);
+                if (typeof currentAllowance !== "undefined") {
+                    return { data: encodeUint256(currentAllowance) };
+                }
+
+                const currentBalance = currentBalanceByCallData.get(data as Hex);
+                if (typeof currentBalance !== "undefined") {
+                    return { data: encodeUint256(currentBalance) };
+                }
+
+                throw new Error(`unexpected calldata ${data}`);
+            }),
+        } as unknown as Pick<Client, "call" | "request">;
+
+        const summary = await findVulnerableApprovals(client, {
+            fromBlock: 1n,
+            spenders: spenderRouters,
+            tokens: [TOKEN],
+        });
+
+        expect(summary).toEqual({
+            [V2_ROUTER]: {
+                [TOKEN]: [
+                    {
+                        amount: "infinite",
+                        effective: "7",
+                        owner: VICTIM,
+                    },
+                ],
+            },
+            [V3_ROUTER]: {
+                [TOKEN]: [
+                    {
+                        amount: "8",
+                        effective: "7",
+                        owner: VICTIM,
+                    },
+                ],
+            },
+        });
+        expect(client.request).toHaveBeenCalledTimes(1);
     });
 });
