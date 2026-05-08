@@ -7,7 +7,7 @@ import {
     mapConcurrent,
     summarizeTokenLosses,
     summarizeVictimLosses,
-} from "./find-approval-drain-losses/search.ts";
+} from "./incident-analysis-lib/search.ts";
 import {
     findVulnerableApprovals,
     getMainnetConfig,
@@ -15,7 +15,7 @@ import {
     loadTokenMetadataMap,
     type VulnerableApprovalSummary,
     writeReports,
-} from "./find-approval-drain-losses/io.ts";
+} from "./incident-analysis-lib/io.ts";
 
 const VICTIM_GAMING_CHECK_FROM_BLOCK = 25_030_409n;
 

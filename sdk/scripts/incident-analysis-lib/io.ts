@@ -32,7 +32,7 @@ import {
     VULNERABLE_APPROVAL_TOKEN_LIST,
 } from "./token-lists.ts";
 
-const OUT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../out");
+const OUT_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../incident-analysis");
 const SYMBOL_ABI = parseAbi(["function symbol() view returns (string)"]);
 const DECIMALS_ABI = parseAbi(["function decimals() view returns (uint8)"]);
 const ALLOWANCE_ABI = parseAbi(["function allowance(address owner, address spender) view returns (uint256)"]);

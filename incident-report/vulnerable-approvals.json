@@ -1,0 +1,745 @@
+{
+  "0x4F168f17923435c999f5C8565ACAb52C2218EdF2": {
+    "0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f": [
+      {
+        "amount": "2257373815389",
+        "effective": "2257373815389",
+        "owner": "0x59653fd9713a30C54237A6FD21fD97BA141aBbe0"
+      }
+    ],
+    "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3": [
+      {
+        "amount": "9962000000000000000000",
+        "effective": "0",
+        "owner": "0xADAa78db09f0f38ca68FF357ba5968c96B2d6D8F"
+      }
+    ],
+    "0x6440f144b7e50D6a8439336510312d2F54beB01D": [
+      {
+        "amount": "99997633446722658378867",
+        "effective": "0",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      }
+    ],
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": [
+      {
+        "amount": "99970840862",
+        "effective": "0",
+        "owner": "0x048F6B5563b7693020B3562fDE709a27dFdA7b8F"
+      },
+      {
+        "amount": "49969427735",
+        "effective": "61872",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      },
+      {
+        "amount": "337290",
+        "effective": "337290",
+        "owner": "0x0CBf7c3236F8b8277BCF6868c420841a5CeDC0f6"
+      },
+      {
+        "amount": "10000000",
+        "effective": "0",
+        "owner": "0x1434cf7cd9e5563e1caF097ed262C55cF021feE9"
+      },
+      {
+        "amount": "998",
+        "effective": "0",
+        "owner": "0x3b4058d8335D0E782D210DD8cC51eC183cAD99C6"
+      },
+      {
+        "amount": "31000000",
+        "effective": "108",
+        "owner": "0x44465D46cCade60799C81c090C0f7D318c2cE87e"
+      },
+      {
+        "amount": "98897648491",
+        "effective": "9050",
+        "owner": "0x765Ccb397c36d5767BAfddB7865497EC7AA1367d"
+      },
+      {
+        "amount": "99835",
+        "effective": "0",
+        "owner": "0x91294227D4E08e0083525451fA940c274c82F936"
+      },
+      {
+        "amount": "2473053",
+        "effective": "0",
+        "owner": "0x99344B575b83360410a0E4dCe75189EdECAcc824"
+      },
+      {
+        "amount": "16747648",
+        "effective": "0",
+        "owner": "0x9CbbeEad4AD5432e9017ff48506011A80D0Eb598"
+      },
+      {
+        "amount": "1533945",
+        "effective": "0",
+        "owner": "0xA40454153e77d41217F71CD077574B21eBe1cC79"
+      },
+      {
+        "amount": "8413",
+        "effective": "8413",
+        "owner": "0xa3653544812105B666a11b2D98c64CAbF8cBAEec"
+      }
+    ],
+    "0xd9Fcd98c322942075A5C3860693e9f4f03AAE07b": [
+      {
+        "amount": "4999196954093585565448",
+        "effective": "0",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      },
+      {
+        "amount": "115792089237316195423570985008687907853269984665640564039257932807913129639935",
+        "effective": "0",
+        "owner": "0xE08D97e151473A848C3d9CA3f323Cb720472D015"
+      }
+    ],
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7": [
+      {
+        "amount": "9999975105449",
+        "effective": "89993",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      },
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0x339c0db4A0030c88b4A48aafE56CdBa23c8d4338"
+      },
+      {
+        "amount": "99995",
+        "effective": "0",
+        "owner": "0x3b4058d8335D0E782D210DD8cC51eC183cAD99C6"
+      },
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0x5B5A0580bcfd3673820Bb249514234aFAD33e209"
+      },
+      {
+        "amount": "infinite",
+        "effective": "2",
+        "owner": "0x935bfb495E33f74d2E9735DF1DA66acE442ede48"
+      },
+      {
+        "amount": "266543",
+        "effective": "266543",
+        "owner": "0x99935B671af8fFc9A9eD042E4663a135dA477b6c"
+      },
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0xC31a49D1c4C652aF57cEFDeF248f3c55b801c649"
+      },
+      {
+        "amount": "infinite",
+        "effective": "153",
+        "owner": "0xD2306a7187FE8B0C0DEe59b50FDC438d2075d24c"
+      },
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0xE08D97e151473A848C3d9CA3f323Cb720472D015"
+      },
+      {
+        "amount": "300881",
+        "effective": "300881",
+        "owner": "0xaab6A92aAA0F20F39aCa37aF28f21CE61e2cdC29"
+      },
+      {
+        "amount": "infinite",
+        "effective": "14",
+        "owner": "0xfA0253943c3FF0e43898cba5A7a0dA9D17C27995"
+      }
+    ],
+    "0xf939E0A03FB07F59A73314E73794Be0E57ac1b4E": [
+      {
+        "amount": "100503964830340730",
+        "effective": "0",
+        "owner": "0x3b4058d8335D0E782D210DD8cC51eC183cAD99C6"
+      }
+    ]
+  },
+  "0x8CCB1ffD5C2aa6Bd926473425Dea4c8c15DE60fd": {
+    "0x01791F726B4103694969820be083196cC7c045fF": [
+      {
+        "amount": "99759540523749541192664",
+        "effective": "0",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      }
+    ],
+    "0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f": [
+      {
+        "amount": "98770132812311047165751",
+        "effective": "0",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      },
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0x8fa0e72888774B67DcB4944dc8E62A0D6e3185FD"
+      },
+      {
+        "amount": "14697433219532534036019",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      },
+      {
+        "amount": "3554310994327040880",
+        "effective": "0",
+        "owner": "0xB540889960869462a50Af3E7c2B1CAc3A682CC07"
+      },
+      {
+        "amount": "19805464497958828658536",
+        "effective": "0",
+        "owner": "0xe3Aa45eEDbbA3DD2b04Fc1e03d869D28AcA7dEaa"
+      }
+    ],
+    "0x09fD37d9AA613789c517e76DF1c53aEce2b60Df4": [
+      {
+        "amount": "40392226802236462788669",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      }
+    ],
+    "0x0c93b16cb1D8691E629514Fc98f02cbaD340Da3C": [
+      {
+        "amount": "587316103484633700",
+        "effective": "0",
+        "owner": "0x05BC6929D26157881e7c7018Db17f1738c60Db93"
+      },
+      {
+        "amount": "73535385049679210",
+        "effective": "73535385049679210",
+        "owner": "0x13C385A2Aa976B637d2a701dEc0E2479cDAe3Bb7"
+      },
+      {
+        "amount": "9007199254740976648788414221998795",
+        "effective": "0",
+        "owner": "0x1a38678522b4CB234Ce24f10A7EE6d2B808C916F"
+      },
+      {
+        "amount": "9551602578251962250940",
+        "effective": "0",
+        "owner": "0x3DE4F8499935751ec4829E51fC5C64C7237f5C3a"
+      },
+      {
+        "amount": "71902607879030466400",
+        "effective": "0",
+        "owner": "0x6275741C117a880a67DB7B30e95BF7BA551d60b5"
+      },
+      {
+        "amount": "7479274845028767542",
+        "effective": "7479274845028767542",
+        "owner": "0x62918165274bd8739634aEcB0684d5057304D480"
+      },
+      {
+        "amount": "18344719143388227408",
+        "effective": "0",
+        "owner": "0x93D94AADaca900444c6975830C82992b30F44C60"
+      },
+      {
+        "amount": "19575247364325945186700",
+        "effective": "0",
+        "owner": "0xe3Aa45eEDbbA3DD2b04Fc1e03d869D28AcA7dEaa"
+      }
+    ],
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": [
+      {
+        "amount": "99526144",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      }
+    ],
+    "0x4956b52aE2fF65D74CA2d61207523288e4528f96": [
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0xC5198fC91A3271cC401240eEc6DAc1E40C7bA046"
+      }
+    ],
+    "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3": [
+      {
+        "amount": "99997545893098596301078",
+        "effective": "32066473937616",
+        "owner": "0x1a80cfa2dC45255B7511A739f4b04C286a0b7938"
+      }
+    ],
+    "0x514910771AF9Ca656af840dff83E8264EcF986CA": [
+      {
+        "amount": "1",
+        "effective": "1",
+        "owner": "0xa3C1C91403F0026b9dd086882aDbC8Cdbc3b3cfB"
+      }
+    ],
+    "0x57e114B691Db790C35207b2e685D4A43181e6061": [
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0xb7856cB067EBf7E87B19d4af0791Ea9E46472acC"
+      }
+    ],
+    "0x6440f144b7e50D6a8439336510312d2F54beB01D": [
+      {
+        "amount": "24289613446376479831237",
+        "effective": "0",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      },
+      {
+        "amount": "3037874208076208424996",
+        "effective": "0",
+        "owner": "0x93C10b5B55ACA304086De9D0de20461bCE998cBB"
+      },
+      {
+        "amount": "49074982632473273509375",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      }
+    ],
+    "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9": [
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0xDCa9B7e52000e5e0aE07A23EFaaB8613c5f7966B"
+      },
+      {
+        "amount": "117288636449668794156",
+        "effective": "0",
+        "owner": "0xe3Aa45eEDbbA3DD2b04Fc1e03d869D28AcA7dEaa"
+      },
+      {
+        "amount": "1261529875780518",
+        "effective": "1261529875780518",
+        "owner": "0xeB0e6eCD0E78B0a84eCD9663a041F453C454a99D"
+      }
+    ],
+    "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0": [
+      {
+        "amount": "998637500000000000000",
+        "effective": "0",
+        "owner": "0xe3Aa45eEDbbA3DD2b04Fc1e03d869D28AcA7dEaa"
+      }
+    ],
+    "0x9D39A5DE30e57443BfF2A8307A4256c8797A3497": [
+      {
+        "amount": "97955236824158404731",
+        "effective": "0",
+        "owner": "0x85d72C6922479BA67BF85F11cC1e3e21d6074Bd8"
+      }
+    ],
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": [
+      {
+        "amount": "994186925417",
+        "effective": "61872",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      },
+      {
+        "amount": "831286",
+        "effective": "0",
+        "owner": "0x15Ed584AD88551Fab1F0ff9152Ba4787fdEAB6F2"
+      },
+      {
+        "amount": "2898898",
+        "effective": "209974",
+        "owner": "0x34BdD9A733145902e3B1E3323bE878B23bf9E5ad"
+      },
+      {
+        "amount": "99987433622",
+        "effective": "340772",
+        "owner": "0x5DeAf975372215bdB134760054600Ade20c03b17"
+      },
+      {
+        "amount": "767554",
+        "effective": "767554",
+        "owner": "0x90481610AB58d56a83a7bBC323Dc7ECEF8e269a8"
+      },
+      {
+        "amount": "604999576",
+        "effective": "106",
+        "owner": "0x93C10b5B55ACA304086De9D0de20461bCE998cBB"
+      },
+      {
+        "amount": "236676",
+        "effective": "236676",
+        "owner": "0x963d48195006629408EBfD07c7F29E225027e611"
+      },
+      {
+        "amount": "7797095",
+        "effective": "18773",
+        "owner": "0x9a40cc1bf43d2A70913E2bF5eE599C82006a2482"
+      },
+      {
+        "amount": "2890728376",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      },
+      {
+        "amount": "4302450000",
+        "effective": "0",
+        "owner": "0xB1BAdACa1F67cA424b57482349fb10d0F0116475"
+      },
+      {
+        "amount": "2064000000",
+        "effective": "21113",
+        "owner": "0xdC9629AF31cA26516910D31b0C843FC6FdC8F0b7"
+      },
+      {
+        "amount": "2497521",
+        "effective": "391",
+        "owner": "0xeC8eeb46C692760c0eD6508bb8ad2121b65e6Cfe"
+      },
+      {
+        "amount": "497989",
+        "effective": "497989",
+        "owner": "0xef5A8eF4D49500A2fF30BC4C01c0783f8f0196DA"
+      }
+    ],
+    "0xCd5fE23C85820F7B72D0926FC9b05b43E359b7ee": [
+      {
+        "amount": "863253700000000",
+        "effective": "863253700000000",
+        "owner": "0xFAfEa5C3DDbeD3768e22d007D7d659f972961CC6"
+      }
+    ],
+    "0xD31a59c85aE9D8edEFeC411D448f90841571b89c": [
+      {
+        "amount": "4809904096",
+        "effective": "0",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      }
+    ],
+    "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf": [
+      {
+        "amount": "770",
+        "effective": "770",
+        "owner": "0x358506b4C5c441873AdE429c5A2BE777578E2C6f"
+      },
+      {
+        "amount": "99885453",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      }
+    ],
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7": [
+      {
+        "amount": "5284926",
+        "effective": "89993",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      },
+      {
+        "amount": "100000",
+        "effective": "100000",
+        "owner": "0x1d9b404Eb57452A3D806F5D62C85D818f01C3fb4"
+      },
+      {
+        "amount": "2217593",
+        "effective": "10165",
+        "owner": "0x34BdD9A733145902e3B1E3323bE878B23bf9E5ad"
+      },
+      {
+        "amount": "9871",
+        "effective": "9871",
+        "owner": "0x37e6F903fa568BD3e8f49106A6912ae177de531F"
+      },
+      {
+        "amount": "3072234",
+        "effective": "0",
+        "owner": "0x451bF8386E62B9a2AC15DBcB5B2aF496ddf5518D"
+      },
+      {
+        "amount": "40268",
+        "effective": "40268",
+        "owner": "0x99935B671af8fFc9A9eD042E4663a135dA477b6c"
+      },
+      {
+        "amount": "27639536143",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      },
+      {
+        "amount": "114332",
+        "effective": "0",
+        "owner": "0xB71CF003eBA25E3bFC4185BabE5DADe3655F8e2F"
+      },
+      {
+        "amount": "3299185984",
+        "effective": "0",
+        "owner": "0xa8b560111194192194c344F859d1C0A248747A6C"
+      },
+      {
+        "amount": "604131608",
+        "effective": "0",
+        "owner": "0xc0Fc8a0c13CC1c28EC595230981F6C9201BBD7e8"
+      }
+    ],
+    "0xefb21BD8eA3bEc1Bbff14B158A9B60EdcF2774BC": [
+      {
+        "amount": "499899999995429122365999001",
+        "effective": "499899999995429122365999001",
+        "owner": "0x7c73100301b2A14A279E7cB7C4413c953693B148"
+      }
+    ]
+  },
+  "0x8F52903D17E2D8d6c77D1A1DE0Cc975b6b5a0D15": {
+    "0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f": [
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0x19244841F215b6FB016736C5c735B9B065d9890B"
+      },
+      {
+        "amount": "666179441537678020",
+        "effective": "0",
+        "owner": "0x32e3Adf4B53D74510FFDD12bC480e7Eac3Be4964"
+      },
+      {
+        "amount": "913855285145923443000",
+        "effective": "0",
+        "owner": "0x3DE4F8499935751ec4829E51fC5C64C7237f5C3a"
+      },
+      {
+        "amount": "17382445876174789933",
+        "effective": "17382445876174789933",
+        "owner": "0x401Ca4B12CB8AC39dD6794eB16B5b5Db3EFE5987"
+      },
+      {
+        "amount": "900000000000000000000",
+        "effective": "0",
+        "owner": "0x4e26CBFAba733908E6f7B425a1d74DE73A051A58"
+      },
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0x65D3FeBC3112cef66BE36df9A62Ac0f94079BD42"
+      },
+      {
+        "amount": "20000000000000000000",
+        "effective": "20000000000000000000",
+        "owner": "0x7C3d89277fbDDDF9354a64A34257a1a42A2FAb04"
+      },
+      {
+        "amount": "197062837630871141950",
+        "effective": "0",
+        "owner": "0xe3Aa45eEDbbA3DD2b04Fc1e03d869D28AcA7dEaa"
+      },
+      {
+        "amount": "1483528588495376930",
+        "effective": "0",
+        "owner": "0xf4b785ef2c10D5662A053043E362e7E74E14A206"
+      }
+    ],
+    "0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599": [
+      {
+        "amount": "920000",
+        "effective": "0",
+        "owner": "0x773520dFdb20fCF8573A7B9088C1c1eBCf1AE117"
+      }
+    ],
+    "0x4c9EDD5852cd905f086C759E8383e09bff1E68B3": [
+      {
+        "amount": "212961754159367412550345",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      },
+      {
+        "amount": "820467584836837523696",
+        "effective": "202279959658453",
+        "owner": "0xBFAa7Aa9020dCC91964285BeEbC213b3983F8C80"
+      },
+      {
+        "amount": "979979603610754471193",
+        "effective": "0",
+        "owner": "0xC22D10c8B659e32D86627711FAf7D83bab95B01d"
+      },
+      {
+        "amount": "infinite",
+        "effective": "0",
+        "owner": "0xF0e82e40d38190Aa7e82c17763117c2E47fD7C58"
+      }
+    ],
+    "0x6440f144b7e50D6a8439336510312d2F54beB01D": [
+      {
+        "amount": "49712221883641252810000",
+        "effective": "7388369264197781000",
+        "owner": "0x0960Da039bb8151cacfeF620476e8bAf34Bd9565"
+      }
+    ],
+    "0x7Fc66500c84A76Ad7e9c93437bFc5Ac33E2DDaE9": [
+      {
+        "amount": "122000000000000000000",
+        "effective": "0",
+        "owner": "0xe3Aa45eEDbbA3DD2b04Fc1e03d869D28AcA7dEaa"
+      }
+    ],
+    "0x7f39C581F595B53c5cb19bD0b3f8dA6c935E2Ca0": [
+      {
+        "amount": "26514834507602",
+        "effective": "26514834507602",
+        "owner": "0xdB02db34221f6116A993B4a70cEFe28b9aFF379B"
+      }
+    ],
+    "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48": [
+      {
+        "amount": "21333454",
+        "effective": "0",
+        "owner": "0x13C385A2Aa976B637d2a701dEc0E2479cDAe3Bb7"
+      },
+      {
+        "amount": "30534750",
+        "effective": "0",
+        "owner": "0x19244841F215b6FB016736C5c735B9B065d9890B"
+      },
+      {
+        "amount": "115792089237316195423570985008687907853269984665640564039457584007913129539935",
+        "effective": "5637868",
+        "owner": "0x31FC82269A2D0122aB3f06530F8DBa4eF7599DE0"
+      },
+      {
+        "amount": "115792089237316195423570985008687907853269984665640564039457584007913119639935",
+        "effective": "0",
+        "owner": "0x4a613cB0991ECCcC402b9Ca01b2B18a73E07Ed8a"
+      },
+      {
+        "amount": "258602",
+        "effective": "0",
+        "owner": "0x4eAAC96F2D275764AD7259C303fc932d8f6B1e49"
+      },
+      {
+        "amount": "394512",
+        "effective": "0",
+        "owner": "0x600213B6F585630e638fDB775dd67A22a29EE193"
+      },
+      {
+        "amount": "13778826",
+        "effective": "13778826",
+        "owner": "0x74Db8d06D8e6a2008cabEDFD0c170BbD08246610"
+      },
+      {
+        "amount": "21217488",
+        "effective": "0",
+        "owner": "0x7F610EA9D645585BdFFeFE51c15A2872d4e1427D"
+      },
+      {
+        "amount": "95407",
+        "effective": "0",
+        "owner": "0x8331cc7f17E9726095B308CCe3a67b10B4065264"
+      },
+      {
+        "amount": "199634230",
+        "effective": "0",
+        "owner": "0x8DeC49DF9248527705d0d8d56227a37cD7D31575"
+      },
+      {
+        "amount": "44549670916",
+        "effective": "9159762",
+        "owner": "0x963d48195006629408EBfD07c7F29E225027e611"
+      },
+      {
+        "amount": "98973408723",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      },
+      {
+        "amount": "3809526660",
+        "effective": "0",
+        "owner": "0xBc8819C1821Bc52b5d30D2Dd52F0Cb6110510005"
+      },
+      {
+        "amount": "2000000000",
+        "effective": "0",
+        "owner": "0xBe7a5d211985eE3Ede72799D2c7f79D4e74f11b3"
+      },
+      {
+        "amount": "infinite",
+        "effective": "1",
+        "owner": "0xDCa9B7e52000e5e0aE07A23EFaaB8613c5f7966B"
+      },
+      {
+        "amount": "4560000000",
+        "effective": "819656",
+        "owner": "0xb5Fe178104c9D381591F43657bE1C1d4FF3be508"
+      },
+      {
+        "amount": "2000000000",
+        "effective": "3711",
+        "owner": "0xd1C0bdFA4Be1443a590b757C26069D1622Bd036D"
+      },
+      {
+        "amount": "191959400732",
+        "effective": "0",
+        "owner": "0xe3Aa45eEDbbA3DD2b04Fc1e03d869D28AcA7dEaa"
+      },
+      {
+        "amount": "656366",
+        "effective": "656366",
+        "owner": "0xef5A8eF4D49500A2fF30BC4C01c0783f8f0196DA"
+      }
+    ],
+    "0xD31a59c85aE9D8edEFeC411D448f90841571b89c": [
+      {
+        "amount": "4747701990",
+        "effective": "0",
+        "owner": "0x06b07e51ca1A3bF469Ba2f465586e347Dbc5EF21"
+      }
+    ],
+    "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf": [
+      {
+        "amount": "3398",
+        "effective": "924",
+        "owner": "0xeFB606775D0B8fB162B3A87bFaE0Bd3a80F52cB2"
+      }
+    ],
+    "0xdAC17F958D2ee523a2206206994597C13D831ec7": [
+      {
+        "amount": "2750000000",
+        "effective": "0",
+        "owner": "0x0BeDC3BF8a1dA3F18b3617D91766eE5a461f4D0f"
+      },
+      {
+        "amount": "267564",
+        "effective": "0",
+        "owner": "0x4eAAC96F2D275764AD7259C303fc932d8f6B1e49"
+      },
+      {
+        "amount": "9100000000",
+        "effective": "127",
+        "owner": "0x5B7ab4B4B4768923cDdef657084223528C807963"
+      },
+      {
+        "amount": "2835218700",
+        "effective": "0",
+        "owner": "0x65741C9c5C23834708E81e94878c88a74F93c388"
+      },
+      {
+        "amount": "1531777",
+        "effective": "561",
+        "owner": "0x693962cb0ed05c27c43aF3963fb0cb1cedFa015F"
+      },
+      {
+        "amount": "10000000",
+        "effective": "0",
+        "owner": "0x84e6837653c0632f7bD56aF81042dF7Af220c566"
+      },
+      {
+        "amount": "250761916",
+        "effective": "761916",
+        "owner": "0x8ea1769cF4B034524e4524dbe9a14d9ba3d3De88"
+      },
+      {
+        "amount": "4139681",
+        "effective": "0",
+        "owner": "0x9b760B9DEFbd169c191a3B34baA7A0D918B12A65"
+      },
+      {
+        "amount": "9976000000000",
+        "effective": "0",
+        "owner": "0xA90f96b5fcD5BDc0AaE788c0485786B0E546D950"
+      },
+      {
+        "amount": "247934113",
+        "effective": "0",
+        "owner": "0xDCdE95754f6134C159848a80f051a0fe3ab6F041"
+      }
+    ]
+  }
+}

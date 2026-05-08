@@ -1,4 +1,4 @@
-import { getAddress } from "viem";
+import { getAddress, Hex } from "viem";
 
 function normalizeTokenList(tokenList: readonly string[]): readonly `0x${string}`[] {
     return tokenList.map((token) => getAddress(token));
@@ -376,7 +376,7 @@ ORDER BY
   token_symbol NULLS LAST,
   token_address;
  */
-export const VULNERABLE_APPROVAL_TOKEN_LIST = [
+export const VULNERABLE_APPROVAL_TOKEN_LIST: readonly Hex[] = [
     "0x7fc66500c84a76ad7e9c93437bfc5ac33e2ddae9",
     "0x590f820444fa3638e022776752c5eef34e2f89a6",
     "0x962c8a85f500519266269f77dffba4cea0b46da1",

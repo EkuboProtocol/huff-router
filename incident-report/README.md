@@ -92,6 +92,28 @@ In the example above, the attacker chose a route whose legitimate hop failed bef
 
 Although the settlement flow in Ekubo V2 (described here) and V3 is different, the listed router deployments for both Ekubo versions were vulnerable because the flaw lived in the shared callback parsing logic.
 
+## Analysis Artifacts
+
+The incident-analysis script used for the mainnet analysis in this repository is [`../sdk/scripts/incident-analysis.ts`](../sdk/scripts/incident-analysis.ts).
+
+The files in this directory are checked-in copies of the reports generated locally under `sdk/incident-analysis/`.
+
+- [`incident-rows.csv`](./incident-rows.csv): one row per exploit incident
+- [`summary-by-victim.json`](./summary-by-victim.json): victim-level loss summary
+- [`summary-by-token.csv`](./summary-by-token.csv): token-level loss summary
+- [`disqualified-victims.json`](./disqualified-victims.json): victims excluded due to later self-originated approval activity
+- [`vulnerable-approvals.json`](./vulnerable-approvals.json): live vulnerable approvals grouped by router and token, including effective immediately drainable amounts
+
+Anyone can reexecute the analysis from this repository with a mainnet RPC supporting the trace_* API:
+
+```bash
+cd ../sdk
+npm i
+MAINNET_RPC_URL=... npm run incident-analysis
+```
+
+The versions committed in this directory were copied from those runtime outputs for reference.
+
 ## Remediation
 
 The fix was to stop deriving settlement data from route-relative offsets and instead anchor those reads to the actual end of calldata.

@@ -7,16 +7,16 @@ import {
     summarizeVictimLosses,
     V2_CORE_ADDRESS,
     V3_CORE_ADDRESS,
-} from "../scripts/find-approval-drain-losses/search.ts";
+} from "../scripts/incident-analysis-lib/search.ts";
 import type {
     AffectedDeployment,
     IncidentRow,
     PotentialExploitTrace,
     TransactionLog,
     TransactionTrace,
-} from "../scripts/find-approval-drain-losses/search.ts";
-import { findVulnerableApprovals } from "../scripts/find-approval-drain-losses/io.ts";
-import type { Client } from "../scripts/find-approval-drain-losses/io.ts";
+} from "../scripts/incident-analysis-lib/search.ts";
+import { findVulnerableApprovals } from "../scripts/incident-analysis-lib/io.ts";
+import type { Client } from "../scripts/incident-analysis-lib/io.ts";
 
 const TEST_BLOCK_HASH = `0x${"1".repeat(64)}` as Hex;
 const TEST_GAS = "0x0" as Hex;
