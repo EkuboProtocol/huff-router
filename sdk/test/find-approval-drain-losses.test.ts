@@ -117,7 +117,6 @@ function makeExploitMatch(amount: bigint) {
 function makeIncidentRow(overrides: Partial<IncidentRow> = {}): IncidentRow {
     return {
         blockNumber: 24_200_000,
-        chainId: 1,
         rawAmount: "20000000",
         router: V3_ROUTER,
         routerCaller: ATTACKER,
@@ -136,7 +135,6 @@ describe("findExploitIncidents", () => {
     test("matches one exploit trace to the withdraw and pay transfer events", () => {
         const txHash = "0x770bc9a1f7c32cb63a5002b9ceb5c7994cd3af0fc6b2309cb32d3c46f629daa0" as const;
         const rows = findExploitIncidents({
-            chainId: 1n,
             deployments: DEPLOYMENTS,
             logs: [
                 makeTransferLog({ amount: 20_000_000n, from: V3_CORE_ADDRESS, logIndex: 0, to: ATTACKER, token: TOKEN }),
@@ -159,7 +157,6 @@ describe("findExploitIncidents", () => {
 
         expect(rows).toHaveLength(1);
         expect(rows[0]).toMatchObject({
-            chainId: 1,
             rawAmount: "20000000",
             router: V3_ROUTER,
             routerCaller: ATTACKER,
@@ -199,7 +196,6 @@ describe("findExploitIncidents", () => {
         ];
 
         const rows = findExploitIncidents({
-            chainId: 1n,
             deployments: DEPLOYMENTS,
             logs: [
                 makeTransferLog({ amount: 20_000_000n, from: V3_CORE_ADDRESS, logIndex: 0, to: ATTACKER, token: TOKEN }),
@@ -217,7 +213,6 @@ describe("findExploitIncidents", () => {
     test("omits rows when prior victim funding fully offsets the exploit loss", () => {
         const txHash = "0x2222222222222222222222222222222222222222222222222222222222222222" as const;
         const rows = findExploitIncidents({
-            chainId: 1n,
             deployments: DEPLOYMENTS,
             logs: [
                 makeTransferLog({ amount: 20_000_000n, from: FLASH_LENDER, logIndex: 0, to: ATTACKER, token: TOKEN }),
@@ -247,7 +242,6 @@ describe("findExploitIncidents", () => {
     test("records only the victim's net loss after prior funding in the same tx", () => {
         const txHash = "0x32517e18e29fde8b04816bc335d7d66fc997b284183df288a41d8c34d290afcd" as const;
         const rows = findExploitIncidents({
-            chainId: 1n,
             deployments: DEPLOYMENTS,
             logs: [
                 makeTransferLog({ amount: 18_515_265n, from: FLASH_LENDER, logIndex: 0, to: ATTACKER, token: TOKEN }),

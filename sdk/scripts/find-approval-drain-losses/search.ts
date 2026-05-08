@@ -100,7 +100,6 @@ export interface PotentialExploitTrace {
 
 export interface IncidentRow {
     blockNumber: number;
-    chainId: number;
     rawAmount: string;
     router: `0x${string}`;
     routerCaller: `0x${string}`;
@@ -229,13 +228,11 @@ function matchPotentialExploitTraceInput(
 }
 
 export function findExploitIncidents({
-    chainId,
     deployments,
     logs,
     potentialExploitTraces,
     txFrom,
 }: {
-    chainId: bigint;
     deployments: AffectedDeployment[];
     logs: TransactionLog[];
     potentialExploitTraces: PotentialExploitTrace[];
@@ -344,7 +341,6 @@ export function findExploitIncidents({
 
         rows.push({
             blockNumber: potentialExploitTrace.trace.blockNumber,
-            chainId: Number(chainId),
             rawAmount: netLoss.toString(),
             router: deployment.router,
             routerCaller: getAddress(potentialExploitTrace.trace.action.from),
@@ -408,10 +404,6 @@ export function summarizeTokenLosses(rows: IncidentRow[]): TokenLossSummary[] {
         }));
 }
 
-export function tokenKey(chainId: bigint | number, token: `0x${string}`): string {
-    return `${chainId}:${token}`;
-}
-
 export function isIgnoredTransaction(txHash: string): boolean {
     return IGNORED_TRANSACTION_SET.has(txHash.toLowerCase());
 }
@@ -441,7 +433,6 @@ export async function mapConcurrent<T, R>(
 
 export async function analyzeTransaction(
     client: Client,
-    chainId: bigint,
     deployments: AffectedDeployment[],
     potentialExploitTraces: PotentialExploitTrace[],
     txHash: Hex,
@@ -452,7 +443,6 @@ export async function analyzeTransaction(
     }
 
     return findExploitIncidents({
-        chainId,
         deployments,
         logs: receipt.logs as TransactionLog[],
         potentialExploitTraces,
@@ -626,8 +616,7 @@ function parseOptionalNumericField(value: unknown): number | null {
 }
 
 function compareIncidentRows(a: IncidentRow, b: IncidentRow): number {
-    return a.chainId - b.chainId
-        || a.blockNumber - b.blockNumber
+    return a.blockNumber - b.blockNumber
         || (a.transactionIndex ?? 0) - (b.transactionIndex ?? 0)
         || compareStrings(a.txHash, b.txHash)
         || compareStrings(a.traceAddress, b.traceAddress);

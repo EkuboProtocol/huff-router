@@ -34,11 +34,9 @@ const SYMBOL_ABI = parseAbi(["function symbol() view returns (string)"]);
 const DECIMALS_ABI = parseAbi(["function decimals() view returns (uint8)"]);
 const APPROVAL_EVENT = parseAbi(["event Approval(address indexed owner, address indexed spender, uint256 value)"])[0];
 
-export interface ChainConfig {
+export interface MainnetConfig {
     affectedDeployments: AffectedDeployments;
-    chainId: bigint;
     client: Client;
-    name: string;
 }
 
 export interface TokenMetadata {
@@ -63,48 +61,43 @@ export type Client = PublicClient<HttpTransport, undefined, undefined, [...EIP14
   ReturnType: unknown
 }]>
 
-export function getChainConfigs(): ChainConfig[] {
+export function getMainnetConfig(): MainnetConfig {
     const mainnetRpcUrl = process.env.MAINNET_RPC_URL;
 
     if (!mainnetRpcUrl) {
         throw new Error("MAINNET_RPC_URL must be set");
     }
 
-    return [
-        {
-            affectedDeployments: {
-                deployments: [
-                    {
-                        core: V2_CORE_ADDRESS,
-                        router: getAddress("0x8f52903d17e2d8d6c77d1a1de0cc975b6b5a0d15"),
-                        routerGeneration: "V2",
-                        tokenList: TOKEN_LIST_05CE00D,
-                    },
-                    {
-                        core: V2_CORE_ADDRESS,
-                        router: getAddress("0x8ccb1ffd5c2aa6bd926473425dea4c8c15de60fd"),
-                        routerGeneration: "V2",
-                        tokenList: TOKEN_LIST_3759F9B,
-                    },
-                    {
-                        core: V3_CORE_ADDRESS,
-                        router: getAddress("0x4f168f17923435c999f5c8565acab52c2218edf2"),
-                        routerGeneration: "V3",
-                        tokenList: TOKEN_LIST_06AC834,
-                    },
-                ],
-                startBlock: 23_018_974n,
-            },
-            chainId: 1n,
-            client: createPublicClient({ transport: http(mainnetRpcUrl) }),
-            name: "mainnet",
+    return {
+        affectedDeployments: {
+            deployments: [
+                {
+                    core: V2_CORE_ADDRESS,
+                    router: getAddress("0x8f52903d17e2d8d6c77d1a1de0cc975b6b5a0d15"),
+                    routerGeneration: "V2",
+                    tokenList: TOKEN_LIST_05CE00D,
+                },
+                {
+                    core: V2_CORE_ADDRESS,
+                    router: getAddress("0x8ccb1ffd5c2aa6bd926473425dea4c8c15de60fd"),
+                    routerGeneration: "V2",
+                    tokenList: TOKEN_LIST_3759F9B,
+                },
+                {
+                    core: V3_CORE_ADDRESS,
+                    router: getAddress("0x4f168f17923435c999f5c8565acab52c2218edf2"),
+                    routerGeneration: "V3",
+                    tokenList: TOKEN_LIST_06AC834,
+                },
+            ],
+            startBlock: 23_018_974n,
         },
-    ];
+        client: createPublicClient({ transport: http(mainnetRpcUrl) }),
+    };
 }
 
 export function rowsToCsv(rows: IncidentRow[]): string {
     const headers: (keyof IncidentRow)[] = [
-        "chainId",
         "router",
         "routerGeneration",
         "txHash",
