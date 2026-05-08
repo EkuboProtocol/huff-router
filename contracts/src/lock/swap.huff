@@ -153,7 +153,6 @@
     // Copy calldata unchanged after the selector and the padding
     calldatasize 0x0 [LOCK_SWAP_CALLDATA_COPY_DEST_OFFSET] calldatacopy         // []
 
-    // IFlashAccountant#lock()
     [LOCKED_SWAP_RETURNDATA_SIZE] 0x0                                           // [retOffset, retSize]
     if (<withRecipient>) {
         [LOCK_SWAP_ADDITIONAL_ARGS_WITH_RECIPIENT_SIZE]                         // [additionalArgsSize, retOffset, retSize]
@@ -161,6 +160,9 @@
         [LOCK_SWAP_ADDITIONAL_ARGS_NO_RECIPIENT_SIZE]                           // [additionalArgsSize, retOffset, retSize]
     }
     calldatasize add                                                            // [argsSize, retOffset, retSize]
+
+    // IFlashAccountant#lock() or, if the calldata is below LOCK_SWAP_MINIMUM_CALLDATA_SIZE,
+    // potentially a non-existing method or Core#swap_6269342730 (both revert, see the tests)
     [LOCK_SWAP_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call                      // [success]
 
     successLbl jumpi                                                            // []

@@ -281,6 +281,60 @@ contract HuffRouterTest is Test {
         assertEq(returndata.integrationFee, 0, "integrationFee");
     }
 
+    function testRevert_ShortCalldataZeroesLockSelector() external {
+        // `0x00` keeps us on the lock-swap path with `withRecipient == false`.
+        // The nonzero second byte avoids the `locked` branch, while `calldatasize == 2`
+        // makes the synthetic recipient write start at offset 0 and zero out the selector.
+        (bool success, bytes memory result) = address(huffRouter).call(hex"0001");
+
+        assertFalse(success, "success");
+        assertEq(bytes4(result), ICore.InvalidSqrtRatioLimit.selector, "error selector");
+    }
+
+    // `0x01` is parsed as `withRecipient == true`, so the router still calls `Core.lock()`.
+    // In the locked callback, the appended ABI-encoded caller address is read as route data,
+    // which collapses into a no-op path that returns zeroed swap returndata.
+    function test_OneByteCalldata() external {
+        (bool success, bytes memory data) = address(huffRouter).call(hex"01");
+
+        assertTrue(success, "success");
+
+        HuffRouterLib.SwapReturndata memory returndata = HuffRouterLib.decodeSwapReturndata(data);
+
+        assertEq(returndata.calculatedAmount, 0, "calculatedAmount");
+        assertEq(returndata.integrationFee, 0, "integrationFee");
+    }
+
+    function testRevert_ZeroLengthCalldata() external {
+        // Dispatched to the locked path and reverts because not called by Core
+        (bool success, bytes memory result) = address(huffRouter).call(hex"");
+
+        assertFalse(success, "success");
+        assertEq(bytes4(result), IHuffRouter.CoreOnly.selector, "error selector");
+    }
+
+    // `0x00..01` stays on the lock-swap path with `withRecipient == false`.
+    // Lengths 3..5 partially clobber `lock()` into unknown selectors on Core.
+    // Lengths 6..9 keep `lock()`, but the trailing `0x01` lands in progressively later
+    // route-control fields and the locked callback eventually fails with empty returndata.
+    function testRevert_ThreeToNineByteCalldata() external {
+        bytes[] memory cases = new bytes[](7);
+        cases[0] = hex"000001"; // len 3: selector becomes `0xf8000000`
+        cases[1] = hex"00000001"; // len 4: selector becomes `0xf83d0000`
+        cases[2] = hex"0000000001"; // len 5: selector becomes `0xf83d0800`
+        cases[3] = hex"000000000001"; // len 6: parsed `additionalMultiHops = 1`
+        cases[4] = hex"00000000000001"; // len 7: parsed `withIntegrationFee = 1`
+        cases[5] = hex"0000000000000001"; // len 8: parsed flags byte = `0x01`
+        cases[6] = hex"000000000000000001"; // len 9: first threshold data byte = `0x01`
+
+        for (uint256 i = 0; i < cases.length; i++) {
+            (bool success, bytes memory result) = address(huffRouter).call(cases[i]);
+
+            assertFalse(success, "success");
+            assertEq(result.length, 0, "returndata length");
+        }
+    }
+
     function testRevert_TrailingCalldataCannotOverrideTransferFrom() external {
         uint32 specifiedAmount = 20_000_000;
         address attacker = address(this);
