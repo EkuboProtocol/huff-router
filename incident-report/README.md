@@ -96,9 +96,12 @@ Although the settlement flow in Ekubo V2 and V3 is different, the listed router 
 
 ## Analysis Artifacts
 
-The incident-analysis script used for the mainnet analysis in this repository is [`../sdk/scripts/incident-analysis.ts`](../sdk/scripts/incident-analysis.ts).
+The analysis script used for assessing the impact of related exploits on mainnet is located at [`../sdk/scripts/incident-analysis.ts`](../sdk/scripts/incident-analysis.ts).
 
-The files in this directory are checked-in copies of the reports generated locally under `sdk/incident-analysis/`.
+Arbitrum RPCs do not offer the required APIs for the analysis script.
+Per manual inspection, we found [one successful exploit on Arbitrum](https://arbiscan.io/tx/0x2acce955281f53a2370031b15e455c073581e758453758cec56db7f7929ed35a) over 5 USDC.
+
+The files in this directory are checked-in copies of the mainnet reports generated locally under `sdk/incident-analysis/`.
 
 - [`incident-rows.csv`](./incident-rows.csv): one row per exploit incident
 - [`summary-by-victim.json`](./summary-by-victim.json): victim-level loss summary
