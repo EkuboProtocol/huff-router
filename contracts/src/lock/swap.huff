@@ -119,7 +119,7 @@
 ///
 /// `recipient` (20 bytes `address`, optional as per `withRecipient`)
 /// Adress of the account that receives the output (after possibly deducting integration fees).
-/// If `withRecipient == false`, this will be filled in here.
+/// If `withRecipient == false`, this info will be appended to the calldata.
 #define macro LOCK_SWAP() = takes(0) returns(0) {
     [LOCK_SELECTOR_PACKED] [LOCK_SWAP_SELECTOR_OFFSET_PACKED] mstore            // []
 

@@ -147,7 +147,8 @@
 
 /// @notice Ekubo Core callback, executing a multiMultiHopSwap.
 ///
-/// In addition to the calldata described in lock/swap.huff:
+/// Calldata follows the same interpretation as described in lock/swap.huff.
+/// The last word of the calldata is:
 ///
 /// `transferFrom` (32 bytes ABI-encoded `address`, non-zero)
 /// The address from which to consume approvals to settle the debt.
