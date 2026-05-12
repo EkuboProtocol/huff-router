@@ -2,7 +2,7 @@
 
 This plan uses the checked-in incident analysis artifacts and classifies an exploited approval as a **max approval** when the allowance immediately preceding the exploit transaction was greater than `2**128`.
 
-USD values use the current Ethereum token prices returned by the Ekubo token API at the time this plan was prepared on May 12, 2026.
+Reimbursements are intended to be made **in kind**, in the affected token. USD values use the current Ethereum token prices returned by the Ekubo token API at the time this plan was prepared on May 12, 2026, and are included only to document the USD value of the affected token amounts.
 
 ## Step 1 - Full Reimbursement For Non-Max Approvals
 
@@ -12,7 +12,7 @@ This bucket contains:
 
 - `31` reimbursement addresses
 - `33` address-token reimbursement rows
-- approximately `$51,475.57` of reimbursements at the USD marks used below
+- approximately `$51,475.57` of affected token value at the USD marks used below
 
 Ekubo's user interface did not offer infinite approvals. Any affected user who had a max approval must have modified the approval transaction request in their wallet rather than using the approval amount offered by the interface.
 
@@ -77,9 +77,9 @@ This bucket currently contains:
 
 - `1` reimbursement address
 - `1` address-token reimbursement row
-- approximately `$1,368,067.51` of identified loss before applying the proposed reimbursement cap
+- approximately `$1,368,067.51` of identified affected token value before applying the proposed reimbursement cap
 
-The proposal is to reimburse this bucket **up to `$100,000` per affected address**, subject to:
+The proposal is to reimburse this bucket **in kind up to `$100,000` of documented USD value per affected address**, subject to:
 
 - KYC completion
 - execution of a release of claims in favor of the DAO
