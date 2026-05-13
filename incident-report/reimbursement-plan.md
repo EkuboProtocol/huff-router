@@ -1,8 +1,10 @@
 # Reimbursement Plan
 
-This plan uses the checked-in incident analysis artifacts and applies a single general reimbursement cap per affected address. The exact per-address cap is **TBD**.
+> **Disclaimer:** This entire reimbursement plan is pending legal review. It is tentative, subject to change, and may or may not be adopted, approved, funded, or implemented in whole or in part.
 
-This reimbursement plan requires DAO approval to fund it before any reimbursement distribution can proceed.
+This proposed plan uses the checked-in incident analysis artifacts and applies a single general reimbursement cap per affected address. The exact per-address cap is **TBD**.
+
+If pursued, this reimbursement plan would require DAO approval to fund it before any reimbursement distribution could proceed.
 
 Reimbursements are intended to be made **in kind**, in the affected token. USD values use the current Ethereum token prices returned by the Ekubo token API at the time this plan was prepared on May 12, 2026, and are included to document the USD value of the affected token amounts and apply the TBD per-address cap.
 
