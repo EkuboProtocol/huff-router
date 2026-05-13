@@ -1,111 +1,49 @@
 # Reimbursement Plan
 
-This plan uses the checked-in incident analysis artifacts and classifies an exploited approval as a **max approval** when the allowance immediately preceding the exploit transaction was greater than `2**128`.
+This plan uses the checked-in incident analysis artifacts and applies a single general reimbursement cap per affected address. The exact per-address cap is **TBD**.
 
-Reimbursements are intended to be made **in kind**, in the affected token. USD values use the current Ethereum token prices returned by the Ekubo token API at the time this plan was prepared on May 12, 2026, and are included only to document the USD value of the affected token amounts.
+This reimbursement plan requires DAO approval to fund it before any reimbursement distribution can proceed.
 
-## Step 1 - Full Reimbursement For Non-Max Approvals
+Reimbursements are intended to be made **in kind**, in the affected token. USD values use the current Ethereum token prices returned by the Ekubo token API at the time this plan was prepared on May 12, 2026, and are included to document the USD value of the affected token amounts and apply the TBD per-address cap.
 
-Ekubo will fully reimburse every affected address whose exploited approval was **not** a max approval under the `allowance > 2**128` threshold.
+The cap applies regardless of approval size or approval origin. Some approvals may have been created through Ekubo user interface flows, so this plan does not classify affected users by whether an exploited approval was a maximum approval.
 
-This bucket contains:
+## Capped Reimbursement
+
+The identified reimbursement input currently contains:
 
 - `31` reimbursement addresses
-- `33` address-token reimbursement rows
-- approximately `$51,475.57` of affected token value at the USD marks used below
+- `34` address-token reimbursement rows
+- approximately `$1,419,543.08` of identified affected token value at the USD marks used below
+- planned reimbursement value TBD after applying the final per-address cap
 
-Ekubo's user interface did not offer infinite approvals. Any affected user who had a max approval must have modified the approval transaction request in their wallet rather than using the approval amount offered by the interface.
+When an address has losses in multiple affected tokens and the TBD cap is lower than the address's total identified loss, in-kind reimbursement will be allocated starting with the largest affected token balance by USD value, then the next largest, until the cap is reached.
 
-### Step 1 Token Totals
+For example, if one affected token balance saturates the cap, reimbursement will be only in that token. If the two largest of three affected token balances saturate the cap, reimbursement will be only in those two tokens.
 
-| Token | Token Address | Amount To Reimburse | USD Value |
-| --- | --- | ---: | ---: |
-| EKUBO | `0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f` | `5813.547755142307722539` | `$3,024.32` |
-| WBTC | `0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599` | `0.00099` | `$79.60` |
-| LINK | `0x514910771AF9Ca656af840dff83E8264EcF986CA` | `0.550329927867664502` | `$5.63` |
-| gEKUBO-26Q2 | `0x7C5097b11B7Bc856f603Fb60287833cf9a829fe3` | `15.806237743227243531` | `$8.22` |
-| USDC | `0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48` | `20550.007788` | `$20,550.01` |
-| cbBTC | `0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf` | `0.34386474` | `$27,715.42` |
-| USDT | `0xdAC17F958D2ee523a2206206994597C13D831ec7` | `92.38397` | `$92.37` |
+The largest affected address currently has:
 
-### Step 1 Address-Level CSV
+- `17.01484735` WBTC, worth approximately `$1,368,067.51`
+- `0.34386474` cbBTC, worth approximately `$27,715.42`
 
-```csv
-address,token_symbol,token_address,raw_amount,display_amount,usd_price,usd_value
-0x0DE3f84782427380c6588A9dCA8675A5c40893Cb,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,22000000,22,1.000000000725,22.00
-0x1C3949EF079A741974a8EaB0779F8F6A1D1C1001,gEKUBO-26Q2,0x7C5097b11B7Bc856f603Fb60287833cf9a829fe3,5417488498305846470,5.41748849830584647,0.520232809651,2.82
-0x1D088bd797234564633f30cCD44A6A1518C5B533,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,996000000,996,1.000000000725,996.00
-0x282c8d5CAD767a93e1E042E33E7A15877A8E6A1b,EKUBO,0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f,1619916699131518517073,1619.916699131518517073,0.520218603671,842.71
-0x300afbE08EE4619EC93524f9255CE59a013a5b63,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,51527625,51.527625,1.000000000725,51.53
-0x37e6F903fa568BD3e8f49106A6912ae177de531F,USDT,0xdAC17F958D2ee523a2206206994597C13D831ec7,1569968,1.569968,0.999900575917,1.57
-0x3f9564E5F644e1B485B3Bc95ffbB255291eeb2df,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,2758000000,2758,1.000000000725,2758.00
-0x4192F6865c2bd788fE725a49c757D7dCd64Fc85E,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,970000000,970,1.000000000725,970.00
-0x59653fd9713a30C54237A6FD21fD97BA141aBbe0,EKUBO,0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f,332999997742626184611,332.999997742626184611,0.520218603671,173.23
-0x6229F7195550D13Fd5B8781aa3B21C6b78Ff0F9A,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,264000000,264,1.000000000725,264.00
-0x67D2c5E0c19AfdCBa7E3AAd3D10A07F82C167106,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,2000000000,2000,1.000000000725,2000.00
-0x6954ba40D5787041D7D1DBc091E0197C6566E910,EKUBO,0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f,3102034662139479345546,3102.034662139479345546,0.520218603671,1613.74
-0x765Ccb397c36d5767BAfddB7865497EC7AA1367d,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,2370000,2.37,1.000000000725,2.37
-0x765DECF4Fa157756e850C1079F60801b9219Edd1,cbBTC,0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf,34386474,0.34386474,80599.763477869492,27715.42
-0x8B3997e0a91DDF63585aBbC032C406F47ad45633,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,29658979,29.658979,1.000000000725,29.66
-0x93C10b5B55ACA304086De9D0de20461bCE998cBB,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,424,0.000424,1.000000000725,0.00
-0x95a3afd9B4548B05b78913c840BAe714007f7696,gEKUBO-26Q2,0x7C5097b11B7Bc856f603Fb60287833cf9a829fe3,10388749244921397061,10.388749244921397061,0.520232809651,5.40
-0x99935B671af8fFc9A9eD042E4663a135dA477b6c,USDT,0xdAC17F958D2ee523a2206206994597C13D831ec7,1000000,1,0.999900575917,1.00
-0x9a40cc1bf43d2A70913E2bF5eE599C82006a2482,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,4800000,4.8,1.000000000725,4.80
-0x9A80E3B4EAa6a0cdce51D3548CfB27F06De43819,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,910000000,910,1.000000000725,910.00
-0x9D5C702Ef93211090524497670F5782B09623f0d,EKUBO,0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f,758596396128683675309,758.596396128683675309,0.520218603671,394.64
-0x9D5C702Ef93211090524497670F5782B09623f0d,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,10076000000,10076,1.000000000725,10076.00
-0xa3653544812105B666a11b2D98c64CAbF8cBAEec,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,8870000,8.87,1.000000000725,8.87
-0xa3C1C91403F0026b9dd086882aDbC8Cdbc3b3cfB,LINK,0x514910771AF9Ca656af840dff83E8264EcF986CA,550329927867664502,0.550329927867664502,10.228758338321,5.63
-0xa3C1C91403F0026b9dd086882aDbC8Cdbc3b3cfB,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,12000000,12,1.000000000725,12.00
-0xa8b560111194192194c344F859d1C0A248747A6C,USDT,0xdAC17F958D2ee523a2206206994597C13D831ec7,814016,0.814016,0.999900575917,0.81
-0xadd179224B9895BD773e9550D84505E1365427Ea,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,53000000,53,1.000000000725,53.00
-0xb0d3ad8bb824b124d5BD9d0d56ca2298C2172e8f,USDT,0xdAC17F958D2ee523a2206206994597C13D831ec7,88999986,88.999986,0.999900575917,88.99
-0xb9c967Aa41292Ff7aFE2AdCD0eE04D302A88e8dD,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,1000000000,1000,1.000000000725,1000.00
-0xd36581554Fe70B946bC2708B772CfA30C8A6AddA,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,392780760,392.78076,1.000000000725,392.78
-0xdC9629AF31cA26516910D31b0C843FC6FdC8F0b7,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,936000000,936,1.000000000725,936.00
-0xf6Ae934ddBEC4184f924BE503c366473797F44ee,USDC,0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48,63000000,63,1.000000000725,63.00
-0xfC011860c9E4B840AB97c2c3936611c88fcE3673,WBTC,0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599,99000,0.00099,80404.336429663934,79.60
-```
+Because WBTC is the larger affected token balance for that address, in-kind reimbursement for that address will start with WBTC. If the final cap is saturated by WBTC, reimbursement will be only in WBTC. If the final cap exceeds the WBTC reimbursement amount, the remaining cap capacity will next apply to cbBTC.
 
-The standalone machine-readable version is [`reimbursement-step-1.csv`](./reimbursement-step-1.csv).
+The standalone machine-readable identified-loss input is [`reimbursement-losses.csv`](./reimbursement-losses.csv).
 
-## Step 2 - Conditional Reimbursement For Max Approvals
+## Conditions
 
-The next reimbursement step covers affected users whose exploited approval was a max approval under the `allowance > 2**128` threshold.
-
-This bucket currently contains:
-
-- `1` reimbursement address
-- `1` address-token reimbursement row
-- approximately `$1,368,067.51` of identified affected token value before applying the proposed reimbursement cap
-
-The proposal is to reimburse this bucket **in kind up to `$100,000` of documented USD value per affected address**, subject to:
-
-- KYC completion
-- execution of a release of claims in favor of the DAO
-- revocation of the affected approval before reimbursement
-- reimbursement only to the same affected address
-
-Ekubo, Inc. will handle:
+For reimbursement, Ekubo, Inc. will handle:
 
 - reimbursement distribution
-- collection of KYC documents
-- collection of executed releases of claims
-- verification that the affected approval has been revoked before payment
+- collection of KYC documents as needed
+- collection of executed releases of claims for the DAO, tokenholders, and Ekubo, Inc. as needed
+- verification that any remaining infinite affected approval has been revoked before payment
 
-### Step 2 Address-Level CSV
+Individual reimbursement is at Ekubo, Inc.'s discretion and may be subject to:
 
-```csv
-address,token_symbol,token_address,raw_amount,display_amount,usd_price,usd_value
-0x765DECF4Fa157756e850C1079F60801b9219Edd1,WBTC,0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599,1701484735,17.01484735,80404.336429663934,1368067.51
-```
+- KYC completion, as needed
+- execution of a release of claims in favor of the DAO, tokenholders, and Ekubo, Inc., as needed
+- revocation of any remaining infinite affected approval before reimbursement
+- reimbursement only to the same affected address
 
-The standalone machine-readable version is [`reimbursement-step-2.csv`](./reimbursement-step-2.csv).
-
-### Step 2 Token Totals
-
-| Token | Token Address | Identified Loss Amount | Identified USD Value |
-| --- | --- | ---: | ---: |
-| WBTC | `0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599` | `17.01484735` | `$1,368,067.51` |
-
-The reimbursement amount for this step is subject to the `$100,000` cap described above.
+Users with infinite approvals to affected router contracts should immediately revoke them using [`revoke.cash`](https://revoke.cash/exploits/ekubo?chainId=1). Non-infinite approvals were whitehatted out of the affected contracts, so the revoke advice is limited to infinite approvals.
