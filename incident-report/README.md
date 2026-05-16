@@ -78,7 +78,7 @@ We chose not to audit this contract because we assessed its practical risk as lo
 
 That judgment underestimated the consequences of a parsing bug in an approval-bearing router. Low expected usage and constrained approval patterns were not sufficient reasons to skip an audit of a contract that could move user funds.
 
-In practice, the Ekubo frontend did not request approvals larger than needed for the immediate action, except for exact-out swaps where the approval had to include some slippage headroom. Larger outstanding and unconsumed approvals were therefore likely cases where users had manually increased the allowance themselves.
+In practice, approvals could be created through Ekubo user interface flows as well as direct wallet or contract interactions. The incident response therefore does not rely on assigning approval origin to affected users.
 
 ## Impact
 
@@ -108,6 +108,7 @@ The files in this directory are checked-in copies of the mainnet reports generat
 - [`summary-by-token.csv`](./summary-by-token.csv): token-level loss summary
 - [`disqualified-victims.json`](./disqualified-victims.json): victims excluded due to later self-originated approval activity
 - [`vulnerable-approvals.json`](./vulnerable-approvals.json): live vulnerable approvals grouped by router and token, including effective immediately drainable amounts
+- [`vulnerable-approvals.csv`](./vulnerable-approvals.csv): flat list of remaining infinite approvals, token symbols, and the router contract that should be revoked
 
 Anyone can reexecute the analysis from this repository with a mainnet RPC supporting the trace_* API:
 
@@ -142,15 +143,16 @@ Alongside the contract-side fix, the Ekubo frontend immediately stopped offering
 
 The affected deployments remain vulnerable because they are immutable and cannot be patched in place.
 
-Outstanding approvals to the affected `HuffRouter` deployments should be withdrawn.
-Users are also encouraged to check [`vulnerable-approvals.json`](./vulnerable-approvals.json), the outstanding approvals artifact in this directory, to see which approvals remain exposed.
+Infinite approvals to the affected `HuffRouter` deployments should be revoked immediately at [`revoke.cash`](https://revoke.cash/exploits/ekubo?chainId=1).
+Non-infinite approvals were whitehatted out of the affected contracts, so the immediate revoke guidance is limited to infinite approvals.
+Users are also encouraged to check [`vulnerable-approvals.csv`](./vulnerable-approvals.csv), the infinite approval artifact in this directory, to see which approvals remain exposed.
 
 The Ekubo frontend was the only known dApp that created approvals for the various affected `HuffRouter` deployments.
-When users who still have an outstanding approval visit the frontend, they are shown a banner that alerts them and encourages them to revoke it.
+When users who still have any outstanding approval visit the frontend, they are shown a banner that alerts them and encourages them to review it.
 
 ## Long-Term Mitigations
 
-The specific parsing bug is fixed in the current repository, the frontend no longer generates separate approval calls for the affected routers, and users with outstanding approvals are warned to revoke them.
+The specific parsing bug is fixed in the current repository, the frontend no longer generates separate approval calls for the affected routers, and users with outstanding approvals are warned in the interface.
 The broader lesson is that systems built around ERC20 approvals should mitigate their exposure to inherently risky ERC20 approvals, and otherwise push toward safer approval standards.
 
 In response, we opened [ERC-8255](https://eips.ethereum.org/EIPS/eip-8255), a draft standard for expiring token approvals.
