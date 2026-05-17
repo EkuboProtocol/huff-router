@@ -37,4 +37,4 @@ jobs:
           version: v1.4.4
       - run: forge test --gas-snapshot-check=true
         env:
-          RPC_URL_OR_ALIAS: ${{ secrets.MAINNET_RPC_URL }}
+          MAINNET_RPC_URL_OR_ALIAS: ${{ secrets.MAINNET_RPC_URL }}

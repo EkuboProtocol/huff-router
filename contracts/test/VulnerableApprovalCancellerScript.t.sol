@@ -105,7 +105,7 @@ contract VulnerableApprovalCancellerScriptTest is Test {
     }
 
     function testFork_LoadRouterApprovals_RealIncidentJson() external {
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), 25_051_244);
+        vm.createSelectFork(vm.envString("MAINNET_RPC_URL_OR_ALIAS"), 25_051_244);
 
         VulnerableApprovalCancellerScript forkScript = new VulnerableApprovalCancellerScript();
         VulnerableApprovalCanceller.RouterApprovals[] memory batches =

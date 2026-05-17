@@ -23,7 +23,7 @@ contract VulnerableApprovalCancellerTest is Test {
     VulnerableApprovalCanceller private canceller;
 
     function setUp() public {
-        vm.createSelectFork(vm.envString("MAINNET_RPC_URL"), FORK_BLOCK);
+        vm.createSelectFork(vm.envString("MAINNET_RPC_URL_OR_ALIAS"), FORK_BLOCK);
         canceller = new VulnerableApprovalCanceller();
     }
 
