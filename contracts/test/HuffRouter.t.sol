@@ -567,15 +567,4 @@ contract HuffRouterTest is Test {
             revert();
         }
     }
-
-    fallback() external {
-        bytes memory result = LibCall.delegateCallContract(address(huffRouter), msg.data);
-        uint256 len = result.length;
-
-        assembly ("memory-safe") {
-            let free := mload(0x40)
-            mcopy(free, add(result, 0x20), len)
-            return(free, len)
-        }
-    }
 }

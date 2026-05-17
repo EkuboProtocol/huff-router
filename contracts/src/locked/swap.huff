@@ -124,16 +124,8 @@
 #define constant TRANSFER_FROM_SELECTOR_OFFSET_PACKED = [TRANSFER_FROM_SELECTOR_OFFSET] + [PACKED_SELECTOR_OFFSET]
 #define constant TRANSFER_FROM_FROM_OFFSET = [TRANSFER_FROM_SELECTOR_OFFSET] + [WORD_SIZE]
 #define constant TRANSFER_FROM_TO_OFFSET = [TRANSFER_FROM_FROM_OFFSET] + [WORD_SIZE]
-#define constant TRANSFER_FROM_ARGS_SIZE = [TRANSFER_TRANSFER_FROM_AMOUNT_OFFSET] + [WORD_SIZE] - [TRANSFER_FROM_SELECTOR_OFFSET_PACKED]
-
-// IERC20#transfer(address to, uint256 amount)
-#define constant TRANSFER_SELECTOR = __FUNC_SIG("transfer(address,uint256)")
-#define constant TRANSFER_SELECTOR_OFFSET = [TRANSFER_FROM_SELECTOR_OFFSET] + [WORD_SIZE]
-#define constant TRANSFER_SELECTOR_OFFSET_PACKED = [TRANSFER_SELECTOR_OFFSET] + [PACKED_SELECTOR_OFFSET]
-#define constant TRANSFER_TO_OFFSET = [TRANSFER_SELECTOR_OFFSET] + [WORD_SIZE]
-#define constant TRANSFER_ARGS_SIZE = [TRANSFER_TRANSFER_FROM_AMOUNT_OFFSET] + [WORD_SIZE] - [TRANSFER_SELECTOR_OFFSET_PACKED]
-
-#define constant TRANSFER_TRANSFER_FROM_AMOUNT_OFFSET = [TRANSFER_FROM_TO_OFFSET] + [WORD_SIZE]
+#define constant TRANSFER_FROM_ARGS_SIZE = [TRANSFER_FROM_AMOUNT_OFFSET] + [WORD_SIZE] - [TRANSFER_FROM_SELECTOR_OFFSET_PACKED]
+#define constant TRANSFER_FROM_AMOUNT_OFFSET = [TRANSFER_FROM_TO_OFFSET] + [WORD_SIZE]
 
 /* Output offsets */
 // TODO Arithmetic
@@ -987,9 +979,10 @@
 #define macro PAY_ERC20() = takes(2) returns(1) {
     // takes: [amount, token, ...]
 
-    [TRANSFER_TRANSFER_FROM_AMOUNT_OFFSET] mstore                           // [token, ...]
+    [TRANSFER_FROM_AMOUNT_OFFSET] mstore                                    // [token, ...]
 
-    __FUNC_SIG("startPayments()") [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET] mstore // [token, ...]
+    __FUNC_SIG("startPayments()")                                           // [selector, token, ...]
+    [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET] mstore                        // [token, ...]
     [START_COMPLETE_PAYMENTS_TOKEN_OFFSET] mstore                           // [...]
 
     // IFlashAccountant#startPayments()
@@ -997,29 +990,18 @@
     [START_COMPLETE_PAYMENTS_SELECTOR_OFFSET_PACKED] 0x0 [CORE] gas call    // [success, ...]
     pop                                                                     // [...]
 
+    // TODO Add constants for this (and recipient?)
     [WORD_SIZE] calldatasize sub calldataload                               // [transferFrom, ...]
 
-    dup1 transferFromLbl jumpi                                              // [from, ...]
-        pop                                                                 // [...]
+    [TRANSFER_FROM_FROM_OFFSET] mstore                                      // [...]
 
-        __FUNC_SIG("transfer(address,uint256)")                             // [selector, ...]
-        [TRANSFER_SELECTOR_OFFSET] mstore                                   // [...]
-        [CORE] [TRANSFER_TO_OFFSET] mstore                                  // [...]
+    __FUNC_SIG("transferFrom(address,address,uint256)")                     // [selector, ...]
+    [TRANSFER_FROM_SELECTOR_OFFSET] mstore                                  // [...]
+    [CORE] [TRANSFER_FROM_TO_OFFSET] mstore                                 // [...]
 
-        0x0 0x0 [TRANSFER_ARGS_SIZE] [TRANSFER_SELECTOR_OFFSET_PACKED]      // [argsOffset, argsSize, retOffset, retSize, ...]
+    0x0 0x0 [TRANSFER_FROM_ARGS_SIZE] [TRANSFER_FROM_SELECTOR_OFFSET_PACKED]// [argsOffset, argsSize, retOffset, retSize, ...]
 
-        transferFromJoinLbl jump
-    transferFromLbl:                                                        // [from, ...]
-        [TRANSFER_FROM_FROM_OFFSET] mstore                                  // [...]
-
-        __FUNC_SIG("transferFrom(address,address,uint256)")                 // [selector, ...]
-        [TRANSFER_FROM_SELECTOR_OFFSET] mstore                              // [...]
-        [CORE] [TRANSFER_FROM_TO_OFFSET] mstore                             // [...]
-
-        0x0 0x0 [TRANSFER_FROM_ARGS_SIZE] [TRANSFER_FROM_SELECTOR_OFFSET_PACKED]         // [argsOffset, argsSize, retOffset, retSize, ...]
-    transferFromJoinLbl:                                                    // [argsOffset, argsSize, retOffset, retSize, ...]
-
-    // IERC20#transfer(address to, uint256 amount) or IERC20#transferFrom(address from, address to, uint256 amount)
+    // IERC20#transferFrom(address from, address to, uint256 amount)
     0x0 [START_COMPLETE_PAYMENTS_TOKEN_OFFSET] mload gas call               // [success, ...]
     pop                                                                     // [...]
 

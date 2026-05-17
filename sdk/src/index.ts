@@ -156,7 +156,7 @@ export interface Parameters {
    * The recipient of the tokens received from Ekubo Core
    *
    * @defaultValue
-   * If the *HuffRouter* is called via a `call`, the `caller`; if called via a `delegatecall`, the delegating contract.
+   * The `caller`
    */
   recipient?: Hex;
   /**
@@ -183,16 +183,13 @@ export interface Parameters {
 }
 
 /**
- * Generates calldata which can both be used in a `call` or a `delegatecall` to the *HuffRouter*.
+ * Generates calldata for the *HuffRouter*.
  *
- * If called via a `call`, depending on the type of the token that needs to be transferred to Ekubo Core:
+ * Depending on the type of the token that needs to be transferred to Ekubo Core:
  * - ERC-20: The *HuffRouter* needs an approval from the `caller`
  * - Native token: Has to be transferred directly to the *HuffRouter*.
  *      If the route is exact-out, the remaining balance of the *HuffRouter* after settlement will be refunded to
  *      the `caller`.
- *
- * If called via a `delegatecall`, all transfers happen directly from the delegating contract and no approvals,
- * transfers, or refunds are necessary.
  *
  * @param params - The parameters determining the generated calldata
  * @returns A hex-encoded calldata string
