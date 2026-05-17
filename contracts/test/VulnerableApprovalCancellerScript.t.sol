@@ -78,7 +78,7 @@ contract VulnerableApprovalCancellerScriptTest is Test {
 
     function test_LoadRouterApprovals_UsesLiveAllowanceAndCoreBalance() external view {
         VulnerableApprovalCanceller.RouterApprovals[] memory batches =
-            script.loadRouterApprovals(_fixturePath());
+            script.loadRouterApprovals("test/fixtures/vulnerable-approvals-synthetic.json");
 
         VulnerableApprovalCanceller.RouterApprovals memory oldV2Batch = _findBatch(batches, OLD_V2_ROUTER);
         VulnerableApprovalCanceller.RouterApprovals memory newV2Batch = _findBatch(batches, NEW_V2_ROUTER);
@@ -109,15 +109,11 @@ contract VulnerableApprovalCancellerScriptTest is Test {
 
         VulnerableApprovalCancellerScript forkScript = new VulnerableApprovalCancellerScript();
         VulnerableApprovalCanceller.RouterApprovals[] memory batches =
-            forkScript.loadRouterApprovals(forkScript.defaultApprovalsPath());
+            forkScript.loadRouterApprovals("test/fixtures/vulnerable-approvals-snapshot.json");
 
         assertGt(batches.length, 0, "router batches");
         VulnerableApprovalCanceller.RouterApprovals memory oldV2Batch = _findBatch(batches, OLD_V2_ROUTER);
         _assertNoApproval(oldV2Batch.approvals, USDT_BLACKLISTED_OWNER, USDT);
-    }
-
-    function _fixturePath() private view returns (string memory) {
-        return string.concat(vm.projectRoot(), "/test/fixtures/vulnerable-approvals-fixture.json");
     }
 
     function _findBatch(

@@ -5,7 +5,6 @@ evm_version = "osaka"
 ffi = true                                                      # Necessary for the HuffNeoDeployer
 fs_permissions = [
     { access = "read", path = "../tokens/"},                    # Shared token lists
-    { access = "read", path = "../sdk/incident-analysis/" },    # Incident analysis inputs
     { access = "read", path = "test/fixtures/" },               # Local test fixtures
     { access = "write", path = "src/locked/tokens.huff" },      # Processed token list for deployment
     { access = "read", path = "v3-artifacts/" }                 # Deployment artifacts for the Ekubo v3 contracts
