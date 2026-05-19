@@ -124,10 +124,7 @@ The versions committed in this directory were copied from those runtime outputs 
 
 The fix was to stop deriving settlement data from route-relative offsets and instead anchor those reads to the actual end of calldata.
 
-That change was applied in both places that previously trusted a route-relative offset:
-
-- `transferFrom`
-- `recipient`
+That change was applied in the places that previously trusted a route-relative offset to determine `transferFrom`.
 
 This makes the callback consume the last router-appended bytes, rather than any bytes a caller smuggled in after the logical route end.
 
