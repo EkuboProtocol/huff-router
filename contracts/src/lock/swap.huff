@@ -7,14 +7,13 @@
 #define constant LOCK_SWAP_SPECIFIED_TOKEN_INFO_SIZE = 0x1
 #define constant LOCK_SWAP_CALCULATED_TOKEN_INFO_SIZE = 0x1
 #define constant LOCK_SWAP_ADDITIONAL_MULTI_HOPS_SIZE = 0x1
-#define constant LOCK_SWAP_WITH_INTEGRATION_FEE_SIZE = 0x1
 #define constant LOCK_SWAP_WITH_SQRT_RATIO_LIMIT_IS_EXACT_OUT_SIZE = 0x1
 #define constant LOCK_SWAP_ADDITIONAL_HOPS_SIZE = 0x1
 #define constant LOCK_SWAP_HOP_TYPE_SIZE = 0x1
 #define constant LOCK_SWAP_TRANSFER_FROM_SIZE = [WORD_SIZE]
 
 #define constant LOCK_SWAP_MINIMUM_CALLDATA_SIZE = [LOCK_SWAP_WITH_RECIPIENT_SIZE] + [LOCK_SWAP_SPECIFIED_AMOUNT_BYTES_SIZE]
-    + [LOCK_SWAP_CALCULATED_AMOUNT_THRESHOLD_BYTES_SIZE] + [LOCK_SWAP_WITH_INTEGRATION_FEE_SIZE]
+    + [LOCK_SWAP_CALCULATED_AMOUNT_THRESHOLD_BYTES_SIZE]
     + [LOCK_SWAP_SPECIFIED_TOKEN_INFO_SIZE] + [LOCK_SWAP_CALCULATED_TOKEN_INFO_SIZE]
     + [LOCK_SWAP_ADDITIONAL_MULTI_HOPS_SIZE] + [LOCK_SWAP_WITH_SQRT_RATIO_LIMIT_IS_EXACT_OUT_SIZE]
     + [LOCK_SWAP_ADDITIONAL_HOPS_SIZE] + [LOCK_SWAP_HOP_TYPE_SIZE]
@@ -55,9 +54,6 @@
 ///
 /// `additionalMultiHops` (1 byte `uint8`)
 /// How many more multihops are encoded besides the mandotary one.
-///
-/// `withIntegrationFee` (1 byte `bool`)
-/// Whether a share of the output will be distributed to a given integrator.
 ///
 /// `withSqrtRatioLimit` | `isExactOut` (1 bit `bool` | 1 bit `bool`, left-padded)
 /// Whether swaps are encoded with a custom sqrt ratio limit and
@@ -112,10 +108,6 @@
 /// The price limit of the swap.
 ///
 /// After the hop data:
-///
-/// `feeShare` | `feeRecipient` (2 bytes 0.16 fixed point number | 20 bytes `address`, optional as per `withIntegrationFee`)
-/// The integrator address as well as the share that the integrator receives from the output.
-/// Fees are `save`d for the `feeRecipient` in Core.
 ///
 /// `recipient` (20 bytes `address`, optional as per `withRecipient`)
 /// Adress of the account that receives the output (after possibly deducting integration fees).

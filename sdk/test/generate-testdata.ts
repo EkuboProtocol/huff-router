@@ -1,19 +1,15 @@
 import { Address, concatHex, encodeAbiParameters, getAbiItem, Hex, hexToBigInt, maxUint256, numberToHex, parseEther, parseUnits, zeroAddress } from "viem";
-import { huffRouterTestAbi } from "./abi.js";
+import { sdkTestAbi } from "./abi.js";
 import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions.js";
-import { generateCalldata, IntegrationFee, Hop } from "../src/index.js";
+import { generateCalldata, Hop } from "../src/index.js";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl.js";
 import type { DeepWritable, ElementOf } from "ts-essentials";
-import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
+import { NATIVE_TOKEN_ADDRESS, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
 import { TEST_CHAIN_ID } from "../shared.js";
 
 const CHAIN_ID = BigInt(TEST_CHAIN_ID);
 const SPECIFIED_AMOUNT = parseEther("1");
 const RECIPIENT: Address = "0xffffffffffffffffffffffffffffffffffffffff";
-const INTEGRATION_FEE: IntegrationFee = {
-    integrator: INTEGRATOR,
-    fee: 2 ** 15, // 50%
-};
 
 interface PoolConfig {
     extension: Address;
@@ -80,7 +76,7 @@ const NATIVE_ERC20_CONFIGS: PoolConfigWithName[] = [
 ];
 
 const inputs = getAbiItem({
-    "abi": huffRouterTestAbi,
+    "abi": sdkTestAbi,
     "name": "executeSdkCases",
 }).inputs;
 
@@ -93,7 +89,6 @@ const successCases: SdkCases["success"] = [
             specifiedToken: NATIVE_TOKEN_ADDRESS,
             recipient: RECIPIENT,
             calculatedAmountThreshold: parseEther("1"),
-            integrationFee: INTEGRATION_FEE,
             multiHops: [
                 {
                     specifiedAmount: parseEther("1"),
@@ -138,7 +133,7 @@ const successCases: SdkCases["success"] = [
         isExactOut: false,
         totalSpecified: parseEther("1.5"),
         recipient: RECIPIENT,
-        integrator: INTEGRATION_FEE.integrator,
+        withIntegrationFee: true,
         poolKeys: [{
             token0: NATIVE_TOKEN_ADDRESS,
             token1: ERC20_FIRST_ADDRESS,
@@ -163,7 +158,7 @@ const successCases: SdkCases["success"] = [
 recipient: for (const recipient of [RECIPIENT, undefined] as const) {
 
     for (const isExactOut of [false, true]) {
-        integrationFee: for (const integrationFee of [INTEGRATION_FEE, undefined]) {
+        withIntegrationFee: for (const withIntegrationFee of [true, false]) {
             for (const withSqrtRatioLimit of [false, true]) {
 
                 function getSqrtRatioLimit(specifiedToken: Address, calculatedToken: Address) {
@@ -185,7 +180,7 @@ recipient: for (const recipient of [RECIPIENT, undefined] as const) {
                             return `\
 ${typeof recipient === "undefined" ? "default" : "custom"}Recipient_\
 exact${isExactOut ? "Out" : "In"}_\
-${typeof integrationFee === "undefined" ? "without" : "with"}IntegrationFee_\
+${withIntegrationFee ? "with" : "without"}IntegrationFee_\
 ${withSqrtRatioLimit ? "with" : "without"}SqrtRatioLimit_\
 ${hopType}_\
 ${asLastInMultiHop ? "last" : "notLast"}Swap_\
@@ -265,7 +260,6 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                         hops,
                                     }
                                 ],
-                                integrationFee,
                             }, {
                                 forceUnknownExtension: asUnknownExtension,
                                 forceUnknownToken: asUnknownToken,
@@ -278,12 +272,12 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                 isExactOut,
                                 totalSpecified: SPECIFIED_AMOUNT,
                                 recipient: recipient ?? zeroAddress,
-                                integrator: integrationFee?.integrator ?? zeroAddress,
+                                withIntegrationFee,
                                 poolKeys: hops.map(hop => hop.poolKey),
                                 name: getTestcaseName(`${extensionName}Extension`, tokenInNative ? "Native" : "Erc20"),
                             } as const);
 
-                            if (typeof integrationFee !== "undefined" || typeof recipient === "string") {
+                            if (typeof withIntegrationFee !== "undefined" || typeof recipient === "string") {
                                 break;
                             }
                         }
@@ -356,7 +350,6 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                             hops,
                                         }
                                     ],
-                                    integrationFee,
                                 }, {
                                     forceUnknownExtension: false,
                                     forceUnknownToken: asUnknownToken,
@@ -369,7 +362,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     isExactOut,
                                     totalSpecified: SPECIFIED_AMOUNT,
                                     recipient: recipient ?? zeroAddress,
-                                    integrator: integrationFee?.integrator ?? zeroAddress,
+                                    withIntegrationFee,
                                     poolKeys: hops.flatMap(hop => {
                                         if (hop.type === "swap") {
                                             return [hop.poolKey];
@@ -380,8 +373,8 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     name: getTestcaseName("wrappedToken", tokenInUnderlying ? "Underlying" : "Wrapped"),
                                 } as const);
 
-                                if (typeof integrationFee !== "undefined") {
-                                    continue integrationFee;
+                                if (typeof withIntegrationFee !== "undefined") {
+                                    continue withIntegrationFee;
                                 } else if (typeof recipient === "string") {
                                     continue recipient;
                                 }

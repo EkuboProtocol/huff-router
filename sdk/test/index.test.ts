@@ -1,9 +1,9 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import TOKENS from "../../tokens/31337.json" with {"type": "json"};
-import { concatHex, Hex, IntegerOutOfRangeError, isAddress, padHex, parseEther, SizeExceedsPaddingSizeError } from "viem";
+import { concatHex, Hex, isAddress, padHex, parseEther, SizeExceedsPaddingSizeError } from "viem";
 import { generateCalldata, Parameters, Swap } from "../src/index.js";
-import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
+import { NATIVE_TOKEN_ADDRESS, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
 import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_HOP_CONNECTION, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_HOPS_LENGTH, ERROR_TOKEN0_TOKEN1_ORDER, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_INTEGRATION_FEE, MAX_MULTIHOP_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_HOP_LENGTH, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO, ERROR_UNDERLYING_EQ_WRAPPED } from "../src/impl.js";
 import { MAX_CONTRACT_SIZE, MAX_TOKEN_LIST_LENGTH, TEST_CHAIN_ID } from "../shared.js";
 
@@ -457,84 +457,6 @@ describe("calculatedAmountThreshold", () => {
             params.calculatedAmountThreshold = 0n;
 
             expect(() => generateCalldata(params)).toThrow(ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN);
-        });
-    });
-});
-
-describe("integrationFee", () => {
-    describe("fee", () => {
-        test("negative", () => {
-            const params: Parameters = simpleParams();
-            params.integrationFee = {
-                fee: -1,
-                integrator: INTEGRATOR,
-            };
-
-            expect(() => generateCalldata(params)).toThrow(IntegerOutOfRangeError);
-        });
-
-        test("zero", () => {
-            const params: Parameters = simpleParams();
-            params.integrationFee = {
-                fee: 0,
-                integrator: INTEGRATOR,
-            };
-
-            expect(generateCalldata(params)).toBeDefined();
-        });
-
-        test("valid", () => {
-            const params: Parameters = simpleParams();
-            params.integrationFee = {
-                fee: 10,
-                integrator: INTEGRATOR,
-            };
-
-            expect(generateCalldata(params)).toBeDefined();
-        });
-
-        test("max", () => {
-            const params: Parameters = simpleParams();
-            params.integrationFee = {
-                fee: MAX_INTEGRATION_FEE,
-                integrator: INTEGRATOR,
-            };
-
-            expect(generateCalldata(params)).toBeDefined();
-        });
-
-        test("too large", () => {
-            const params: Parameters = simpleParams();
-            params.integrationFee = {
-                fee: MAX_INTEGRATION_FEE + 1,
-                integrator: INTEGRATOR,
-            };
-
-            expect(() => generateCalldata(params)).toThrow(IntegerOutOfRangeError);
-        });
-    });
-
-    describe("integrator", () => {
-        describe("length", () => {
-            test("valid", () => {
-                const params: Parameters = simpleParams();
-                params.integrationFee = {
-                    fee: 10,
-                    integrator: VALID_ADDRESS,
-                };
-
-                expect(generateCalldata(simpleParams())).toBeDefined();
-            });
-
-            test("too long", () => {
-                const params: Parameters = simpleParams();
-                params.integrationFee = {
-                    fee: 10,
-                    integrator: OVERSIZED_ADDRESS,
-                };
-
-                expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
-            });
         });
     });
 });

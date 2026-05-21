@@ -111,26 +111,6 @@ export interface MultiHop {
 }
 
 /**
- * Allows rewarding integrators for the provision of their services
- * by sharing parts of the total amount with them
- */
-export interface IntegrationFee {
-  /**
-   * A 0.16 fixed point number describing the share of the total amount
-   * that will be saved for the integrator
-   *
-   * @remarks
-   * For exact-in routes, the share is taken from the calculated amount;
-   * for exact-out routes, from the specified amount
-   */
-  fee: number;
-  /**
-   * The owner of the saved balance in which Ekubo Core will save the integration fee
-   */
-  integrator: Hex;
-}
-
-/**
  * The parameters required for constructing a call to the *HuffRouter*
  */
 export interface Parameters {
@@ -173,13 +153,6 @@ export interface Parameters {
    * Effectively disables the slippage check
    */
   calculatedAmountThreshold?: bigint;
-  /**
-   * The integration fee that is applied to the total amount
-   *
-   * @defaultValue
-   * No integrator receives a share from the total amount
-   */
-  integrationFee?: IntegrationFee;
 }
 
 /**
