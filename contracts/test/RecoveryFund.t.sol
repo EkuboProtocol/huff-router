@@ -175,7 +175,7 @@ contract RecoveryFundTest is Test {
         recovery.claim(recipient, address(token), 40 ether);
     }
 
-    function testRevert_CallerCannotClaimAnotherClaimantsFunds() external {
+    function testRevert_UnsignedCallerCannotClaim() external {
         _fundToken(100 ether);
 
         bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);

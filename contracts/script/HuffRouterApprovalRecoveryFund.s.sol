@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: UNLICENSED
-pragma solidity ^0.8.33;
+pragma solidity ^0.8.30;
 
 import {RecoveryFund} from "../src/RecoveryFund.sol";
 
@@ -41,6 +41,7 @@ contract HuffRouterApprovalRecoveryFundScript is Script {
         console2.log("RecoveryFund deployed at", address(recoveryFund));
 
         for (uint256 i = 0; i < approvals.length; i++) {
+            if (approvals[i].token == address(0)) continue;
             console2.log("Approving token", approvals[i].token);
             console2.log("Approval amount", approvals[i].amount);
             _approve(approvals[i].token, address(recoveryFund), approvals[i].amount);

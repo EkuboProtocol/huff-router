@@ -17,8 +17,8 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @notice Hash of the claim conditions included in every signed claim.
     bytes32 public immutable messageHash;
 
-    /// @notice EIP-712 digest claimants must sign to accept the claim conditions.
-    bytes32 public immutable claimConditionsDigest;
+    /// @notice EIP-712 struct hash for claim-conditions agreement.
+    bytes32 public immutable claimConditionsStructHash;
 
     /// @notice Address that receives unclaimed funds after `refundTimestamp`.
     address public immutable refundAddress;
@@ -100,17 +100,7 @@ contract RecoveryFund is EIP712, Multicallable {
         messageHash = keccak256(bytes(claimConditions));
         refundAddress = refundAddress_;
         refundTimestamp = refundTimestamp_;
-        bytes32 separator = keccak256(
-            abi.encode(
-                _DOMAIN_TYPEHASH,
-                keccak256(bytes(DOMAIN_NAME)),
-                keccak256(bytes(DOMAIN_VERSION)),
-                block.chainid,
-                address(this)
-            )
-        );
-        bytes32 structHash = keccak256(abi.encode(AGREE_TO_CLAIM_CONDITIONS_TYPEHASH, messageHash));
-        claimConditionsDigest = keccak256(abi.encodePacked("\x19\x01", separator, structHash));
+        claimConditionsStructHash = keccak256(abi.encode(AGREE_TO_CLAIM_CONDITIONS_TYPEHASH, messageHash));
         emit ClaimConditions(messageHash, claimConditions);
     }
 
@@ -143,7 +133,8 @@ contract RecoveryFund is EIP712, Multicallable {
     function agreeToClaimConditions(address claimant, bytes calldata signature) external {
         if (claimant == address(0)) revert InvalidClaimant();
 
-        if (!SignatureCheckerLib.isValidSignatureNowCalldata(claimant, claimConditionsDigest, signature)) {
+        if (!SignatureCheckerLib.isValidSignatureNowCalldata(claimant, _hashTypedData(claimConditionsStructHash), signature))
+        {
             revert InvalidSignature();
         }
 
@@ -201,6 +192,12 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @return separator Current domain separator.
     function domainSeparator() external view returns (bytes32) {
         return _domainSeparator();
+    }
+
+    /// @notice Returns the current EIP-712 digest claimants must sign to accept claim conditions.
+    /// @return digest Current claim-conditions digest for this domain separator.
+    function claimConditionsDigest() external view returns (bytes32 digest) {
+        digest = _hashTypedData(claimConditionsStructHash);
     }
 
     function _domainNameAndVersion() internal pure override returns (string memory name, string memory version) {
