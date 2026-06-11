@@ -74,9 +74,6 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @notice Thrown when the refund address is zero.
     error InvalidRefundAddress();
 
-    /// @notice Thrown when the refund timestamp is not in the future.
-    error InvalidRefundTimestamp();
-
     /// @notice Thrown when a claimant does not have enough funded balance for a token.
     error InsufficientRecoveryAmount();
 
@@ -95,7 +92,6 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @param refundTimestamp_ Timestamp after which unclaimed funds can be refunded.
     constructor(string memory claimConditions, address refundAddress_, uint256 refundTimestamp_) {
         if (refundAddress_ == address(0)) revert InvalidRefundAddress();
-        if (refundTimestamp_ <= block.timestamp) revert InvalidRefundTimestamp();
 
         messageHash = keccak256(bytes(claimConditions));
         refundAddress = refundAddress_;
