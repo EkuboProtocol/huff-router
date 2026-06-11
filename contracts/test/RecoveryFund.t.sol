@@ -40,7 +40,7 @@ contract RecoveryFundTest is Test {
         claimant = vm.addr(CLAIMANT_PRIVATE_KEY);
         vm.expectEmit(true, false, false, true);
         emit RecoveryFund.ClaimConditions(keccak256(bytes(CLAIM_CONDITIONS)), CLAIM_CONDITIONS);
-        recovery = new RecoveryFund(CLAIM_CONDITIONS, refundAddress, block.timestamp + 180 days);
+        recovery = new RecoveryFund(CLAIM_CONDITIONS, _emptyClaims(), refundAddress, block.timestamp + 180 days);
         token = new RecoveryToken();
 
         token.mint(funder, 1_000 ether);
@@ -57,7 +57,24 @@ contract RecoveryFundTest is Test {
 
     function testRevert_ConstructorWithCurrentRefundTimestamp() external {
         vm.expectRevert(RecoveryFund.InvalidRefundTimestamp.selector);
-        new RecoveryFund(CLAIM_CONDITIONS, refundAddress, block.timestamp);
+        new RecoveryFund(CLAIM_CONDITIONS, _emptyClaims(), refundAddress, block.timestamp);
+    }
+
+    function testRevert_ConstructorWithZeroClaimant() external {
+        vm.expectRevert(RecoveryFund.InvalidClaimant.selector);
+        new RecoveryFund(
+            CLAIM_CONDITIONS,
+            _singleClaim(address(0), address(token), 100 ether),
+            refundAddress,
+            block.timestamp + 180 days
+        );
+    }
+
+    function testRevert_ConstructorWithZeroAmount() external {
+        vm.expectRevert(RecoveryFund.InvalidAmount.selector);
+        new RecoveryFund(
+            CLAIM_CONDITIONS, _singleClaim(claimant, address(token), 0), refundAddress, block.timestamp + 180 days
+        );
     }
 
     function test_Eip712ClaimConditionsUsePlaintextStringField() external view {
@@ -74,25 +91,20 @@ contract RecoveryFundTest is Test {
         assertEq(recovery.claimConditionsDigest(), digest);
     }
 
-    function test_FundErc20ForClaimant() external {
-        vm.startPrank(funder);
-        token.approve(address(recovery), 100 ether);
+    function test_ConstructorAllocatesErc20Claim() external {
+        vm.expectEmit(true, true, false, true);
+        emit RecoveryFund.RecoveryAllocated(claimant, address(token), 100 ether);
+        RecoveryFund allocated = _deployRecovery(_singleClaim(claimant, address(token), 100 ether));
 
-        vm.expectEmit(true, true, true, true, address(recovery));
-        emit RecoveryFund.RecoveryFunded(funder, claimant, address(token), 100 ether);
-        recovery.fund(claimant, address(token), 100 ether);
-        vm.stopPrank();
-
-        assertEq(recovery.recoveryAmount(claimant, address(token)), 100 ether);
-        assertEq(token.balanceOf(address(recovery)), 100 ether);
+        assertEq(allocated.recoveryAmount(claimant, address(token)), 100 ether);
+        assertEq(token.balanceOf(address(allocated)), 0);
     }
 
-    function test_FundNativeForClaimant() external {
-        vm.prank(funder);
-        recovery.fund{value: 1 ether}(claimant, address(0), 1 ether);
+    function test_ConstructorAllocatesNativeClaim() external {
+        RecoveryFund allocated = _deployRecovery(_singleClaim(claimant, address(0), 1 ether));
 
-        assertEq(recovery.recoveryAmount(claimant, address(0)), 1 ether);
-        assertEq(address(recovery).balance, 1 ether);
+        assertEq(allocated.recoveryAmount(claimant, address(0)), 1 ether);
+        assertEq(address(allocated).balance, 0);
     }
 
     function test_ClaimErc20WithValidSignature() external {
@@ -122,7 +134,7 @@ contract RecoveryFundTest is Test {
         assertTrue(recovery.hasSignedClaimConditions(claimant));
     }
 
-    function test_MulticallFundAndClaimErc20() external {
+    function test_MulticallAgreeAndClaimErc20() external {
         _fundToken(100 ether);
 
         bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
@@ -143,8 +155,7 @@ contract RecoveryFundTest is Test {
     }
 
     function test_ClaimNativeWithValidSignature() external {
-        vm.prank(funder);
-        recovery.fund{value: 1 ether}(claimant, address(0), 1 ether);
+        _fundNative(1 ether);
 
         bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
         vm.startPrank(claimant);
@@ -222,24 +233,22 @@ contract RecoveryFundTest is Test {
         assertEq(token.balanceOf(secondRecipient), 30 ether);
     }
 
-    function test_ClaimSameSignatureAfterTopUp() external {
-        _fundToken(40 ether);
+    function test_ClaimSameSignatureForMultipleClaims() external {
+        _fundToken(80 ether);
 
         bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
         vm.startPrank(claimant);
         recovery.agreeToClaimConditions(claimant, signature);
 
         recovery.claim(recipient, address(token), 40 ether);
-        vm.stopPrank();
-        _fundToken(40 ether);
-        vm.prank(claimant);
         recovery.claim(recipient, address(token), 40 ether);
+        vm.stopPrank();
 
         assertEq(recovery.recoveryAmount(claimant, address(token)), 0);
         assertEq(token.balanceOf(recipient), 80 ether);
     }
 
-    function testRevert_ClaimMoreThanFunded() external {
+    function testRevert_ClaimMoreThanAllocated() external {
         _fundToken(39 ether);
 
         bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
@@ -250,16 +259,32 @@ contract RecoveryFundTest is Test {
         recovery.claim(recipient, address(token), 40 ether);
     }
 
-    function testRevert_FundNativeWithWrongValue() external {
-        vm.prank(funder);
-        vm.expectRevert(RecoveryFund.InvalidFundingValue.selector);
-        recovery.fund{value: 1 ether}(claimant, address(0), 2 ether);
+    function testRevert_ClaimErc20WhenContractNotFunded() external {
+        _allocateToken(100 ether);
+
+        bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
+        recovery.agreeToClaimConditions(claimant, signature);
+
+        vm.expectRevert(SafeTransferLib.TransferFailed.selector);
+        vm.prank(claimant);
+        recovery.claim(recipient, address(token), 40 ether);
+
+        assertEq(recovery.recoveryAmount(claimant, address(token)), 100 ether);
+        assertEq(token.balanceOf(recipient), 0);
     }
 
-    function testRevert_FundErc20WithNativeValue() external {
-        vm.prank(funder);
-        vm.expectRevert(RecoveryFund.InvalidFundingValue.selector);
-        recovery.fund{value: 1 ether}(claimant, address(token), 2 ether);
+    function testRevert_ClaimNativeWhenContractNotFunded() external {
+        _allocateNative(1 ether);
+
+        bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
+        recovery.agreeToClaimConditions(claimant, signature);
+
+        vm.expectRevert(SafeTransferLib.ETHTransferFailed.selector);
+        vm.prank(claimant);
+        recovery.claim(recipient, address(0), 1 ether);
+
+        assertEq(recovery.recoveryAmount(claimant, address(0)), 1 ether);
+        assertEq(recipient.balance, 0);
     }
 
     function test_RefundErc20AfterRefundTimestamp() external {
@@ -287,8 +312,7 @@ contract RecoveryFundTest is Test {
     }
 
     function test_RefundNativeAfterRefundTimestamp() external {
-        vm.prank(funder);
-        recovery.fund{value: 1 ether}(claimant, address(0), 1 ether);
+        _fundNative(1 ether);
         vm.warp(recovery.refundTimestamp());
 
         uint256 balanceBefore = refundAddress.balance;
@@ -299,8 +323,7 @@ contract RecoveryFundTest is Test {
     }
 
     function test_RefundNativeCannotBeStolenByCaller() external {
-        vm.prank(funder);
-        recovery.fund{value: 1 ether}(claimant, address(0), 1 ether);
+        _fundNative(1 ether);
         vm.warp(recovery.refundTimestamp());
 
         uint256 refundBalanceBefore = refundAddress.balance;
@@ -341,8 +364,7 @@ contract RecoveryFundTest is Test {
     }
 
     function testRevert_ClaimNativeAfterRefundFailsTransfer() external {
-        vm.prank(funder);
-        recovery.fund{value: 1 ether}(claimant, address(0), 1 ether);
+        _fundNative(1 ether);
 
         bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
         recovery.agreeToClaimConditions(claimant, signature);
@@ -362,10 +384,41 @@ contract RecoveryFundTest is Test {
     }
 
     function _fundToken(uint256 amount) private {
-        vm.startPrank(funder);
-        token.approve(address(recovery), amount);
-        recovery.fund(claimant, address(token), amount);
-        vm.stopPrank();
+        _allocateToken(amount);
+        vm.prank(funder);
+        assertTrue(token.transfer(address(recovery), amount));
+    }
+
+    function _allocateToken(uint256 amount) private {
+        recovery = _deployRecovery(_singleClaim(claimant, address(token), amount));
+    }
+
+    function _fundNative(uint256 amount) private {
+        _allocateNative(amount);
+        vm.prank(funder);
+        (bool success,) = address(recovery).call{value: amount}("");
+        assertTrue(success);
+    }
+
+    function _allocateNative(uint256 amount) private {
+        recovery = _deployRecovery(_singleClaim(claimant, address(0), amount));
+    }
+
+    function _deployRecovery(RecoveryFund.Claim[] memory claimList) private returns (RecoveryFund) {
+        return new RecoveryFund(CLAIM_CONDITIONS, claimList, refundAddress, block.timestamp + 180 days);
+    }
+
+    function _emptyClaims() private pure returns (RecoveryFund.Claim[] memory claimList) {
+        claimList = new RecoveryFund.Claim[](0);
+    }
+
+    function _singleClaim(address claimOwner, address claimToken, uint256 amount)
+        private
+        pure
+        returns (RecoveryFund.Claim[] memory claimList)
+    {
+        claimList = new RecoveryFund.Claim[](1);
+        claimList[0] = RecoveryFund.Claim({claimant: claimOwner, token: claimToken, amount: amount});
     }
 
     function _signClaim(uint256 privateKey) private view returns (bytes memory) {

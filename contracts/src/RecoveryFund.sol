@@ -7,6 +7,12 @@ import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 
 contract RecoveryFund is EIP712, Multicallable {
+    struct Claim {
+        address claimant;
+        address token;
+        uint256 amount;
+    }
+
     string internal constant DOMAIN_NAME = "Recovery Fund";
     string internal constant DOMAIN_VERSION = "1";
 
@@ -42,12 +48,11 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @param signature Signature submitted for the claim conditions.
     event ClaimConditionsSigned(address indexed claimant, bytes signature);
 
-    /// @notice Emitted when recovery funds are added for a claimant and token.
-    /// @param funder Address that supplied the funds.
-    /// @param claimant Address whose claimable balance increased.
+    /// @notice Emitted when a claimant and token allocation is recorded.
+    /// @param claimant Address whose claimable balance was allocated.
     /// @param token ERC20 token address, or `address(0)` for native ETH.
-    /// @param amount Amount credited to the claimant.
-    event RecoveryFunded(address indexed funder, address indexed claimant, address indexed token, uint256 amount);
+    /// @param amount Amount allocated to the claimant.
+    event RecoveryAllocated(address indexed claimant, address indexed token, uint256 amount);
 
     /// @notice Emitted when funded recovery assets are claimed.
     /// @param claimant Address whose claimable balance was reduced.
@@ -67,9 +72,6 @@ contract RecoveryFund is EIP712, Multicallable {
 
     /// @notice Thrown when a fund, claim, or refund amount is zero.
     error InvalidAmount();
-
-    /// @notice Thrown when `msg.value` does not match the funding token mode.
-    error InvalidFundingValue();
 
     /// @notice Thrown when the refund address is zero.
     error InvalidRefundAddress();
@@ -91,9 +93,11 @@ contract RecoveryFund is EIP712, Multicallable {
 
     /// @notice Creates a recovery contract for a fixed set of claim conditions.
     /// @param claimConditions Human-readable conditions that are hashed into every claim.
+    /// @param claims Claimant, token, and amount allocations recorded at deployment.
     /// @param refundAddress_ Address that receives unclaimed funds after `refundTimestamp_`.
     /// @param refundTimestamp_ Timestamp after which unclaimed funds can be refunded.
-    constructor(string memory claimConditions, address refundAddress_, uint256 refundTimestamp_) {
+    constructor(string memory claimConditions, Claim[] memory claims, address refundAddress_, uint256 refundTimestamp_)
+        payable {
         if (refundAddress_ == address(0)) revert InvalidRefundAddress();
         if (refundTimestamp_ <= block.timestamp) revert InvalidRefundTimestamp();
 
@@ -102,28 +106,18 @@ contract RecoveryFund is EIP712, Multicallable {
         refundTimestamp = refundTimestamp_;
         claimConditionsStructHash = keccak256(abi.encode(AGREE_TO_CLAIM_CONDITIONS_TYPEHASH, messageHash));
         emit ClaimConditions(messageHash, claimConditions);
-    }
 
-    /// @notice Adds recovery funds for a claimant and token.
-    /// @dev Use `address(0)` as `token` to fund native ETH.
-    /// @param claimant Address that will be allowed to claim these funds.
-    /// @param token ERC20 token address, or `address(0)` for native ETH.
-    /// @param amount Amount to fund, or exact `msg.value` for native ETH.
-    function fund(address claimant, address token, uint256 amount) external payable {
-        if (claimant == address(0)) revert InvalidClaimant();
-        if (amount == 0) revert InvalidAmount();
+        for (uint256 i = 0; i < claims.length; i++) {
+            if (claims[i].claimant == address(0)) revert InvalidClaimant();
+            if (claims[i].amount == 0) revert InvalidAmount();
 
-        if (token == address(0)) {
-            if (msg.value != amount) revert InvalidFundingValue();
-        } else {
-            if (msg.value != 0) revert InvalidFundingValue();
-            SafeTransferLib.safeTransferFrom(token, msg.sender, address(this), amount);
+            recoveryAmount[claims[i].claimant][claims[i].token] += claims[i].amount;
+            emit RecoveryAllocated(claims[i].claimant, claims[i].token, claims[i].amount);
         }
-
-        recoveryAmount[claimant][token] += amount;
-
-        emit RecoveryFunded(msg.sender, claimant, token, amount);
     }
+
+    /// @notice Receives native ETH used to back native recovery claims.
+    receive() external payable {}
 
     /// @notice Records that a claimant has accepted the claim conditions.
     /// @dev Any caller may submit the claimant's signature. The signature only authorizes the
@@ -133,8 +127,9 @@ contract RecoveryFund is EIP712, Multicallable {
     function agreeToClaimConditions(address claimant, bytes calldata signature) external {
         if (claimant == address(0)) revert InvalidClaimant();
 
-        if (!SignatureCheckerLib.isValidSignatureNowCalldata(claimant, _hashTypedData(claimConditionsStructHash), signature))
-        {
+        if (!SignatureCheckerLib.isValidSignatureNowCalldata(
+                claimant, _hashTypedData(claimConditionsStructHash), signature
+            )) {
             revert InvalidSignature();
         }
 
