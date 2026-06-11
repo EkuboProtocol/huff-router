@@ -23,7 +23,7 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @notice Address that receives unclaimed funds after `refundTimestamp`.
     address public immutable refundAddress;
 
-    /// @notice Timestamp after which claims stop and remaining funds can be refunded.
+    /// @notice Timestamp after which remaining funds can be refunded.
     uint256 public immutable refundTimestamp;
 
     /// @notice Claimable recovery amount for each claimant and token.
@@ -74,6 +74,9 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @notice Thrown when the refund address is zero.
     error InvalidRefundAddress();
 
+    /// @notice Thrown when the refund timestamp is not in the future.
+    error InvalidRefundTimestamp();
+
     /// @notice Thrown when a claimant does not have enough funded balance for a token.
     error InsufficientRecoveryAmount();
 
@@ -82,9 +85,6 @@ contract RecoveryFund is EIP712, Multicallable {
 
     /// @notice Thrown when the submitted signature is not valid for the claimant.
     error InvalidSignature();
-
-    /// @notice Thrown when a claim is attempted after the refund timestamp.
-    error ClaimPeriodOver();
 
     /// @notice Thrown when a refund is attempted before the refund timestamp.
     error RefundNotAvailable();
@@ -95,6 +95,7 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @param refundTimestamp_ Timestamp after which unclaimed funds can be refunded.
     constructor(string memory claimConditions, address refundAddress_, uint256 refundTimestamp_) {
         if (refundAddress_ == address(0)) revert InvalidRefundAddress();
+        if (refundTimestamp_ <= block.timestamp) revert InvalidRefundTimestamp();
 
         messageHash = keccak256(bytes(claimConditions));
         refundAddress = refundAddress_;
@@ -135,8 +136,8 @@ contract RecoveryFund is EIP712, Multicallable {
     }
 
     /// @notice Records that a claimant has accepted the claim conditions.
-    /// @dev The signature only authorizes the constructor-derived `messageHash`; it does not bind
-    /// the token, amount, recipient, or caller.
+    /// @dev Any caller may submit the claimant's signature. The signature only authorizes the
+    /// constructor-derived `messageHash`; it does not bind the token, amount, recipient, or caller.
     /// @param claimant Address whose signature is checked.
     /// @param signature Claimant signature over the EIP-712 claim-conditions digest.
     function agreeToClaimConditions(address claimant, bytes calldata signature) external {
@@ -153,31 +154,27 @@ contract RecoveryFund is EIP712, Multicallable {
     }
 
     /// @notice Claims recovery funds after the claimant has agreed to the claim conditions.
-    /// @dev Agreement does not bind the token, amount, recipient, or caller. Once a claimant has
-    /// agreed, anyone can submit a claim to any recipient, up to the claimant's funded balance for
-    /// `token`.
-    /// @param claimant Address whose funded balance is claimed.
+    /// @dev Agreement does not bind the token, amount, or recipient. The claimant is always
+    /// `msg.sender`.
     /// @param recipient Address receiving the recovery funds.
     /// @param token ERC20 token address, or `address(0)` for native ETH.
     /// @param amount Amount to claim.
-    function claim(address claimant, address recipient, address token, uint256 amount) external {
-        if (claimant == address(0)) revert InvalidClaimant();
+    function claim(address recipient, address token, uint256 amount) external {
         if (amount == 0) revert InvalidAmount();
-        if (block.timestamp >= refundTimestamp) revert ClaimPeriodOver();
-        if (!hasSignedClaimConditions[claimant]) revert ClaimConditionsNotSigned();
+        if (!hasSignedClaimConditions[msg.sender]) revert ClaimConditionsNotSigned();
 
-        uint256 available = recoveryAmount[claimant][token];
+        uint256 available = recoveryAmount[msg.sender][token];
         if (available < amount) revert InsufficientRecoveryAmount();
 
-        recoveryAmount[claimant][token] = available - amount;
+        recoveryAmount[msg.sender][token] = available - amount;
 
         if (token == address(0)) {
-            SafeTransferLib.forceSafeTransferETH(recipient, amount);
+            SafeTransferLib.safeTransferETH(recipient, amount);
         } else {
             SafeTransferLib.safeTransfer(token, recipient, amount);
         }
 
-        emit RecoveryClaimed(claimant, recipient, token, amount);
+        emit RecoveryClaimed(msg.sender, recipient, token, amount);
     }
 
     /// @notice Sends all remaining balance for a token to `refundAddress` after the claim period.
@@ -190,7 +187,7 @@ contract RecoveryFund is EIP712, Multicallable {
         if (token == address(0)) {
             amount = address(this).balance;
             if (amount == 0) revert InvalidAmount();
-            SafeTransferLib.forceSafeTransferETH(refundAddress, amount);
+            SafeTransferLib.safeTransferETH(refundAddress, amount);
         } else {
             amount = SafeTransferLib.balanceOf(token, address(this));
             if (amount == 0) revert InvalidAmount();
