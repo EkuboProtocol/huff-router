@@ -82,7 +82,7 @@ contract RecoveryFundTest is Test {
         );
     }
 
-    function test_Eip712ClaimConditionsUsePlaintextStringField() external view {
+    function test_Eip712ClaimConditionsUsePlaintextStringField() external {
         bytes32 stringTypeHash = keccak256("AgreeToClaimConditions(string claimConditions)");
         bytes32 bytes32TypeHash = keccak256("ClaimConditions(bytes32 messageHash)");
 
@@ -94,7 +94,6 @@ contract RecoveryFundTest is Test {
 
         assertEq(recovery.messageHash(), keccak256(bytes(CLAIM_CONDITIONS)));
         assertEq(recovery.claimConditionsDigest(), digest);
-    }
 
         vm.expectEmit(true, false, false, true);
         emit RecoveryFund.ClaimConditions(keccak256(bytes(CLAIM_CONDITIONS)), CLAIM_CONDITIONS);
