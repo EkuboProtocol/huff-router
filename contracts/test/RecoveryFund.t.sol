@@ -96,11 +96,11 @@ contract RecoveryFundTest is Test {
         assertEq(recovery.claimConditionsDigest(), digest);
     }
 
-    function test_ConstructorAllocatesErc20Claim() external {
+        vm.expectEmit(true, false, false, true);
+        emit RecoveryFund.ClaimConditions(keccak256(bytes(CLAIM_CONDITIONS)), CLAIM_CONDITIONS);
         vm.expectEmit(true, true, false, true);
         emit RecoveryFund.RecoveryAllocated(claimant, address(token), 100 ether);
         RecoveryFund allocated = _deployRecovery(_singleClaim(claimant, address(token), 100 ether));
-
         assertEq(allocated.recoveryAmount(claimant, address(token)), 100 ether);
         assertEq(token.balanceOf(address(allocated)), 0);
     }
