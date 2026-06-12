@@ -163,7 +163,7 @@ contract RecoveryFund is EIP712, Multicallable {
         emit RecoveryClaimed(msg.sender, recipient, token, amount);
     }
 
-    /// @notice Sends all remaining balance for a token to `refundAddress` after the claim period.
+    /// @notice Sends all remaining balance for a token to `refundAddress` after `refundTimestamp`.
     /// @dev Use `address(0)` as `token` to refund native ETH.
     /// @param token ERC20 token address, or `address(0)` for native ETH.
     function refund(address token) external {

@@ -60,6 +60,11 @@ contract RecoveryFundTest is Test {
         new RecoveryFund(CLAIM_CONDITIONS, _emptyClaims(), refundAddress, block.timestamp);
     }
 
+    function testRevert_ConstructorWithZeroRefundAddress() external {
+        vm.expectRevert(RecoveryFund.InvalidRefundAddress.selector);
+        new RecoveryFund(CLAIM_CONDITIONS, _emptyClaims(), address(0), block.timestamp + 180 days);
+    }
+
     function testRevert_ConstructorWithZeroClaimant() external {
         vm.expectRevert(RecoveryFund.InvalidClaimant.selector);
         new RecoveryFund(
@@ -176,6 +181,12 @@ contract RecoveryFundTest is Test {
 
         vm.expectRevert(RecoveryFund.InvalidSignature.selector);
         recovery.agreeToClaimConditions(claimant, signature);
+    }
+
+    function testRevert_ClaimWithZeroAmount() external {
+        vm.expectRevert(RecoveryFund.InvalidAmount.selector);
+        vm.prank(claimant);
+        recovery.claim(recipient, address(token), 0);
     }
 
     function testRevert_ClaimWithoutAgreement() external {
