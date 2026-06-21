@@ -15,7 +15,6 @@ contract HuffRouterApprovalRecoveryFundScript is Script {
 
     address internal constant EKUBO = 0x04C46E830Bb56ce22735d5d8Fc9CB90309317d0f;
     address internal constant LINK = 0x514910771AF9Ca656af840dff83E8264EcF986CA;
-    address internal constant GEKUBO_26Q2 = 0x7C5097b11B7Bc856f603Fb60287833cf9a829fe3;
     address internal constant USDC = 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48;
     address internal constant WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
     address internal constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
@@ -77,7 +76,7 @@ contract HuffRouterApprovalRecoveryFundScript is Script {
         claimList[0] =
             RecoveryFund.Claim({claimant: 0x0DE3f84782427380c6588A9dCA8675A5c40893Cb, token: USDC, amount: 22000000});
         claimList[1] = RecoveryFund.Claim({
-            claimant: 0x1C3949EF079A741974a8EaB0779F8F6A1D1C1001, token: GEKUBO_26Q2, amount: 5417488498305846470
+            claimant: 0x1C3949EF079A741974a8EaB0779F8F6A1D1C1001, token: EKUBO, amount: 5417488498305846470
         });
         claimList[2] =
             RecoveryFund.Claim({claimant: 0x1D088bd797234564633f30cCD44A6A1518C5B533, token: USDC, amount: 996000000});
@@ -111,7 +110,7 @@ contract HuffRouterApprovalRecoveryFundScript is Script {
         claimList[15] =
             RecoveryFund.Claim({claimant: 0x93C10b5B55ACA304086De9D0de20461bCE998cBB, token: USDC, amount: 424});
         claimList[16] = RecoveryFund.Claim({
-            claimant: 0x95a3afd9B4548B05b78913c840BAe714007f7696, token: GEKUBO_26Q2, amount: 10388749244921397061
+            claimant: 0x95a3afd9B4548B05b78913c840BAe714007f7696, token: EKUBO, amount: 10388749244921397061
         });
         claimList[17] =
             RecoveryFund.Claim({claimant: 0x99935B671af8fFc9A9eD042E4663a135dA477b6c, token: USDT, amount: 1000000});
