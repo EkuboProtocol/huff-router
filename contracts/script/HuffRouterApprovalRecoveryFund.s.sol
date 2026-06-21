@@ -28,14 +28,17 @@ contract HuffRouterApprovalRecoveryFundScript is Script {
         RecoveryFund.Claim[] memory claimList = claims();
         TokenFunding[] memory fundings = _tokenFundings(claimList);
 
+        for (uint256 i = 0; i < fundings.length; i++) {
+            console2.log("Total token", fundings[i].token);
+            console2.log("Total amount", fundings[i].amount);
+        }
+
         vm.startBroadcast();
 
         recoveryFund = new RecoveryFund(claimConditions(), claimList, REFUND_ADDRESS, block.timestamp + REFUND_DELAY);
         console2.log("RecoveryFund deployed at", address(recoveryFund));
 
         for (uint256 i = 0; i < fundings.length; i++) {
-            console2.log("Funding token", fundings[i].token);
-            console2.log("Funding amount", fundings[i].amount);
             _fund(fundings[i].token, address(recoveryFund), fundings[i].amount);
         }
 
@@ -148,7 +151,7 @@ contract HuffRouterApprovalRecoveryFundScript is Script {
         claimList[32] =
             RecoveryFund.Claim({claimant: 0xfC011860c9E4B840AB97c2c3936611c88fcE3673, token: WBTC, amount: 99000});
         claimList[33] =
-            RecoveryFund.Claim({claimant: 0x765DECF4Fa157756e850C1079F60801b9219Edd1, token: WBTC, amount: 1701484735});
+            RecoveryFund.Claim({claimant: 0x765DECF4Fa157756e850C1079F60801b9219Edd1, token: WBTC, amount: 3_96407773});
     }
 
     function _fund(address token, address recoveryFund, uint256 amount) internal {
