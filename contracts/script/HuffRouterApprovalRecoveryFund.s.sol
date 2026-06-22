@@ -19,8 +19,7 @@ contract HuffRouterApprovalRecoveryFundScript is Script {
     address internal constant WBTC = 0x2260FAC5E5542a773Aa44fBCfeDf7C193bc2C599;
     address internal constant USDT = 0xdAC17F958D2ee523a2206206994597C13D831ec7;
     address internal constant CBBTC = 0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf;
-    address internal constant REFUND_ADDRESS = 0x1E0EF4162e42C9bF820c307218c4E41cCcA6E9CC;
-    uint256 internal constant REFUND_DELAY = 180 days;
+    address internal constant OWNER = 0x1E0EF4162e42C9bF820c307218c4E41cCcA6E9CC;
 
     TokenFunding[] internal tokenFundingScratch;
 
@@ -35,7 +34,7 @@ contract HuffRouterApprovalRecoveryFundScript is Script {
 
         vm.startBroadcast();
 
-        recoveryFund = new RecoveryFund(claimConditions(), claimList, REFUND_ADDRESS, block.timestamp + REFUND_DELAY);
+        recoveryFund = new RecoveryFund(claimConditions(), claimList, OWNER);
         console2.log("RecoveryFund deployed at", address(recoveryFund));
 
         for (uint256 i = 0; i < fundings.length; i++) {

@@ -4,6 +4,7 @@ pragma solidity ^0.8.30;
 import {RecoveryFund} from "../src/RecoveryFund.sol";
 
 import {Test} from "forge-std/Test.sol";
+import {Ownable} from "solady/auth/Ownable.sol";
 import {ERC20} from "solady/tokens/ERC20.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 
@@ -32,15 +33,17 @@ contract RecoveryFundTest is Test {
     RecoveryToken private token;
     address private claimant;
     address private recipient = address(0xCAFE);
-    address private refundAddress = address(0x1234);
+    address private owner = address(0x1234);
     address private funder = address(0xF00D);
     address private thief = address(0xBAD);
 
     function setUp() public {
         claimant = vm.addr(CLAIMANT_PRIVATE_KEY);
+        vm.expectEmit(true, true, false, true);
+        emit Ownable.OwnershipTransferred(address(0), owner);
         vm.expectEmit(true, false, false, true);
         emit RecoveryFund.ClaimConditions(keccak256(bytes(CLAIM_CONDITIONS)), CLAIM_CONDITIONS);
-        recovery = new RecoveryFund(CLAIM_CONDITIONS, _emptyClaims(), refundAddress, block.timestamp + 180 days);
+        recovery = new RecoveryFund(CLAIM_CONDITIONS, _emptyClaims(), owner);
         token = new RecoveryToken();
 
         token.mint(funder, 1_000 ether);
@@ -51,35 +54,42 @@ contract RecoveryFundTest is Test {
         assertEq(recovery.messageHash(), keccak256(bytes(CLAIM_CONDITIONS)));
         assertEq(recovery.domainSeparator(), _domainSeparator());
         assertEq(recovery.claimConditionsDigest(), _claimConditionsDigest());
-        assertEq(recovery.refundAddress(), refundAddress);
-        assertEq(recovery.refundTimestamp(), block.timestamp + 180 days);
+        assertEq(recovery.owner(), owner);
+        assertFalse(recovery.claimsEnded());
     }
 
-    function testRevert_ConstructorWithCurrentRefundTimestamp() external {
-        vm.expectRevert(RecoveryFund.InvalidRefundTimestamp.selector);
-        new RecoveryFund(CLAIM_CONDITIONS, _emptyClaims(), refundAddress, block.timestamp);
-    }
+    function test_ConstructorAllowsZeroOwnerForPermanentClaims() external {
+        recovery = new RecoveryFund(CLAIM_CONDITIONS, _singleClaim(claimant, address(token), 100 ether), address(0));
+        assertEq(recovery.owner(), address(0));
+        assertFalse(recovery.claimsEnded());
 
-    function testRevert_ConstructorWithZeroRefundAddress() external {
-        vm.expectRevert(RecoveryFund.InvalidRefundAddress.selector);
-        new RecoveryFund(CLAIM_CONDITIONS, _emptyClaims(), address(0), block.timestamp + 180 days);
+        vm.prank(funder);
+        assertTrue(token.transfer(address(recovery), 100 ether));
+
+        bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
+        vm.startPrank(claimant);
+        recovery.agreeToClaimConditions(claimant, signature);
+        recovery.claim(recipient, address(token), 40 ether);
+        vm.stopPrank();
+
+        assertEq(recovery.recoveryAmount(claimant, address(token)), 60 ether);
+        assertEq(token.balanceOf(recipient), 40 ether);
+
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        recovery.endClaims();
+
+        vm.expectRevert(RecoveryFund.ClaimsNotEnded.selector);
+        recovery.refund(address(token));
     }
 
     function testRevert_ConstructorWithZeroClaimant() external {
         vm.expectRevert(RecoveryFund.InvalidClaimant.selector);
-        new RecoveryFund(
-            CLAIM_CONDITIONS,
-            _singleClaim(address(0), address(token), 100 ether),
-            refundAddress,
-            block.timestamp + 180 days
-        );
+        new RecoveryFund(CLAIM_CONDITIONS, _singleClaim(address(0), address(token), 100 ether), owner);
     }
 
     function testRevert_ConstructorWithZeroAmount() external {
         vm.expectRevert(RecoveryFund.InvalidAmount.selector);
-        new RecoveryFund(
-            CLAIM_CONDITIONS, _singleClaim(claimant, address(token), 0), refundAddress, block.timestamp + 180 days
-        );
+        new RecoveryFund(CLAIM_CONDITIONS, _singleClaim(claimant, address(token), 0), owner);
     }
 
     function test_Eip712ClaimConditionsUsePlaintextStringField() external {
@@ -138,6 +148,21 @@ contract RecoveryFundTest is Test {
         assertTrue(recovery.hasSignedClaimConditions(claimant));
     }
 
+    function testRevert_RelayerAgreementDoesNotAuthorizeRelayerToClaim() external {
+        _fundToken(100 ether);
+
+        bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
+        vm.prank(thief);
+        recovery.agreeToClaimConditions(claimant, signature);
+
+        vm.expectRevert(RecoveryFund.ClaimConditionsNotSigned.selector);
+        vm.prank(thief);
+        recovery.claim(thief, address(token), 40 ether);
+
+        assertEq(recovery.recoveryAmount(claimant, address(token)), 100 ether);
+        assertEq(token.balanceOf(thief), 0);
+    }
+
     function test_MulticallAgreeAndClaimErc20() external {
         _fundToken(100 ether);
 
@@ -156,6 +181,23 @@ contract RecoveryFundTest is Test {
         assertEq(results[1].length, 0);
         assertEq(recovery.recoveryAmount(claimant, address(token)), 60 ether);
         assertEq(token.balanceOf(recipient), 40 ether);
+    }
+
+    function testRevert_MulticallRelayerCannotAgreeForClaimantAndClaim() external {
+        _fundToken(100 ether);
+
+        bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
+
+        bytes[] memory data = new bytes[](2);
+        data[0] = abi.encodeCall(RecoveryFund.agreeToClaimConditions, (claimant, signature));
+        data[1] = abi.encodeCall(RecoveryFund.claim, (thief, address(token), 40 ether));
+
+        vm.expectRevert(RecoveryFund.ClaimConditionsNotSigned.selector);
+        vm.prank(thief);
+        recovery.multicall(data);
+
+        assertEq(recovery.recoveryAmount(claimant, address(token)), 100 ether);
+        assertEq(token.balanceOf(thief), 0);
     }
 
     function test_ClaimNativeWithValidSignature() external {
@@ -297,94 +339,166 @@ contract RecoveryFundTest is Test {
         assertEq(recipient.balance, 0);
     }
 
-    function test_RefundErc20AfterRefundTimestamp() external {
+    function test_EndClaimsByOwner() external {
+        vm.expectEmit(true, false, false, true, address(recovery));
+        emit RecoveryFund.ClaimsEnded();
+        vm.prank(owner);
+        recovery.endClaims();
+
+        assertTrue(recovery.claimsEnded());
+    }
+
+    function testRevert_NonOwnerCannotTransferOwnership() external {
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.prank(thief);
+        recovery.transferOwnership(thief);
+
+        assertEq(recovery.owner(), owner);
+    }
+
+    function testRevert_AttackerCannotCompleteOwnOwnershipHandover() external {
+        vm.prank(thief);
+        recovery.requestOwnershipHandover();
+
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.prank(thief);
+        recovery.completeOwnershipHandover(thief);
+
+        assertEq(recovery.owner(), owner);
+    }
+
+    function test_OwnerCanTransferOwnershipAndNewOwnerControlsClaimsEnd() external {
         _fundToken(100 ether);
-        vm.warp(recovery.refundTimestamp());
+
+        address newOwner = address(0x5678);
+        vm.prank(owner);
+        recovery.transferOwnership(newOwner);
+
+        assertEq(recovery.owner(), newOwner);
+
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        vm.prank(owner);
+        recovery.endClaims();
+
+        vm.prank(newOwner);
+        recovery.endClaims();
+
+        vm.prank(thief);
+        recovery.refund(address(token));
+
+        assertEq(token.balanceOf(newOwner), 100 ether);
+        assertEq(token.balanceOf(owner), 0);
+        assertEq(token.balanceOf(thief), 0);
+    }
+
+    function testRevert_EndClaimsByNonOwner() external {
+        vm.expectRevert(Ownable.Unauthorized.selector);
+        recovery.endClaims();
+    }
+
+    function testRevert_EndClaimsTwice() external {
+        vm.prank(owner);
+        recovery.endClaims();
+
+        vm.expectRevert(RecoveryFund.ClaimsAreEnded.selector);
+        vm.prank(owner);
+        recovery.endClaims();
+    }
+
+    function test_RefundErc20AfterClaimsEnded() external {
+        _fundToken(100 ether);
+        vm.prank(owner);
+        recovery.endClaims();
 
         vm.expectEmit(true, true, false, true, address(recovery));
         emit RecoveryFund.RecoveryRefunded(address(this), address(token), 100 ether);
         recovery.refund(address(token));
 
-        assertEq(token.balanceOf(refundAddress), 100 ether);
+        assertEq(token.balanceOf(owner), 100 ether);
         assertEq(token.balanceOf(address(recovery)), 0);
     }
 
     function test_RefundErc20CannotBeStolenByCaller() external {
         _fundToken(100 ether);
-        vm.warp(recovery.refundTimestamp());
+        vm.prank(owner);
+        recovery.endClaims();
 
         vm.prank(thief);
         recovery.refund(address(token));
 
-        assertEq(token.balanceOf(refundAddress), 100 ether);
+        assertEq(token.balanceOf(owner), 100 ether);
         assertEq(token.balanceOf(thief), 0);
         assertEq(token.balanceOf(address(recovery)), 0);
     }
 
-    function test_RefundNativeAfterRefundTimestamp() external {
+    function test_RefundNativeAfterClaimsEnded() external {
         _fundNative(1 ether);
-        vm.warp(recovery.refundTimestamp());
+        vm.prank(owner);
+        recovery.endClaims();
 
-        uint256 balanceBefore = refundAddress.balance;
+        uint256 balanceBefore = owner.balance;
         recovery.refund(address(0));
 
-        assertEq(refundAddress.balance - balanceBefore, 1 ether);
+        assertEq(owner.balance - balanceBefore, 1 ether);
         assertEq(address(recovery).balance, 0);
     }
 
     function test_RefundNativeCannotBeStolenByCaller() external {
         _fundNative(1 ether);
-        vm.warp(recovery.refundTimestamp());
+        vm.prank(owner);
+        recovery.endClaims();
 
-        uint256 refundBalanceBefore = refundAddress.balance;
+        uint256 refundBalanceBefore = owner.balance;
         uint256 thiefBalanceBefore = thief.balance;
 
         vm.prank(thief);
         recovery.refund(address(0));
 
-        assertEq(refundAddress.balance - refundBalanceBefore, 1 ether);
+        assertEq(owner.balance - refundBalanceBefore, 1 ether);
         assertEq(thief.balance, thiefBalanceBefore);
         assertEq(address(recovery).balance, 0);
     }
 
-    function testRevert_RefundBeforeRefundTimestamp() external {
+    function testRevert_RefundBeforeClaimsEnded() external {
         _fundToken(100 ether);
 
-        vm.expectRevert(RecoveryFund.RefundNotAvailable.selector);
+        vm.expectRevert(RecoveryFund.ClaimsNotEnded.selector);
         recovery.refund(address(token));
     }
 
-    function testRevert_ClaimErc20AfterRefundFailsTransfer() external {
+    function testRevert_ClaimErc20AfterClaimsEnded() external {
         _fundToken(100 ether);
 
         bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
         recovery.agreeToClaimConditions(claimant, signature);
 
-        vm.warp(recovery.refundTimestamp());
+        vm.prank(owner);
+        recovery.endClaims();
         recovery.refund(address(token));
 
-        vm.expectRevert(SafeTransferLib.TransferFailed.selector);
+        vm.expectRevert(RecoveryFund.ClaimsAreEnded.selector);
         vm.prank(claimant);
         recovery.claim(recipient, address(token), 40 ether);
 
         assertEq(recovery.recoveryAmount(claimant, address(token)), 100 ether);
-        assertEq(token.balanceOf(refundAddress), 100 ether);
+        assertEq(token.balanceOf(owner), 100 ether);
         assertEq(token.balanceOf(address(recovery)), 0);
         assertEq(token.balanceOf(recipient), 0);
     }
 
-    function testRevert_ClaimNativeAfterRefundFailsTransfer() external {
+    function testRevert_ClaimNativeAfterClaimsEnded() external {
         _fundNative(1 ether);
 
         bytes memory signature = _signClaim(CLAIMANT_PRIVATE_KEY);
         recovery.agreeToClaimConditions(claimant, signature);
 
-        vm.warp(recovery.refundTimestamp());
+        vm.prank(owner);
+        recovery.endClaims();
         recovery.refund(address(0));
 
         uint256 recipientBalanceBefore = recipient.balance;
 
-        vm.expectRevert(SafeTransferLib.ETHTransferFailed.selector);
+        vm.expectRevert(RecoveryFund.ClaimsAreEnded.selector);
         vm.prank(claimant);
         recovery.claim(recipient, address(0), 1 ether);
 
@@ -415,7 +529,7 @@ contract RecoveryFundTest is Test {
     }
 
     function _deployRecovery(RecoveryFund.Claim[] memory claimList) private returns (RecoveryFund) {
-        return new RecoveryFund(CLAIM_CONDITIONS, claimList, refundAddress, block.timestamp + 180 days);
+        return new RecoveryFund(CLAIM_CONDITIONS, claimList, owner);
     }
 
     function _emptyClaims() private pure returns (RecoveryFund.Claim[] memory claimList) {

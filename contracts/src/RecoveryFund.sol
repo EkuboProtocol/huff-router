@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
+import {Ownable} from "solady/auth/Ownable.sol";
 import {EIP712} from "solady/utils/EIP712.sol";
 import {Multicallable} from "solady/utils/Multicallable.sol";
 import {SafeTransferLib} from "solady/utils/SafeTransferLib.sol";
 import {SignatureCheckerLib} from "solady/utils/SignatureCheckerLib.sol";
 
-contract RecoveryFund is EIP712, Multicallable {
+contract RecoveryFund is EIP712, Multicallable, Ownable {
     struct Claim {
         address claimant;
         address token;
@@ -26,17 +27,14 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @notice EIP-712 struct hash for claim-conditions agreement.
     bytes32 public immutable claimConditionsStructHash;
 
-    /// @notice Address that receives unclaimed funds after `refundTimestamp`.
-    address public immutable refundAddress;
-
-    /// @notice Timestamp after which remaining funds can be refunded.
-    uint256 public immutable refundTimestamp;
-
     /// @notice Claimable recovery amount for each claimant and token.
     mapping(address claimant => mapping(address token => uint256 amount)) public recoveryAmount;
 
     /// @notice Whether a claimant has ever submitted a valid signature for the claim conditions.
     mapping(address claimant => bool signed) public hasSignedClaimConditions;
+
+    /// @notice Whether recovery claims have been permanently ended by the owner.
+    bool public claimsEnded;
 
     /// @notice Emitted once at deployment with the human-readable claim conditions.
     /// @param messageHash Hash of the emitted claim conditions.
@@ -61,23 +59,20 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @param amount Amount claimed.
     event RecoveryClaimed(address indexed claimant, address indexed recipient, address indexed token, uint256 amount);
 
-    /// @notice Emitted when unclaimed assets are refunded after the claim period.
+    /// @notice Emitted when unclaimed assets are refunded after claims have ended.
     /// @param caller Address that triggered the refund.
     /// @param token ERC20 token address, or `address(0)` for native ETH.
-    /// @param amount Amount refunded to `refundAddress`.
+    /// @param amount Amount refunded to the owner.
     event RecoveryRefunded(address indexed caller, address indexed token, uint256 amount);
+
+    /// @notice Emitted when the owner permanently ends recovery claims.
+    event ClaimsEnded();
 
     /// @notice Thrown when the claimant address is zero.
     error InvalidClaimant();
 
     /// @notice Thrown when a fund, claim, or refund amount is zero.
     error InvalidAmount();
-
-    /// @notice Thrown when the refund address is zero.
-    error InvalidRefundAddress();
-
-    /// @notice Thrown when the refund timestamp is not strictly in the future.
-    error InvalidRefundTimestamp();
 
     /// @notice Thrown when a claimant does not have enough funded balance for a token.
     error InsufficientRecoveryAmount();
@@ -88,22 +83,20 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @notice Thrown when the submitted signature is not valid for the claimant.
     error InvalidSignature();
 
-    /// @notice Thrown when a refund is attempted before the refund timestamp.
-    error RefundNotAvailable();
+    /// @notice Thrown when an action requires ended claims, but claims are still active.
+    error ClaimsNotEnded();
+
+    /// @notice Thrown when an action requires active claims, but claims have ended.
+    error ClaimsAreEnded();
 
     /// @notice Creates a recovery contract for a fixed set of claim conditions.
     /// @param claimConditions Human-readable conditions that are hashed into every claim.
     /// @param claims Claimant, token, and amount allocations recorded at deployment.
-    /// @param refundAddress_ Address that receives unclaimed funds after `refundTimestamp_`.
-    /// @param refundTimestamp_ Timestamp after which unclaimed funds can be refunded.
-    constructor(string memory claimConditions, Claim[] memory claims, address refundAddress_, uint256 refundTimestamp_)
-        payable {
-        if (refundAddress_ == address(0)) revert InvalidRefundAddress();
-        if (refundTimestamp_ <= block.timestamp) revert InvalidRefundTimestamp();
+    /// @param owner_ Address that can end claims and receives refunded funds, or zero to allow claims forever.
+    constructor(string memory claimConditions, Claim[] memory claims, address owner_) payable {
+        _initializeOwner(owner_);
 
         messageHash = keccak256(bytes(claimConditions));
-        refundAddress = refundAddress_;
-        refundTimestamp = refundTimestamp_;
         claimConditionsStructHash = keccak256(abi.encode(AGREE_TO_CLAIM_CONDITIONS_TYPEHASH, messageHash));
         emit ClaimConditions(messageHash, claimConditions);
 
@@ -147,6 +140,7 @@ contract RecoveryFund is EIP712, Multicallable {
     /// @param amount Amount to claim.
     function claim(address recipient, address token, uint256 amount) external {
         if (amount == 0) revert InvalidAmount();
+        if (claimsEnded) revert ClaimsAreEnded();
         if (!hasSignedClaimConditions[msg.sender]) revert ClaimConditionsNotSigned();
 
         uint256 available = recoveryAmount[msg.sender][token];
@@ -163,21 +157,28 @@ contract RecoveryFund is EIP712, Multicallable {
         emit RecoveryClaimed(msg.sender, recipient, token, amount);
     }
 
-    /// @notice Sends all remaining balance for a token to `refundAddress` after `refundTimestamp`.
+    /// @notice Permanently ends recovery claims and enables refunds of unclaimed assets.
+    function endClaims() external onlyOwner {
+        if (claimsEnded) revert ClaimsAreEnded();
+        claimsEnded = true;
+        emit ClaimsEnded();
+    }
+
+    /// @notice Sends all remaining balance for a token to the owner after claims have ended.
     /// @dev Use `address(0)` as `token` to refund native ETH.
     /// @param token ERC20 token address, or `address(0)` for native ETH.
     function refund(address token) external {
-        if (block.timestamp < refundTimestamp) revert RefundNotAvailable();
+        if (!claimsEnded) revert ClaimsNotEnded();
 
         uint256 amount;
         if (token == address(0)) {
             amount = address(this).balance;
             if (amount == 0) revert InvalidAmount();
-            SafeTransferLib.safeTransferETH(refundAddress, amount);
+            SafeTransferLib.safeTransferETH(owner(), amount);
         } else {
             amount = SafeTransferLib.balanceOf(token, address(this));
             if (amount == 0) revert InvalidAmount();
-            SafeTransferLib.safeTransfer(token, refundAddress, amount);
+            SafeTransferLib.safeTransfer(token, owner(), amount);
         }
 
         emit RecoveryRefunded(msg.sender, token, amount);
