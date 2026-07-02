@@ -75,6 +75,13 @@
 #define constant SWAP_FORWARD_SQRT_RATIO_LIMIT_OFFSET_PACKED = [SWAP_FORWARD_PARAMS_OFFSET]
 #define constant SWAP_FORWARD_IS_TOKEN1_OFFSET_PACKED = [SWAP_FORWARD_PARAMS_OFFSET] + [SQRT_RATIO_SIZE] + [HALFWORD_SIZE]
 
+#define constant VE33_FORWARD_CALL_TYPE_OFFSET = [SWAP_FORWARD_ARGS_OFFSET]
+#define constant VE33_FORWARD_TOKEN0_OFFSET = [SWAP_FORWARD_TOKEN0_OFFSET] + [WORD_SIZE]
+#define constant VE33_FORWARD_TOKEN1_OFFSET = [SWAP_FORWARD_TOKEN1_OFFSET] + [WORD_SIZE]
+#define constant VE33_FORWARD_CONFIG_OFFSET = [SWAP_FORWARD_CONFIG_OFFSET] + [WORD_SIZE]
+#define constant VE33_FORWARD_PARAMS_OFFSET = [SWAP_FORWARD_PARAMS_OFFSET] + [WORD_SIZE]
+#define constant VE33_FORWARD_ARGS_SIZE = [FORWARD_ARGS_SIZE] + [WORD_SIZE]
+
 #define constant SWAP_FORWARD_RETURN_OFFSET = [SWAP_FORWARD_TOKEN0_OFFSET_PACKED] // Offset that doesn't override the upper bits of token0
 #define constant SWAP_FORWARD_DELTA0_OFFSET = [SWAP_FORWARD_RETURN_OFFSET] - 0x10
 #define constant SWAP_FORWARD_DELTA1_OFFSET = [SWAP_FORWARD_RETURN_OFFSET]
@@ -90,7 +97,7 @@
 #define constant WRAPPED_TOKEN_ARGS_SIZE = [WRAPPED_TOKEN_AMOUNT_OFFSET] + [WORD_SIZE] - [WRAPPED_TOKEN_SELECTOR_OFFSET_PACKED]
 
 // The lowest offset we don't write to while swapping (i.e. not counting the settlement phase)
-#define constant MAX_ARGS_OFFSET = [SWAP_FORWARD_PARAMS_OFFSET] + [WORD_SIZE]
+#define constant MAX_ARGS_OFFSET = [VE33_FORWARD_PARAMS_OFFSET] + [WORD_SIZE]
 
 /* ICore#updateSavedBalances(address token0, address token1, bytes32 salt, int256 delta0, int256 delta1) */
 #define constant SAVE_SELECTOR_OFFSET_PACKED = 0x0
@@ -275,6 +282,35 @@
         __ERROR(SlippageCheckFailed) [SLIPPAGE_CHECK_FAILED_SELECTOR_OFFSET] mstore                              // [specifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         swap3 [SLIPPAGE_CHECK_FAILED_CALCULATED_AMOUNT_OFFSET] mstore                                        // [remainingMultiHopSwaps, withIntegrationFee, specifiedToken, calculatedToken, totalSpecified, specifiedToken, offset, specifiedAmountBytes, specifiedAmountBits]
         [SLIPPAGE_CHECK_FAILED_ARGS_SIZE] [SLIPPAGE_CHECK_FAILED_SELECTOR_OFFSET] revert
+
+    forwardOrVe33ArgsSubroutineLbl:                                        // [returnDest, retOffset, retSize]
+        [FORWARD_TO_OFFSET] mload [VE33] eq ve33ForwardArgsSubroutineLbl jumpi
+            [FORWARD_ARGS_SIZE] [FORWARD_SELECTOR_OFFSET_PACKED]            // [argsOffset, argsSize, returnDest, retOffset, retSize]
+            swap1 swap2 jump
+        ve33ForwardArgsSubroutineLbl:                                      // [returnDest, retOffset, retSize]
+            PREFIX_VE33_SWAP_CALL_TYPE()                                   // [returnDest, retOffset, retSize]
+            [VE33_FORWARD_ARGS_SIZE] [FORWARD_SELECTOR_OFFSET_PACKED]       // [argsOffset, argsSize, returnDest, retOffset, retSize]
+            swap1 swap2 jump
+
+    forwardExtensionSetupSubroutineLbl:                                    // [returnDest, hopWord, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        swap1                                                               // [hopWord, returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        // Select MEV-capture or Ve33 based on the hop type. Both use the same compact
+        // hop payload and forward through Core.
+        dup1 0x0 byte 0x06 eq                                               // [isVe33, hopWord, returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        __RIGHTPAD([VE33]) __RIGHTPAD([MEV_CAPTURE]) xor mul                // [addressDelta, hopWord, returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        __RIGHTPAD([MEV_CAPTURE]) xor                                       // [forwardTargetPadded, hopWord, returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        // `shl` to get rid of `hopType` and `skipAhead`, `shr` to fill in the first
+        // 20 bytes (the extension address) with zeros, then add the selected address.
+        swap1 0x10 shl 0xa0 shr                                             // [configWithoutExtension, forwardTargetPadded, returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        dup2 or                                                             // [config, forwardTargetPadded, returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        [SWAP_FORWARD_CONFIG_OFFSET] mstore                                 // [forwardTargetPadded, returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+
+        STORE_FORWARD_SELECTOR()                                            // [forwardTargetPadded, returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        dup1 0x60 shr [FORWARD_TO_OFFSET] mstore                            // [forwardTargetPadded, returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        pop                                                                 // [returnDest, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+        jump
 }
 
 #define macro NO_SQRT_RATIO_EXACT_IN() = takes(9) returns(0) {
@@ -546,21 +582,13 @@
     // takes: [hopWord, nextSpecifiedAmount, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     STORE_AMOUNT_AND_SKIP_AHEAD_PRESERVE_WORD()                             // [hopWord, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    // `shl` to get rid of `hopType` and `skipAhead`, `shr` to fill in the first
-    // 20 bytes (the extension address) with zeros, then add extension address
-    0x10 shl 0xa0 shr                                                       // [configWithoutExtension, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    __RIGHTPAD([MEV_CAPTURE]) or                                             // [config, additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    [SWAP_FORWARD_CONFIG_OFFSET] mstore                                             // [additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-
-    STORE_FORWARD_SELECTOR()                                                // [additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
-    [MEV_CAPTURE] [FORWARD_TO_OFFSET] mstore                                 // [additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
+    FORWARD_EXTENSION_SETUP()                                               // [additionalHops, offset, nextSpecifiedToken, remainingMultiHopSwaps, withIntegrationFee, totalCalculated, calculatedToken, totalSpecified, specifiedToken, calculatedAmountThreshold, specifiedAmountBytes, specifiedAmountBits]
 
     EXECUTE_SWAP_CHECK_LAST(
         MEV_CAPTURE_EXTENSION_CALLDATA_LENGTH,
         <sqrtRatioLimitIsToken0>,
         <sqrtRatioLimitIsToken1>,
-        PUSH_FORWARD_CALL_OFFSET_AND_LENGTH(),
+        PUSH_FORWARD_OR_VE33_CALL_OFFSET_AND_LENGTH(),
         <settleBalances>,
         multiHopLbl,
     )
@@ -1237,6 +1265,25 @@
 #define macro PUSH_FORWARD_CALL_OFFSET_AND_LENGTH() = {
     [FORWARD_ARGS_SIZE] [FORWARD_SELECTOR_OFFSET_PACKED]                    // [argsOffset, argsSize, ...]
 }
+#define macro PREFIX_VE33_SWAP_CALL_TYPE() = {
+    [SWAP_FORWARD_PARAMS_OFFSET] mload [VE33_FORWARD_PARAMS_OFFSET] mstore
+    [SWAP_FORWARD_CONFIG_OFFSET] mload [VE33_FORWARD_CONFIG_OFFSET] mstore
+    [SWAP_FORWARD_TOKEN1_OFFSET] mload [VE33_FORWARD_TOKEN1_OFFSET] mstore
+    [SWAP_FORWARD_TOKEN0_OFFSET] mload [VE33_FORWARD_TOKEN0_OFFSET] mstore
+    0x0 [VE33_FORWARD_CALL_TYPE_OFFSET] mstore
+}
+#define macro PUSH_VE33_FORWARD_CALL_OFFSET_AND_LENGTH() = {
+    PREFIX_VE33_SWAP_CALL_TYPE()
+    [VE33_FORWARD_ARGS_SIZE] [FORWARD_SELECTOR_OFFSET_PACKED]               // [argsOffset, argsSize, ...]
+}
+#define macro PUSH_FORWARD_OR_VE33_CALL_OFFSET_AND_LENGTH() = {
+    forwardOrVe33ArgsReturnLbl forwardOrVe33ArgsSubroutineLbl jump
+    forwardOrVe33ArgsReturnLbl:
+}
+#define macro FORWARD_EXTENSION_SETUP() = {
+    forwardExtensionSetupReturnLbl forwardExtensionSetupSubroutineLbl jump
+    forwardExtensionSetupReturnLbl:
+}
 
 #define table SAVE_DATA {
     [UPDATE_SAVED_BALANCES_SELECTOR]                                        // selector
@@ -1271,6 +1318,7 @@
     mevCaptureExtension0Lbl
     unknownExtension0Lbl
     wrappedToken0Lbl
+    mevCaptureExtension0Lbl
 }
 
 #define jumptable__packed HOP_TYPE1_TABLE {
@@ -1280,6 +1328,7 @@
     mevCaptureExtension1Lbl
     unknownExtension1Lbl
     wrappedToken1Lbl
+    mevCaptureExtension1Lbl
 }
 
 #define jumptable__packed HOP_TYPE2_TABLE {
@@ -1289,6 +1338,7 @@
     mevCaptureExtension2Lbl
     unknownExtension2Lbl
     wrappedToken2Lbl
+    mevCaptureExtension2Lbl
 }
 
 #define jumptable__packed HOP_TYPE3_TABLE {
@@ -1298,4 +1348,5 @@
     mevCaptureExtension3Lbl
     unknownExtension3Lbl
     wrappedToken3Lbl
+    mevCaptureExtension3Lbl
 }

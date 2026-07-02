@@ -2,7 +2,7 @@
 pragma solidity ^0.8.30;
 
 import {HuffRouterLib, IHuffRouter} from "../src/HuffRouter.sol";
-import {CORE_ADDRESS, MEV_CAPTURE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS} from "../src/addresses.sol";
+import {CORE_ADDRESS, MEV_CAPTURE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS, VE33_ADDRESS} from "../src/addresses.sol";
 
 import {Positions} from "ekubo/Positions.sol";
 import {ICore} from "ekubo/interfaces/ICore.sol";
@@ -100,6 +100,7 @@ contract HuffRouterTest is Test {
         deployCodeTo("v3-artifacts/MEVCapture.json", abi.encode(CORE_ADDRESS), MEV_CAPTURE_ADDRESS);
         deployCodeTo("v3-artifacts/Oracle.json", abi.encode(CORE_ADDRESS), ORACLE_ADDRESS);
         deployCodeTo("v3-artifacts/TWAMM.json", abi.encode(CORE_ADDRESS), TWAMM_ADDRESS);
+        deployCodeTo("v3-artifacts/Ve33.json", abi.encode(CORE_ADDRESS, _ERC_20_FIRST_ADDRESS), VE33_ADDRESS);
 
         positions = new Positions(CORE, address(this), 0, 1);
 

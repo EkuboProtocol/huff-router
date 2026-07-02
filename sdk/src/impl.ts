@@ -1,5 +1,5 @@
 import { ByteArray, bytesToHex, concatBytes, getAddress, Hex, hexToBigInt, hexToBytes, maxInt128, maxUint16, maxUint256, maxUint8, minInt128, numberToBytes, numberToHex, padBytes, padHex, size, sliceHex, toBytes, zeroAddress } from "viem";
-import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_CAPTURE_ADDRESS } from "./extensions";
+import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_CAPTURE_ADDRESS, VE33_ADDRESS } from "./extensions";
 import { Parameters } from ".";
 import { Tokens } from "./tokens";
 
@@ -234,6 +234,16 @@ export function generateCalldataImpl(
                             calldata.push(
                                 new Uint8Array([
                                     3,
+                                    skipAhead,
+                                ]),
+                                fee,
+                                tickSpacing,
+                            );
+                            break;
+                        case VE33_ADDRESS:
+                            calldata.push(
+                                new Uint8Array([
+                                    6,
                                     skipAhead,
                                 ]),
                                 fee,

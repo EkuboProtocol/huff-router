@@ -1,6 +1,6 @@
 import { Address, concatHex, encodeAbiParameters, getAbiItem, Hex, hexToBigInt, maxUint256, numberToHex, parseEther, parseUnits, zeroAddress } from "viem";
 import { huffRouterTestAbi } from "./abi.js";
-import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions.js";
+import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS, VE33_ADDRESS } from "../src/extensions.js";
 import { generateCalldata, IntegrationFee, Hop } from "../src/index.js";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl.js";
 import type { DeepWritable, ElementOf } from "ts-essentials";
@@ -44,6 +44,7 @@ const STABLESWAP_CONFIG = compressed({ extension: zeroAddress, fee: 368934881474
 const FULL_RANGE_CONFIG = compressed({ extension: zeroAddress, fee: 92233720368547n, poolTypeConfig: FULL_RANGE_POOL_TYPE_CONFIG });
 const TWAMM_CONFIG = compressed({ extension: TWAMM_ADDRESS, fee: 9223372036854775n, poolTypeConfig: FULL_RANGE_POOL_TYPE_CONFIG });
 const MEV_CAPTURE_CONFIG = compressed({ extension: MEV_CAPTURE_ADDRESS, fee: 1844674407370954n, poolTypeConfig: concentratedPoolTypeConfig(1000) });
+const VE33_CONFIG = compressed({ extension: VE33_ADDRESS, fee: 0n, poolTypeConfig: concentratedPoolTypeConfig(1024) });
 
 interface PoolConfigWithName {
     poolConfig: Hex,
@@ -71,6 +72,11 @@ const NATIVE_ERC20_CONFIGS: PoolConfigWithName[] = [
         poolConfig: MEV_CAPTURE_CONFIG,
         asUnknownExtension: false,
         extensionName: "mevCapture",
+    },
+    {
+        poolConfig: VE33_CONFIG,
+        asUnknownExtension: false,
+        extensionName: "ve33",
     },
     {
         poolConfig: STABLESWAP_CONFIG,
