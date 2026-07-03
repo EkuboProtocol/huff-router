@@ -1,8 +1,8 @@
 import { readdirSync, readFileSync } from "node:fs";
 import { describe, expect, test } from "vitest";
 import TOKENS from "../../tokens/31337.json" with {"type": "json"};
-import { concatHex, Hex, IntegerOutOfRangeError, isAddress, padHex, parseEther, SizeExceedsPaddingSizeError } from "viem";
-import { generateCalldata, Parameters, Swap } from "../src/index.js";
+import { concatHex, Hex, IntegerOutOfRangeError, isAddress, numberToHex, padHex, parseEther, SizeExceedsPaddingSizeError } from "viem";
+import { generateCalldata, Parameters, Swap, SwapType } from "../src/index.js";
 import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
 import { ERROR_CALCULATED_AMOUNT_THRESHOLD_RANGE, ERROR_CALCULATED_AMOUNT_THRESHOLD_SIGN, ERROR_CALCULATED_TOKEN_MISMATCH, ERROR_HOP_CONNECTION, ERROR_INVALID_SQRT_RATIO_LIMIT, ERROR_MULTIHOP_SWAPS_LENGTH, ERROR_SKIP_AHEAD_RANGE, ERROR_SPECIFIED_AMOUNT_MIXED_SIGN, ERROR_SPECIFIED_AMOUNT_RANGE, ERROR_HOPS_LENGTH, ERROR_TOKEN0_TOKEN1_ORDER, MAX_CALCULATED_AMOUNT_THRESHOLD, MAX_INTEGRATION_FEE, MAX_MULTIHOP_LENGTH, MAX_SKIP_AHEAD, MAX_SPECIFIED_AMOUNT, MAX_SQRT_RATIO, MAX_HOP_LENGTH, MIN_CALCULATED_AMOUNT_THRESHOLD, MIN_SPECIFIED_AMOUNT, MIN_SQRT_RATIO, ERROR_UNDERLYING_EQ_WRAPPED } from "../src/impl.js";
 import { MAX_CONTRACT_SIZE, MAX_TOKEN_LIST_LENGTH, TEST_CHAIN_ID } from "../shared.js";
@@ -10,12 +10,23 @@ import { MAX_CONTRACT_SIZE, MAX_TOKEN_LIST_LENGTH, TEST_CHAIN_ID } from "../shar
 const VALID_ADDRESS = padHex("0x1", { size: 20 });
 const OVERSIZED_ADDRESS = concatHex([VALID_ADDRESS, "0xff"]);
 const TOKENS_DIR = new URL("../../tokens/", import.meta.url);
+const CONCENTRATED_POOL_TYPE_CONFIG = 0x80000001n;
+const VE33_COMPATIBLE_EXTENSION = "0xd100000000000000000000000000000000000001";
+
+function poolConfig(extension: Hex, fee = 0n, poolTypeConfig = CONCENTRATED_POOL_TYPE_CONFIG): Hex {
+    return concatHex([
+        extension,
+        numberToHex(fee, { size: 8 }),
+        numberToHex(poolTypeConfig, { size: 4 }),
+    ]);
+}
 
 function simpleParams({
-    exactOut, poolConfig: poolConfig
+    exactOut, poolConfig: poolConfig, swapType = "extension"
 }: {
     exactOut?: boolean,
     poolConfig?: Hex,
+    swapType?: SwapType,
 } = {}) {
     let specifiedAmount = parseEther("1");
 
@@ -37,6 +48,7 @@ function simpleParams({
                             token1: ERC20_FIRST_ADDRESS,
                             config: poolConfig ?? ORACLE_CONFIG,
                         },
+                        swapType,
                     } as Swap
                 ],
             }
@@ -135,8 +147,9 @@ describe("hops", () => {
                 poolKey: {
                     token0: NATIVE_TOKEN_ADDRESS,
                     token1: ERC20_FIRST_ADDRESS,
-                    config: ORACLE_CONFIG,
-                }
+                config: ORACLE_CONFIG,
+                },
+                swapType: "extension",
             });
         }
 
@@ -188,6 +201,45 @@ describe("hops", () => {
                     params.multiHops[0].hops[0].poolKey.config = padHex("0x", { size: 33 });
 
                     expect(() => generateCalldata(params)).toThrow(SizeExceedsPaddingSizeError);
+                });
+            });
+
+            describe("ve33", () => {
+                test("uses compact ve33 encoding when swapType is ve33", () => {
+                    const params = simpleParams({ poolConfig: poolConfig(VE33_COMPATIBLE_EXTENSION) });
+                    params.multiHops[0].hops[0].swapType = "ve33";
+
+                    expect(generateCalldata(params)).toContain(
+                        concatHex([
+                            "0x0400",
+                            VE33_COMPATIBLE_EXTENSION,
+                            numberToHex(CONCENTRATED_POOL_TYPE_CONFIG, { size: 4 }),
+                        ]).slice(2),
+                    );
+                });
+
+                test("uses extension encoding when swapType is extension", () => {
+                    const params = simpleParams({
+                        poolConfig: poolConfig(VE33_COMPATIBLE_EXTENSION),
+                        swapType: "extension",
+                    });
+                    const calldata = generateCalldata(params);
+
+                    expect(calldata).toContain(
+                        concatHex([
+                            "0x0100",
+                            VE33_COMPATIBLE_EXTENSION,
+                            numberToHex(0n, { size: 8 }),
+                            numberToHex(CONCENTRATED_POOL_TYPE_CONFIG, { size: 4 }),
+                        ]).slice(2),
+                    );
+                    expect(calldata).not.toContain(
+                        concatHex([
+                            "0x0400",
+                            VE33_COMPATIBLE_EXTENSION,
+                            numberToHex(CONCENTRATED_POOL_TYPE_CONFIG, { size: 4 }),
+                        ]).slice(2),
+                    );
                 });
             });
         });

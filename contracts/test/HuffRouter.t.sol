@@ -82,7 +82,7 @@ contract HuffRouterTest is Test {
     // cast keccak "HuffRouterTest#DISABLE_RECEIVE_SLOT"
     uint256 private constant _DISABLE_RECEIVE_SLOT = 0x27095381dc94d25f5c191482faa73780fd308183456a62f43e8833e46ea4a541;
     uint256 private constant _MAX_CODE_SIZE = 24_576; // https://eips.ethereum.org/EIPS/eip-170
-    uint256 private constant _MINIMAL_CALLDATA_LENGTH = 10;
+    uint256 private constant _MINIMAL_CALLDATA_LENGTH = 23;
 
     IHuffRouter private huffRouter;
     ICore private constant CORE = ICore(CORE_ADDRESS);
@@ -353,7 +353,7 @@ contract HuffRouterTest is Test {
             bytes20(_ERC_20_FIRST_ADDRESS),
             bytes20(_ERC_20_FIRST_ADDRESS),
             bytes4(specifiedAmount),
-            hex"000501",
+            hex"000301",
             bytes20(attacker),
             bytes12(0),
             bytes20(victim)
@@ -382,7 +382,7 @@ contract HuffRouterTest is Test {
             bytes20(_ERC_20_FIRST_ADDRESS),
             bytes20(_ERC_20_FIRST_ADDRESS),
             bytes4(specifiedAmount),
-            hex"000501",
+            hex"000301",
             bytes20(attacker),
             bytes12(0),
             bytes20(victim)
@@ -442,6 +442,27 @@ contract HuffRouterTest is Test {
             1,
             "caller read"
         );
+    }
+
+    function test_StaticVe33Surface() external view {
+        string memory lockedSwap = vm.readFile("src/locked/swap.huff");
+
+        assertEq(
+            _countOccurrences(lockedSwap, "PUSH_FORWARD_OR_VE33_CALL_OFFSET_AND_LENGTH(),"), 1, "forward helper"
+        );
+        assertEq(_countOccurrences(lockedSwap, "[VE33_FORWARD_FLAG_OFFSET] mstore"), 1, "ve33 flag write");
+        assertEq(
+            _countOccurrences(lockedSwap, "[VE33_FORWARD_FLAG_OFFSET] mload ve33ForwardArgsSubroutineLbl jumpi"),
+            1,
+            "ve33 flag read"
+        );
+        assertEq(_countOccurrences(lockedSwap, "PUSH_FORWARD_CALL_OFFSET_AND_LENGTH"), 0, "old mev helper");
+        assertEq(_countOccurrences(lockedSwap, "PUSH_VE33_FORWARD_CALL_OFFSET_AND_LENGTH"), 0, "old ve33 helper");
+        assertEq(_countOccurrences(lockedSwap, "ORACLE_EXTENSION"), 0, "old oracle path");
+        assertEq(_countOccurrences(lockedSwap, "TWAMM_EXTENSION"), 0, "old twamm path");
+        assertEq(_countOccurrences(lockedSwap, "0x0 byte 0x06 eq"), 0, "old ve33 hop type");
+        assertEq(_countOccurrences(lockedSwap, "0x0 byte 0xd1 eq"), 0, "call-points byte check");
+        assertEq(_countOccurrences(lockedSwap, "[VE33]"), 0, "ve33 address constant");
     }
 
     function test_claimIntegrationFeesNative() external {
@@ -595,23 +616,7 @@ contract HuffRouterTest is Test {
     }
 
     function _countOccurrences(string memory haystack, string memory needle) private pure returns (uint256 count) {
-        bytes memory haystackBytes = bytes(haystack);
-        bytes memory needleBytes = bytes(needle);
-
-        if (needleBytes.length == 0 || haystackBytes.length < needleBytes.length) return 0;
-
-        for (uint256 i = 0; i <= haystackBytes.length - needleBytes.length; i++) {
-            bool matched = true;
-
-            for (uint256 j = 0; j < needleBytes.length; j++) {
-                if (haystackBytes[i + j] != needleBytes[j]) {
-                    matched = false;
-                    break;
-                }
-            }
-
-            if (matched) count++;
-        }
+        return LibBytes.indicesOf(bytes(haystack), bytes(needle)).length;
     }
 
     receive() external payable {

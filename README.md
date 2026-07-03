@@ -1,17 +1,17 @@
 # Ekubo HuffRouter
 
-This repository contains the Ekubo HuffRouter smart contracts, the TypeScript SDK for generating HuffRouter calldata, shared token lists, and incident-analysis scripts used to investigate the approval-draining calldata parsing bug documented in [incident-report](./incident-report/README.md).
+This repository contains the Ekubo HuffRouter smart contracts, the TypeScript SDK for generating HuffRouter calldata, and shared token lists.
 
 ## Repository Layout
 
 - `contracts/`
   Huff and Solidity contract sources, Foundry tests, deployment scripts, and generated artifacts.
 - `sdk/`
-  TypeScript SDK for generating HuffRouter calldata, plus analysis and maintenance scripts.
+  TypeScript SDK for generating HuffRouter calldata, plus maintenance scripts.
 - `tokens/`
-  Shared token lists used by deployments, calldata decoding, and analysis tooling.
+  Shared token lists used by deployments and the SDK.
 - `incident-report/`
-  Incident write-ups plus checked-in analysis artifacts copied from local `sdk/incident-analysis` runs.
+  Incident write-ups plus checked-in analysis artifacts.
 
 ## Prerequisites
 
@@ -48,44 +48,23 @@ Run the SDK tests:
 npm test
 ```
 
-## Calldata Utilities
+## SDK Scripts
 
 Useful scripts in [sdk/scripts](./sdk/scripts):
 
-- [decode-calldata.ts](./sdk/scripts/decode-calldata.ts)
-  Decodes HuffRouter calldata for inspection.
 - [update-token-lists.ts](./sdk/scripts/update-token-lists.ts)
   Refreshes token list inputs used by the SDK and deployment flow.
-- [incident-analysis.ts](./sdk/scripts/incident-analysis.ts)
-  Scans historical router activity to recover exploit victims and losses for the approval-draining incident, and checks for still-live vulnerable approvals.
 
-Decode calldata:
+Refresh token lists:
 
 ```bash
 cd sdk
-npx tsx scripts/decode-calldata.ts <calldata> [chainId]
+npm run update-token-lists
 ```
 
-## Approval-Drain Analysis
+## Incident Report
 
-The approval-drain analysis entrypoint is [sdk/scripts/incident-analysis.ts](./sdk/scripts/incident-analysis.ts). It currently targets the affected mainnet router deployments and writes fresh reports under `sdk/incident-analysis/`.
-
-A checked-in snapshot of the current mainnet analysis lives beside the postmortem in [incident-report](./incident-report/README.md).
-
-Required environment:
-
-```bash
-export MAINNET_RPC_URL=...
-```
-
-Run the analysis:
-
-```bash
-cd sdk
-npm run incident-analysis
-```
-
-The checked-in snapshot includes:
+A checked-in snapshot of the approval-drain analysis lives beside the postmortem in [incident-report](./incident-report/README.md). It includes:
 
 - `incident-report/incident-rows.csv`
 - `incident-report/summary-by-victim.json`
@@ -93,9 +72,7 @@ The checked-in snapshot includes:
 - `incident-report/disqualified-victims.json`
 - `incident-report/vulnerable-approvals.json`
 
-Those files are copied from the corresponding runtime outputs in `sdk/incident-analysis/`, which remain gitignored.
-
 ## Notes
 
 - The SDK package metadata is in [sdk/package.json](./sdk/package.json).
-- Shared token data is intentionally versioned in this repository because both deployment-time code generation and incident analysis depend on historical token lists.
+- Shared token data is intentionally versioned in this repository because both deployment-time code generation and SDK calldata generation depend on it.

@@ -28,6 +28,15 @@ export interface PoolKey {
 }
 
 /**
+ * Selects a router swap encoding that cannot be inferred from the pool config alone.
+ */
+export type SwapType =
+  | "base"
+  | "extension"
+  | "mev-capture"
+  | "ve33";
+
+/**
  * Describes a swap on a liquidity pool
  */
 export interface Swap {
@@ -37,6 +46,16 @@ export interface Swap {
    * The pool key of the pool that should be swapped on
    */
   poolKey: PoolKey;
+  /**
+   * Selects the router swap encoding.
+   *
+   * @remarks
+   * This is explicit because multiple extension deployments can share behavior.
+   * Use `"extension"` for non-zero-extension pools that use regular Core swaps.
+   * Use `"ve33"` for Ve33-compatible forwarded extensions, regardless of the concrete
+   * extension address.
+   */
+  swapType: SwapType;
   /**
    * The `skipAhead` parameter of a swap
    *
