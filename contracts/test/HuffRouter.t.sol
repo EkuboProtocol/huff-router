@@ -82,7 +82,7 @@ contract HuffRouterTest is Test {
     // cast keccak "HuffRouterTest#DISABLE_RECEIVE_SLOT"
     uint256 private constant _DISABLE_RECEIVE_SLOT = 0x27095381dc94d25f5c191482faa73780fd308183456a62f43e8833e46ea4a541;
     uint256 private constant _MAX_CODE_SIZE = 24_576; // https://eips.ethereum.org/EIPS/eip-170
-    uint256 private constant _MINIMAL_CALLDATA_LENGTH = 10;
+    uint256 private constant _MINIMAL_CALLDATA_LENGTH = 23;
 
     IHuffRouter private huffRouter;
     ICore private constant CORE = ICore(CORE_ADDRESS);
@@ -92,6 +92,7 @@ contract HuffRouterTest is Test {
     address private constant _ERC_20_FIRST_ADDRESS = 0x1111111111111111111111111111111111111111;
     address private constant _ERC_20_SECOND_ADDRESS = 0x2222222222222222222222222222222222222222;
     address private constant _TOKEN_WRAPPER_ADDRESS = 0x3333333333333333333333333333333333333333;
+    address private constant _VE33_ADDRESS = 0xd100000000000000000000000000000000000000;
 
     function setUp() public {
         huffRouter = HuffRouterLib.deploy(vm);
@@ -100,6 +101,7 @@ contract HuffRouterTest is Test {
         deployCodeTo("v3-artifacts/MEVCapture.json", abi.encode(CORE_ADDRESS), MEV_CAPTURE_ADDRESS);
         deployCodeTo("v3-artifacts/Oracle.json", abi.encode(CORE_ADDRESS), ORACLE_ADDRESS);
         deployCodeTo("v3-artifacts/TWAMM.json", abi.encode(CORE_ADDRESS), TWAMM_ADDRESS);
+        deployCodeTo("v3-artifacts/Ve33.json", abi.encode(CORE_ADDRESS, _ERC_20_FIRST_ADDRESS), _VE33_ADDRESS);
 
         positions = new Positions(CORE, address(this), 0, 1);
 
@@ -351,7 +353,7 @@ contract HuffRouterTest is Test {
             bytes20(_ERC_20_FIRST_ADDRESS),
             bytes20(_ERC_20_FIRST_ADDRESS),
             bytes4(specifiedAmount),
-            hex"000501",
+            hex"000301",
             bytes20(attacker),
             bytes12(0),
             bytes20(victim)
@@ -380,7 +382,7 @@ contract HuffRouterTest is Test {
             bytes20(_ERC_20_FIRST_ADDRESS),
             bytes20(_ERC_20_FIRST_ADDRESS),
             bytes4(specifiedAmount),
-            hex"000501",
+            hex"000301",
             bytes20(attacker),
             bytes12(0),
             bytes20(victim)
@@ -388,6 +390,11 @@ contract HuffRouterTest is Test {
 
         uint256 attackerBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker);
         uint256 victimBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(victim);
+
+        vm.expectCall(
+            _ERC_20_FIRST_ADDRESS,
+            abi.encodeCall(IERC20.transferFrom, (attacker, address(CORE), uint256(specifiedAmount)))
+        );
 
         (bool success, bytes memory returndataRaw) = address(huffRouter).call(data);
 
@@ -398,13 +405,64 @@ contract HuffRouterTest is Test {
         assertEq(returndata.calculatedAmount, specifiedAmount, "calculatedAmount");
         assertEq(returndata.integrationFee, 0, "integrationFee");
         assertEq(
-            IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker),
-            attackerBalanceBefore,
-            "unexpected attacker balance"
+            IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker), attackerBalanceBefore, "unexpected attacker balance"
+        );
+        assertEq(IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(victim), victimBalanceBefore, "unexpected victim balance");
+    }
+
+    function test_StaticTransferFromSurface() external view {
+        string memory lockedSwap = vm.readFile("src/locked/swap.huff");
+        string memory lockSwap = vm.readFile("src/lock/swap.huff");
+
+        assertEq(_countOccurrences(lockedSwap, "transferFrom(address,address,uint256)"), 1, "selector");
+        assertEq(_countOccurrences(lockedSwap, "transfer(address,uint256)"), 1, "transfer selector");
+        assertEq(_countOccurrences(lockedSwap, "transferFromLbl"), 2, "transferFrom branch");
+        assertEq(_countOccurrences(lockedSwap, "[TRANSFER_FROM_FROM_OFFSET] mstore"), 1, "from writes");
+        assertEq(
+            _countOccurrences(
+                lockSwap,
+                "caller                                                                      // [transferFrom]"
+            ),
+            1,
+            "caller source"
         );
         assertEq(
-            IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(victim), victimBalanceBefore, "unexpected victim balance"
+            _countOccurrences(
+                lockSwap,
+                "calldatasize add                                                            // [transferFromOffset, transferFrom]"
+            ),
+            1,
+            "caller write"
         );
+        assertEq(
+            _countOccurrences(
+                lockedSwap,
+                "[WORD_SIZE] calldatasize sub calldataload                               // [transferFrom, ...]"
+            ),
+            1,
+            "caller read"
+        );
+    }
+
+    function test_StaticVe33Surface() external view {
+        string memory lockedSwap = vm.readFile("src/locked/swap.huff");
+
+        assertEq(
+            _countOccurrences(lockedSwap, "PUSH_FORWARD_OR_VE33_CALL_OFFSET_AND_LENGTH(),"), 1, "forward helper"
+        );
+        assertEq(_countOccurrences(lockedSwap, "[VE33_FORWARD_FLAG_OFFSET] mstore"), 1, "ve33 flag write");
+        assertEq(
+            _countOccurrences(lockedSwap, "[VE33_FORWARD_FLAG_OFFSET] mload ve33ForwardArgsSubroutineLbl jumpi"),
+            1,
+            "ve33 flag read"
+        );
+        assertEq(_countOccurrences(lockedSwap, "PUSH_FORWARD_CALL_OFFSET_AND_LENGTH"), 0, "old mev helper");
+        assertEq(_countOccurrences(lockedSwap, "PUSH_VE33_FORWARD_CALL_OFFSET_AND_LENGTH"), 0, "old ve33 helper");
+        assertEq(_countOccurrences(lockedSwap, "ORACLE_EXTENSION"), 0, "old oracle path");
+        assertEq(_countOccurrences(lockedSwap, "TWAMM_EXTENSION"), 0, "old twamm path");
+        assertEq(_countOccurrences(lockedSwap, "0x0 byte 0x06 eq"), 0, "old ve33 hop type");
+        assertEq(_countOccurrences(lockedSwap, "0x0 byte 0xd1 eq"), 0, "call-points byte check");
+        assertEq(_countOccurrences(lockedSwap, "[VE33]"), 0, "ve33 address constant");
     }
 
     function test_claimIntegrationFeesNative() external {
@@ -555,6 +613,10 @@ contract HuffRouterTest is Test {
 
     function _approvePositions(address token) private returns (uint256 value) {
         value = _approve(token, address(positions), _POSITION_AMOUNT);
+    }
+
+    function _countOccurrences(string memory haystack, string memory needle) private pure returns (uint256 count) {
+        return LibBytes.indicesOf(bytes(haystack), bytes(needle)).length;
     }
 
     receive() external payable {

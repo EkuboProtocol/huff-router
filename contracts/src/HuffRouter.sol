@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: UNLICENSED
 pragma solidity ^0.8.30;
 
-import {CORE_ADDRESS, MEV_CAPTURE_ADDRESS, ORACLE_ADDRESS, TWAMM_ADDRESS} from "./addresses.sol";
+import {CORE_ADDRESS, MEV_CAPTURE_ADDRESS} from "./addresses.sol";
 import {ILocker} from "ekubo/interfaces/IFlashAccountant.sol";
 import {VmSafe} from "forge-std/Vm.sol";
 import {HuffNeoConfig} from "foundry-huff-neo/HuffNeoConfig.sol";
@@ -40,7 +40,6 @@ library HuffRouterLib {
     function _config(VmSafe vm) private returns (HuffNeoConfig) {
         // We don't use HuffNeoDeployer because of https://github.com/foundry-rs/foundry/issues/6215
         HuffNeoConfig cfg = new HuffNeoConfig().set_broadcast(true).with_addr_constant("CORE", CORE_ADDRESS)
-            .with_addr_constant("ORACLE", ORACLE_ADDRESS).with_addr_constant("TWAMM", TWAMM_ADDRESS)
             .with_addr_constant("MEV_CAPTURE", MEV_CAPTURE_ADDRESS);
 
         string memory jsonContents = vm.readFile(string.concat("../tokens/", vm.toString(block.chainid), ".json"));

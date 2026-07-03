@@ -1,7 +1,6 @@
 import { Address, concatHex, encodeAbiParameters, getAbiItem, Hex, hexToBigInt, maxUint256, numberToHex, parseEther, parseUnits, zeroAddress } from "viem";
 import { huffRouterTestAbi } from "./abi.js";
-import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions.js";
-import { generateCalldata, IntegrationFee, Hop } from "../src/index.js";
+import { generateCalldata, IntegrationFee, Hop, SwapType } from "../src/index.js";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl.js";
 import type { DeepWritable, ElementOf } from "ts-essentials";
 import { NATIVE_TOKEN_ADDRESS, INTEGRATOR, ORACLE_CONFIG, ERC20_FIRST_ADDRESS, ERC20_SECOND_ADDRESS, TOKEN_WRAPPER_ADDRESS } from "./shared.js";
@@ -14,6 +13,9 @@ const INTEGRATION_FEE: IntegrationFee = {
     integrator: INTEGRATOR,
     fee: 2 ** 15, // 50%
 };
+const TWAMM_ADDRESS = "0xd4F1060cB9c1A13e1d2d20379b8aa2cF7541eD9b" as const;
+const MEV_CAPTURE_ADDRESS = "0x5555fF9Ff2757500BF4EE020DcfD0210CFfa41Be" as const;
+const VE33_ADDRESS = "0xd100000000000000000000000000000000000000" as const;
 
 interface PoolConfig {
     extension: Address;
@@ -44,38 +46,44 @@ const STABLESWAP_CONFIG = compressed({ extension: zeroAddress, fee: 368934881474
 const FULL_RANGE_CONFIG = compressed({ extension: zeroAddress, fee: 92233720368547n, poolTypeConfig: FULL_RANGE_POOL_TYPE_CONFIG });
 const TWAMM_CONFIG = compressed({ extension: TWAMM_ADDRESS, fee: 9223372036854775n, poolTypeConfig: FULL_RANGE_POOL_TYPE_CONFIG });
 const MEV_CAPTURE_CONFIG = compressed({ extension: MEV_CAPTURE_ADDRESS, fee: 1844674407370954n, poolTypeConfig: concentratedPoolTypeConfig(1000) });
+const VE33_CONFIG = compressed({ extension: VE33_ADDRESS, fee: 0n, poolTypeConfig: concentratedPoolTypeConfig(1024) });
 
 interface PoolConfigWithName {
     poolConfig: Hex,
-    asUnknownExtension: boolean,
     extensionName: string,
+    swapType: SwapType,
 }
 
 const NATIVE_ERC20_CONFIGS: PoolConfigWithName[] = [
     {
         poolConfig: CONCENTRATED_CONFIG,
-        asUnknownExtension: false,
         extensionName: "base",
+        swapType: "base",
     },
     {
         poolConfig: ORACLE_CONFIG,
-        asUnknownExtension: false,
         extensionName: "oracle",
+        swapType: "extension",
     },
     {
         poolConfig: TWAMM_CONFIG,
-        asUnknownExtension: false,
         extensionName: "twamm",
+        swapType: "extension",
     },
     {
         poolConfig: MEV_CAPTURE_CONFIG,
-        asUnknownExtension: false,
         extensionName: "mevCapture",
+        swapType: "mev-capture",
+    },
+    {
+        poolConfig: VE33_CONFIG,
+        extensionName: "ve33",
+        swapType: "ve33",
     },
     {
         poolConfig: STABLESWAP_CONFIG,
-        asUnknownExtension: true,
-        extensionName: "unknown",
+        extensionName: "regular",
+        swapType: "extension",
     },
 ];
 
@@ -104,7 +112,8 @@ const successCases: SdkCases["success"] = [
                                 token0: NATIVE_TOKEN_ADDRESS,
                                 token1: ERC20_FIRST_ADDRESS,
                                 config: TWAMM_CONFIG,
-                            }
+                            },
+                            swapType: "extension",
                         },
                         {
                             type: "swap",
@@ -113,6 +122,7 @@ const successCases: SdkCases["success"] = [
                                 token1: ERC20_SECOND_ADDRESS,
                                 config: FULL_RANGE_CONFIG,
                             },
+                            swapType: "base",
                             skipAhead: 10,
                             sqrtRatioLimit: MIN_SQRT_RATIO,
                         }
@@ -128,6 +138,7 @@ const successCases: SdkCases["success"] = [
                                 token1: ERC20_SECOND_ADDRESS,
                                 config: STABLESWAP_CONFIG,
                             },
+                            swapType: "extension",
                         }
                     ],
                 },
@@ -194,7 +205,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                         }
 
                         // Pool swaps
-                        for (const { poolConfig, asUnknownExtension, extensionName } of NATIVE_ERC20_CONFIGS) {
+                        for (const { poolConfig, extensionName, swapType } of NATIVE_ERC20_CONFIGS) {
                             // TODO Not true anymore
                             // Ideally we'd also have a loop over isToken1 here but ETH/USDC is currently the only pair
                             // that has pools of every extension type
@@ -224,6 +235,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                             token1: ERC20_FIRST_ADDRESS,
                                             config: poolConfig,
                                         },
+                                        ...(typeof swapType === "undefined" ? {} : { swapType }),
                                         sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
                                     }
                                 ];
@@ -242,6 +254,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                             token1: ERC20_FIRST_ADDRESS,
                                             config: poolConfig,
                                         },
+                                        ...(typeof swapType === "undefined" ? {} : { swapType }),
                                         sqrtRatioLimit: getSqrtRatioLimit(specifiedToken, firstCalculatedToken),
                                     },
                                     {
@@ -251,6 +264,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                             token1: ERC20_FIRST_ADDRESS,
                                             config: CONCENTRATED_CONFIG,
                                         },
+                                        swapType: "base",
                                     },
                                 ];
                             }
@@ -266,10 +280,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                     }
                                 ],
                                 integrationFee,
-                            }, {
-                                forceUnknownExtension: asUnknownExtension,
-                                forceUnknownToken: asUnknownToken,
-                            });
+                            }, { forceUnknownToken: asUnknownToken });
 
                             successCases.push({
                                 data: calldata,
@@ -341,6 +352,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                                     poolTypeConfig: concentratedPoolTypeConfig(4988),
                                                 }),
                                             },
+                                            swapType: "mev-capture",
                                             sqrtRatioLimit: getSqrtRatioLimit(firstCalculatedToken, secondCalculatedToken),
                                         },
                                     ];
@@ -357,10 +369,7 @@ ${asUnknownToken ? "unknown" : "known"}Tokens`;
                                         }
                                     ],
                                     integrationFee,
-                                }, {
-                                    forceUnknownExtension: false,
-                                    forceUnknownToken: asUnknownToken,
-                                });
+                                }, { forceUnknownToken: asUnknownToken });
 
                                 successCases.push({
                                     data: calldata,
@@ -413,6 +422,7 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
                     {
                         type: "swap",
                         poolKey: DUMMY_POOL_KEY,
+                        swapType: "base",
                     }
                 ]
             }],
@@ -432,6 +442,7 @@ const slippageCheckFailedCases: SdkCases["slippageCheckFailed"] = [
                     {
                         type: "swap",
                         poolKey: DUMMY_POOL_KEY,
+                        swapType: "base",
                     }
                 ]
             }],
@@ -461,6 +472,7 @@ console.log(encodeAbiParameters(inputs, [{
                         {
                             type: "swap",
                             poolKey: DUMMY_POOL_KEY,
+                            swapType: "base",
                         },
                     ],
                 },
@@ -478,12 +490,13 @@ console.log(encodeAbiParameters(inputs, [{
                     hops: [
                         {
                             type: "swap",
-                            poolKey: KNOWN_TOKENS_ORACLE_POOL_KEY,
+                            poolKey: DUMMY_POOL_KEY,
+                            swapType: "base",
                         }
                     ]
                 }
             ]
         }),
-        poolKey: KNOWN_TOKENS_ORACLE_POOL_KEY,
+        poolKey: DUMMY_POOL_KEY,
     }
 }]));

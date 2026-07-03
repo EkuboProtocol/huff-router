@@ -21,7 +21,6 @@
   ],
   "scripts": {
     "build": "tsup src/index.ts --dts --minify --tsconfig src/tsconfig.build.json",
-    "incident-analysis": "tsx scripts/incident-analysis.ts",
     "test": "vitest",
     "generate-testdata": "wagmi generate 2>/dev/null && tsx test/generate-testdata.ts",
     "prepublishOnly": "rm -rf dist/ && npm run build",
