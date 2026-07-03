@@ -390,6 +390,11 @@ contract HuffRouterTest is Test {
         uint256 attackerBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker);
         uint256 victimBalanceBefore = IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(victim);
 
+        vm.expectCall(
+            _ERC_20_FIRST_ADDRESS,
+            abi.encodeCall(IERC20.transferFrom, (attacker, address(CORE), uint256(specifiedAmount)))
+        );
+
         (bool success, bytes memory returndataRaw) = address(huffRouter).call(data);
 
         assertTrue(success, "success");
@@ -399,12 +404,42 @@ contract HuffRouterTest is Test {
         assertEq(returndata.calculatedAmount, specifiedAmount, "calculatedAmount");
         assertEq(returndata.integrationFee, 0, "integrationFee");
         assertEq(
-            IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker),
-            attackerBalanceBefore,
-            "unexpected attacker balance"
+            IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(attacker), attackerBalanceBefore, "unexpected attacker balance"
+        );
+        assertEq(IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(victim), victimBalanceBefore, "unexpected victim balance");
+    }
+
+    function test_StaticTransferFromSurface() external view {
+        string memory lockedSwap = vm.readFile("src/locked/swap.huff");
+        string memory lockSwap = vm.readFile("src/lock/swap.huff");
+
+        assertEq(_countOccurrences(lockedSwap, "transferFrom(address,address,uint256)"), 1, "selector");
+        assertEq(_countOccurrences(lockedSwap, "transfer(address,uint256)"), 1, "transfer selector");
+        assertEq(_countOccurrences(lockedSwap, "transferFromLbl"), 2, "transferFrom branch");
+        assertEq(_countOccurrences(lockedSwap, "[TRANSFER_FROM_FROM_OFFSET] mstore"), 1, "from writes");
+        assertEq(
+            _countOccurrences(
+                lockSwap,
+                "caller                                                                      // [transferFrom]"
+            ),
+            1,
+            "caller source"
         );
         assertEq(
-            IERC20(_ERC_20_FIRST_ADDRESS).balanceOf(victim), victimBalanceBefore, "unexpected victim balance"
+            _countOccurrences(
+                lockSwap,
+                "calldatasize add                                                            // [transferFromOffset, transferFrom]"
+            ),
+            1,
+            "caller write"
+        );
+        assertEq(
+            _countOccurrences(
+                lockedSwap,
+                "[WORD_SIZE] calldatasize sub calldataload                               // [transferFrom, ...]"
+            ),
+            1,
+            "caller read"
         );
     }
 
@@ -556,6 +591,26 @@ contract HuffRouterTest is Test {
 
     function _approvePositions(address token) private returns (uint256 value) {
         value = _approve(token, address(positions), _POSITION_AMOUNT);
+    }
+
+    function _countOccurrences(string memory haystack, string memory needle) private pure returns (uint256 count) {
+        bytes memory haystackBytes = bytes(haystack);
+        bytes memory needleBytes = bytes(needle);
+
+        if (needleBytes.length == 0 || haystackBytes.length < needleBytes.length) return 0;
+
+        for (uint256 i = 0; i <= haystackBytes.length - needleBytes.length; i++) {
+            bool matched = true;
+
+            for (uint256 j = 0; j < needleBytes.length; j++) {
+                if (haystackBytes[i + j] != needleBytes[j]) {
+                    matched = false;
+                    break;
+                }
+            }
+
+            if (matched) count++;
+        }
     }
 
     receive() external payable {

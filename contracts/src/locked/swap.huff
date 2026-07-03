@@ -155,10 +155,8 @@
 /// @notice Ekubo Core callback, executing a multiMultiHopSwap.
 ///
 /// Calldata follows the same interpretation as described in lock/swap.huff.
-/// The last word of the calldata is:
-///
-/// `transferFrom` (32 bytes ABI-encoded `address`, non-zero)
-/// The address from which to consume approvals to settle the debt.
+/// The last word of the calldata is the ABI-encoded original router caller.
+/// It is appended by LOCK_SWAP and is the only `from` address used for ERC20 settlement.
 #define macro LOCKED_SWAP() = takes(0) returns(0) {
     [LOCKED_SWAP_FIRST_WORD_OFFSET] calldataload                            // [firstWord]
 
@@ -1030,7 +1028,7 @@
     dup1 transferFromLbl jumpi                                              // [from, ...]
         pop                                                                 // [...]
 
-        __FUNC_SIG("transfer(address,uint256)")                             // [selector, ...]
+        [TRANSFER_SELECTOR]                                                 // [selector, ...]
         [TRANSFER_SELECTOR_OFFSET] mstore                                   // [...]
         [CORE] [TRANSFER_TO_OFFSET] mstore                                  // [...]
 
@@ -1040,7 +1038,7 @@
     transferFromLbl:                                                        // [from, ...]
         [TRANSFER_FROM_FROM_OFFSET] mstore                                  // [...]
 
-        __FUNC_SIG("transferFrom(address,address,uint256)")                 // [selector, ...]
+        [TRANSFER_FROM_SELECTOR]                                            // [selector, ...]
         [TRANSFER_FROM_SELECTOR_OFFSET] mstore                              // [...]
         [CORE] [TRANSFER_FROM_TO_OFFSET] mstore                             // [...]
 
@@ -1167,7 +1165,6 @@
 
     <offset> codecopy                                                       // [...]
 }
-
 
 #define macro NEG() = {
     // takes: [number, ...]
