@@ -100,7 +100,7 @@
 /// MEV-capture => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | poolTypeConfig (4 bytes `bytes4`)
 /// Unknown extension => skipAhead (1 byte `uint8`) | extension (20 bytes `address`) | fee (8 bytes `uint64`) | poolTypeConfig (4 bytes `bytes4`)
 /// Wrapped token => call type (1 byte)
-/// Ve33 => skipAhead (1 byte `uint8`) | fee (8 bytes `uint64`) | poolTypeConfig (4 bytes `bytes4`)
+/// Ve33 => skipAhead (1 byte `uint8`) | extension (20 bytes `address`) | poolTypeConfig (4 bytes `bytes4`)
 ///
 /// `tokenInfo` (1 byte, for all but the last hop in a multi-hop)
 /// Describes the output token of this hop:

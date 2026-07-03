@@ -1,6 +1,6 @@
 import { Address, concatHex, encodeAbiParameters, getAbiItem, Hex, hexToBigInt, maxUint256, numberToHex, parseEther, parseUnits, zeroAddress } from "viem";
 import { huffRouterTestAbi } from "./abi.js";
-import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS, VE33_ADDRESS } from "../src/extensions.js";
+import { MEV_CAPTURE_ADDRESS, TWAMM_ADDRESS } from "../src/extensions.js";
 import { generateCalldata, IntegrationFee, Hop } from "../src/index.js";
 import { generateCalldataImpl, MAX_SQRT_RATIO, MIN_SQRT_RATIO } from "../src/impl.js";
 import type { DeepWritable, ElementOf } from "ts-essentials";
@@ -14,6 +14,7 @@ const INTEGRATION_FEE: IntegrationFee = {
     integrator: INTEGRATOR,
     fee: 2 ** 15, // 50%
 };
+const VE33_ADDRESS = "0xd100000000000000000000000000000000000000" as const;
 
 interface PoolConfig {
     extension: Address;

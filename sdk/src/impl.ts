@@ -1,5 +1,5 @@
 import { ByteArray, bytesToHex, concatBytes, getAddress, Hex, hexToBigInt, hexToBytes, maxInt128, maxUint16, maxUint256, maxUint8, minInt128, numberToBytes, numberToHex, padBytes, padHex, size, sliceHex, toBytes, zeroAddress } from "viem";
-import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_CAPTURE_ADDRESS, VE33_ADDRESS } from "./extensions";
+import { ORACLE_ADDRESS, TWAMM_ADDRESS, MEV_CAPTURE_ADDRESS } from "./extensions";
 import { Parameters } from ".";
 import { Tokens } from "./tokens";
 
@@ -12,6 +12,7 @@ const FEE_SHARE_BYTES = 2;
 const NOT_BIT_MASK = 0x3fffffffffffffffffffffffn;
 
 const UNKNOWN_TOKEN = 0xff;
+const VE33_CALL_POINTS_BYTE = 0xd1n;
 
 export const MAX_MULTIHOP_LENGTH = Number(maxUint8) + 1;
 export const MAX_HOP_LENGTH = Number(maxUint8) + 1;
@@ -189,7 +190,7 @@ export function generateCalldataImpl(
                 const [
                     extension,
                     fee,
-                    tickSpacing
+                    poolTypeConfig
                 ] = [
                         getAddress(sliceHex(config, 0, 20)),
                         toBytes(sliceHex(config, 20, 28)),
@@ -210,7 +211,20 @@ export function generateCalldataImpl(
                 if (forceUnknownExtension) {
                     unknownExtension()
                 } else {
-                    switch (extension) {
+                    if (isVe33Extension(extension)) {
+                        if (hexToBigInt(sliceHex(config, 20, 28)) !== 0n) {
+                            throw new Error("ve33 pool fee must be zero");
+                        }
+
+                        calldata.push(
+                            new Uint8Array([
+                                6,
+                                skipAhead,
+                            ]),
+                            hexToBytes(extension),
+                            poolTypeConfig,
+                        );
+                    } else switch (extension) {
                         case zeroAddress:
                             calldata.push(
                                 new Uint8Array([
@@ -218,7 +232,7 @@ export function generateCalldataImpl(
                                     skipAhead,
                                 ]),
                                 fee,
-                                tickSpacing,
+                                poolTypeConfig,
                             );
                             break;
                         case ORACLE_ADDRESS:
@@ -237,17 +251,7 @@ export function generateCalldataImpl(
                                     skipAhead,
                                 ]),
                                 fee,
-                                tickSpacing,
-                            );
-                            break;
-                        case VE33_ADDRESS:
-                            calldata.push(
-                                new Uint8Array([
-                                    6,
-                                    skipAhead,
-                                ]),
-                                fee,
-                                tickSpacing,
+                                poolTypeConfig,
                             );
                             break;
                         default:
@@ -361,4 +365,8 @@ export function generateCalldataImpl(
 
 function abs(big: bigint): bigint {
     return big < 0n ? -big : big;
+}
+
+function isVe33Extension(extension: Hex): boolean {
+    return (hexToBigInt(extension) >> 152n) === VE33_CALL_POINTS_BYTE;
 }
