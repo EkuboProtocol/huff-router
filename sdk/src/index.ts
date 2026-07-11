@@ -111,26 +111,6 @@ export interface MultiHop {
 }
 
 /**
- * Allows rewarding integrators for the provision of their services
- * by sharing parts of the total amount with them
- */
-export interface IntegrationFee {
-  /**
-   * A 0.16 fixed point number describing the share of the total amount
-   * that will be saved for the integrator
-   *
-   * @remarks
-   * For exact-in routes, the share is taken from the calculated amount;
-   * for exact-out routes, from the specified amount
-   */
-  fee: number;
-  /**
-   * The owner of the saved balance in which Ekubo Core will save the integration fee
-   */
-  integrator: Hex;
-}
-
-/**
  * The parameters required for constructing a call to the *HuffRouter*
  */
 export interface Parameters {
@@ -156,7 +136,7 @@ export interface Parameters {
    * The recipient of the tokens received from Ekubo Core
    *
    * @defaultValue
-   * If the *HuffRouter* is called via a `call`, the `caller`; if called via a `delegatecall`, the delegating contract.
+   * The `caller`
    */
   recipient?: Hex;
   /**
@@ -173,26 +153,16 @@ export interface Parameters {
    * Effectively disables the slippage check
    */
   calculatedAmountThreshold?: bigint;
-  /**
-   * The integration fee that is applied to the total amount
-   *
-   * @defaultValue
-   * No integrator receives a share from the total amount
-   */
-  integrationFee?: IntegrationFee;
 }
 
 /**
- * Generates calldata which can both be used in a `call` or a `delegatecall` to the *HuffRouter*.
+ * Generates calldata for the *HuffRouter*.
  *
- * If called via a `call`, depending on the type of the token that needs to be transferred to Ekubo Core:
+ * Depending on the type of the token that needs to be transferred to Ekubo Core:
  * - ERC-20: The *HuffRouter* needs an approval from the `caller`
  * - Native token: Has to be transferred directly to the *HuffRouter*.
  *      If the route is exact-out, the remaining balance of the *HuffRouter* after settlement will be refunded to
  *      the `caller`.
- *
- * If called via a `delegatecall`, all transfers happen directly from the delegating contract and no approvals,
- * transfers, or refunds are necessary.
  *
  * @param params - The parameters determining the generated calldata
  * @returns A hex-encoded calldata string

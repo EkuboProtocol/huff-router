@@ -17,6 +17,7 @@
 #define function claimIntegrationFees(address[] tokens) nonpayable returns (uint256[] claimedAmounts)
 
 #define error SlippageCheckFailed(uint256 calculatedAmount)
+#define error Expired(uint256 expiry)
 #define error NativeTransferFailed()
 #define error CoreOnly()
 
@@ -42,10 +43,45 @@
 // cast sig "claimIntegrationFees(address[])"
 #define constant CLAIM_INTEGRATION_FEES_SELECTOR_FIRST_BYTE = 0xa3
 
+#define constant EXPIRED_SIGNATURE = __FUNC_SIG("Expired(uint256)")
+#define constant EXPIRED_SELECTOR_OFFSET = 0x0
+#define constant EXPIRED_SELECTOR_OFFSET_PACKED = [EXPIRED_SELECTOR_OFFSET] + [PACKED_SELECTOR_OFFSET]
+#define constant EXPIRED_EXPIRY_OFFSET = [EXPIRED_SELECTOR_OFFSET_PACKED] + [SELECTOR_SIZE]
+#define constant EXPIRED_ARGS_SIZE = [EXPIRED_EXPIRY_OFFSET] + [WORD_SIZE] - [EXPIRED_SELECTOR_OFFSET_PACKED]
+
+#define macro CONSTRUCTOR() = {
+    __FUNC_SIG("_transientInitializationParams()") 0x0 mstore               // []
+    0x0 0x0 0x4 0x1c caller gas staticcall                                  // [success]
+
+    BUBBLE_UP_REVERT()                                                      // []
+
+    __codesize(CONSTRUCTOR) codesize sub                                    // [runtimeSize]
+    returndatasize 0x0 dup3 returndatacopy                                  // [runtimeSize]
+
+    // Copy runtime code into memory
+    dup1 __codesize(CONSTRUCTOR) 0x0                                        // [memOffset, constructorSize, runtimeSize, runtimeSize]
+    codecopy                                                                // [runtimeSize]
+
+    returndatasize add 0x0 return
+
+    BUBBLE_UP_REVERT_HANDLER()
+}
+
 /* Entry Point */
 #define macro MAIN() = takes(0) returns(0) {
     // We must ensure that the zero offset isn't a valid jump destination
     __ASSERT_PC(0x0)                                                        // []
+
+    // TODO expiry can be overridden
+    // Copy the immutables to a destination that won't be overridden during swapping
+    [IMMUTABLES_SIZE] [IMMUTABLES_CODE_OFFSET] [IMMUTABLES_OFFSET] codecopy // []
+
+    [EXPIRATION_OFFSET] mload                                               // [expiration]
+    timestamp lt notExpiredLbl jumpi                                        // []
+        [EXPIRED_SIGNATURE] [EXPIRED_SELECTOR_OFFSET] mstore                // []
+        [EXPIRATION_OFFSET] mload [EXPIRED_EXPIRY_OFFSET] mstore            // []
+        [EXPIRED_ARGS_SIZE] [EXPIRED_SELECTOR_OFFSET_PACKED] revert
+    notExpiredLbl:                                                          // []
 
     0x0 calldataload                                                        // [firstWord]
 
@@ -72,6 +108,8 @@
             LOCKED_CLAIM()
     lockClaimLbl:                                                           // []
         LOCK_CLAIM()
+
+    BUBBLE_UP_REVERT_HANDLER()
 }
 
 #define macro CORE_CHECK() = takes(0) returns(0) {
@@ -79,4 +117,15 @@
         __ERROR(CoreOnly) 0x0 mstore                                        // []
         [SELECTOR_SIZE] 0x0 revert
     coreCallerLbl:                                                          // []
+}
+
+#define macro BUBBLE_UP_REVERT() = {
+    // takes: [success, ...]
+    iszero bubbleUpRevertLbl jumpi                                          // [...]
+}
+
+#define macro BUBBLE_UP_REVERT_HANDLER() = {
+    bubbleUpRevertLbl:                                                      // [...]
+        returndatasize 0x0 0x0 returndatacopy                               // [...]
+        returndatasize 0x0 revert
 }

@@ -7,7 +7,7 @@ export default defineConfig({
     foundry({
       "project": "../contracts",
       "exclude": [],
-      "include": ["HuffRouter.t.sol/*"]
+      "include": ["HuffRouter.t.sol/SdkTest.json"]
     })
   ],
 });

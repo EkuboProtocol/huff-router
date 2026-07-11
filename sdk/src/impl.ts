@@ -49,7 +49,7 @@ export function generateCalldataImpl(
     const tokens = Tokens.load(params.chainId);
     const asUnknownToken = forceUnknownToken || tokens === null;
 
-    const { multiHops, recipient, calculatedAmountThreshold, integrationFee } = params;
+    const { multiHops, recipient, calculatedAmountThreshold } = params;
     const specifiedToken = getAddress(padHex(params.specifiedToken, { size: 20 }));
 
     if (multiHops.length < 1 || multiHops.length > MAX_MULTIHOP_LENGTH) {
@@ -133,7 +133,6 @@ export function generateCalldataImpl(
 
     const withRecipient = typeof recipient !== "undefined";
     const specifiedAmountBytes = maxSpecified === 0n ? 0 : size(numberToHex(maxSpecified));
-    const withIntegrationFee = typeof integrationFee !== "undefined" && integrationFee.fee !== 0;
 
     let calculatedTokenBig: bigint | null = null;
     const calldata = [];
@@ -302,13 +301,6 @@ export function generateCalldataImpl(
         }
     }
 
-    if (withIntegrationFee) {
-        calldata.push(
-            numberToBytes(integrationFee.fee, { size: FEE_SHARE_BYTES }),
-            hexToBytes(getAddress(padHex(integrationFee.integrator, { size: 20 }))),
-        );
-    }
-
     if (withRecipient) {
         calldata.push(hexToBytes(getAddress(padHex(recipient, { size: 20 }))));
     }
@@ -329,7 +321,6 @@ export function generateCalldataImpl(
             specifiedTokenId ?? UNKNOWN_TOKEN,
             calculatedTokenId ?? UNKNOWN_TOKEN,
             multiHops.length - 1,
-            Number(withIntegrationFee),
             (Number(withSqrtRatioLimit) << 1) + Number(isExactOut),
         ]),
         calculatedAmountThresholdBin,

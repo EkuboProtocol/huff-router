@@ -6,6 +6,6 @@ import {Script} from "forge-std/Script.sol";
 
 contract HuffRouterScript is Script {
     function run() external {
-        HuffRouterLib.deploy(vm);
+        HuffRouterLib.deployFactory(true);
     }
 }

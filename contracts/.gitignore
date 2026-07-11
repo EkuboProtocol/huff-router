@@ -12,6 +12,3 @@ docs/
 
 # Dotenv file
 .env
-
-# Generated files
-src/locked/tokens.huff
